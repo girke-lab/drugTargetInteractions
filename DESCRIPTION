@@ -1,0 +1,15 @@
+Package: drugTargetInteractions
+Type: Package
+Title: Drug-Target Interactions
+Version: 1.0.13
+Date: 2020-09-14
+Author: Thomas Girke
+Maintainer: Thomas Girke <thomas.girke@ucr.edu>
+Description: More about what it does (maybe more than one line)
+Depends: methods
+Imports: stats,utils,BiocGenerics, R.utils, BatchJobs, BiocParallel, RSQLite, UniProt.ws, biomaRt,ensembldb
+Suggests: RUnit, BiocStyle, knitr, rmarkdown, ggplot2, reshape2
+VignetteBuilder: knitr
+License: Artistic-2.0
+NeedsCompilation: no
+URL: https://github.com/longevity-consortium/LC_Chemoinformatics

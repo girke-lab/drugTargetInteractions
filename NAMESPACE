@@ -1,0 +1,8 @@
+import(RSQLite,methods)
+import(UniProt.ws)
+import(biomaRt)
+import(ensembldb)
+import(stats, utils)
+
+
+exportPattern("^[[:alpha:]]+")

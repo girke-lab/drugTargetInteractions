@@ -1,0 +1,545 @@
+---
+title: Drug-Target Interactions 
+author: "Authors: Yuzhu Duan, Dan Evans, Jamison McCorrison, Nicholas Schork, Kevin Horan, Austin Leong, Xinyang Li, Siddharth Sai and Thomas Girke"
+date: "Last update: `r format(Sys.time(), '%d %B, %Y')`" 
+always_allow_html: yes
+output:
+  BiocStyle::html_document:
+    toc_float: true
+    code_folding: show
+vignette: |
+  %\VignetteIndexEntry{Drug-Target Interactions}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+
+fontsize: 14pt
+bibliography: bibtex.bib
+---
+
+<style>
+pre code {
+  white-space: pre !important;
+  overflow-x: scroll !important;
+  word-break: keep-all !important;
+  word-wrap: initial !important;
+}
+</style>
+
+<!---
+- Compile from command-line
+Rscript -e "rmarkdown::render('drugTargetInteractions.Rmd', c('BiocStyle::html_document', 'pdf_document')); knitr::knit('drugTargetInteractions.Rmd', tangle=TRUE)"
+-->
+
+```{r style, echo = FALSE, results = 'asis'}
+BiocStyle::markdown()
+options(width=100, max.print=1000)
+knitr::opts_chunk$set(
+    eval=as.logical(Sys.getenv("KNITR_EVAL", "TRUE")),
+    cache=as.logical(Sys.getenv("KNITR_CACHE", "TRUE")))
+```
+
+
+# Access information
+
+This page is password protected. The access information is:
+
++ URL: [http://bit.ly/2Fl7CbU](http://bit.ly/2Fl7CbU)
++ User name: `longevity`
++ ***REMOVED***
+
+The corresponding GitHub repository is available [here](https://github.com/longevity-consortium/LC_Chemoinformatics). 
+Currently, this repository is private. To request access, please email thomas.girke@ucr.edu.
+
+# Introduction
+
+## Overview
+
+The `drugTargetInteractions` package provides utilities for identifying
+drug-target interactions for sets of small molecule or gene/protein
+identifiers [@Wu2006-jm]. The required drug-target interaction information is obained from 
+a local SQLite instance of the ChEMBL database [@Gaulton2012-dv; @Bento2014-ry]. 
+
+
+## About this report
+
+This report uses R Markdown to maintain a high level of reprodicibility of the
+analysis code. The following links to the source code and the rendered HTML and
+PDF versions of the report. 
+
++ [Rendered report (HTML)](https://github.com/longevity-consortium/LC_Chemoinformatics/blob/master/Rpackages/drugTargetInteractions/vignettes/drugTargetInteractions.html)
++ [Rendered report (PDF)](https://github.com/longevity-consortium/LC_Chemoinformatics/blob/master/Rpackages/drugTargetInteractions/vignettes/drugTargetInteractions.pdf)
++ [R markdown (Rmd)](https://github.com/longevity-consortium/LC_Chemoinformatics/blob/master/Rpackages/drugTargetInteractions/vignettes/drugTargetInteractions.Rmd)
++ [R code only (R)](https://github.com/longevity-consortium/LC_Chemoinformatics/blob/master/Rpackages/drugTargetInteractions/vignettes/drugTargetInteractions.R)
+
+__How to navigate this report?__
+
+By default the code sections of this analysis report are shown. To hide all
+of them at once, click on the top right corner the `Code` button and then
+select `Hide All Code`. Individual code sections can also be hidden and expanded on demand
+by clicking the corresponding `Code` buttons available on the right side
+along the text. 
+
+## Install package
+
+The following shows how to install the package with the `install_github`
+function of the `devtools` package. Since the GitHub repository of the 
+package is private, a personal access token (PAT) needs to be assigned to the
+`GITHUB_PAT` variable (here: `GITHUB_PAT=<PAT>`) in a user's `.Renviron`
+file. The function call `github_pat()` will pass this variable to the
+`auth_token` argument (see below). PATs can be generated on GitHub
+[here](https://github.com/settings/tokens). More install details are available
+on the [README](https://github.com/longevity-consortium/LC_Chemoinformatics) page of
+the package repository.
+
+```{r pkg_install, eval=FALSE}
+library(devtools)
+install_github("longevity-consortium/LC_Chemoinformatics", subdir="Rpackages/drugTargetInteractions", auth_token=github_pat())
+```
+
+## Resource request on HPC Cluster                                                                                                                                                       
+
+The following is only relevant for HPC Cluster users and can be skipped by other users. The `srun` command
+establishes an interactive session on a computer node. Subsequently, R can be started from there.
+
+```{r cluster_session, eval=FALSE}
+# $ sinfo                                                                                                                                                                 
+# $ srun --x11 --partition=girkelab --mem=20gb --cpus-per-task 1 --ntasks 1 --time 20:00:00 --pty bash -l
+```
+
+## Load packages
+
+Package load and help commands
+
+```{r documentation, eval=TRUE}
+library("drugTargetInteractions") # Loads the package
+# library(help="drugTargetInteractions") # Lists package info
+# vignette(topic="drugTargetInteractions", package="drugTargetInteractions") # Opens vignette
+```
+
+# Working environment
+
+## Import custom functions 
+
+Custem functions can be imported with the `source` command from a local R
+script (here `drugTargetInteractions_Fct.R`).  Skip this step if such a script
+is not available.
+
+```{r source_fct, eval=FALSE}
+ source("/rhome/khoran/projects/longevity/drugTargetInteractions/R/drugTargetAnnotations_Fct.R")
+```
+
+## Required files and directories
+
+When using the `drugTargetInteractions` package it is necessary to download and uncompress
+a recent SQLite instance of the ChEMBL database either from [here](ftp://ftp.ebi.ac.uk/pub/databases/chembl/ChEMBLdb/) 
+or a custom copy from [here](http://cluster.hpcc.ucr.edu/~tgirke/projects/longevity/LongevityConsortium/drugTargetInteraction/chembl_24.db);
+as well as a precomputed lookup table for translating compound identifiers from [here](http://cluster.hpcc.ucr.edu/~tgirke/projects/longevity/LongevityConsortium/drugTargetInteraction/cmp_ids.rds). 
+This lookup table has been generated from [UniChem](ftp://ftp.ebi.ac.uk/pub/databases/chembl/UniChem/data/wholeSourceMapping/).
+In addition, the sample code of this manual expects three sub-directories in the
+working environment of a user's R session that are named `data`, `results` and `downloads`.
+The names of these directories can be changed but then the paths in the
+following code needs to be adjusted accordingly.  
+
+The following assigns the absolute paths of the above five dependencies (here 2
+datasets and 3 directories) to variables. Note, the exact paths apply to the
+environment of the author of this package, and thus have to be changed to the
+situation on a user's systems. Without assigning here the correct paths the 
+subsequent analysis code is unlikely to work without errors. In many cases the
+usage of relative rather than absolute paths may be more flexible. 
+
+```{r dir_env, eval=TRUE}
+
+chembldb = system.file("extdata","chembl_sample.db",package = "drugTargetInteractions")
+#chembldb = "/rhome/khoran/projects/longevity/drugTargetInteractions/inst/extdata/chembl_sample.db"
+#chembldb = "/rhome/khoran/projects/longevity/chembl_27.db"
+message("chembl db path: ",chembldb)
+config = genConfig(chemblDbPath=chembldb)
+
+```
+
+```{r data_setup, eval=TRUE}
+rerun=FALSE
+downloadUniChem(config=config,rerun=rerun)
+cmpIdMapping(config=config,rerun=rerun)
+drugTargetAnnotTable(outfile=file.path(config$resultsPath,"drugTargetAnnot.xls"),config=config,rerun=rerun )
+```
+
+
+# Produce Results Quickly
+
+Users mainly interested in generating analysis results can can skip the
+technical details in the following sections and continue with the section
+entitled [Workflow to Run Everything](#8_workflow_to_run_everything).
+
+# Retrieve UniProt IDs
+
+The following returns for a set of query IDs (_e.g._ ENSEMBL gene IDs) the
+corresponding UniProt IDs based on a stict ID matching as well as a more
+relaxed sequence similarity-based approach. The latter sequence similarity
+associations are obtained with the `getUniprotIDs` or the `getParalogs` functions
+using UniProt's UNIREF cluster or BioMart's paralog annotations, respectively.
+
+## UniProt's UNIREF Clusters
+
+The `UniProt.ws` package is used to to return for a set of query IDs
+(here Ensembl gene IDs) the corresponding UniProt IDs based on two independent
+approaches: ID mappings (IDMs) and sequence similarity nearest neighbors
+(SSNNs) using UNIREF clusters. The latter are generated by UniProt with the MMSeqs2 
+and Linclust algorithms [@Steinegger2017-uq; @Steinegger2018-ub]. Additional details on the UNIREF 
+clusters are available [here](https://www.uniprot.org/help/uniref). The organism, query ID
+type and sequence similarity level can be selected under the `taxId`, `kt` and
+`seq_cluster` arguments, respectively. The `seq_cluster` argument can be
+assigned one of: `UNIREF100`, `UNIREF90` or `UNIREF50`. The result is a list
+with two `data.frames`. The first one is based on IDMs and the second one on
+SSNNs.
+
+```{r getUniprotIDs1, eval=TRUE, message=FALSE}
+keys <- c("ENSG00000145700", "ENSG00000135441", "ENSG00000120071")
+res_list90 <- getUniprotIDs(taxId=9606, kt="ENSEMBL", keys=keys, seq_cluster="UNIREF90") 
+```
+
+The following shows the first `data.frame` containing the ID mapping results.
+
+```{r getUniprotIDs2, eval=TRUE, message=FALSE}
+library(DT)
+datatable(res_list90[[1]], filter = 'top', options = list(
+  pageLength = 100, scrollX = TRUE, scrollY = "600px", autoWidth = TRUE
+))
+```
+The following shows how to return the dimensions of the two `data.frames` and how to
+obtain the UniProt IDs as character vectors required for the downstream analysis steps.
+
+```{r getUniprotIDs3, eval=TRUE}
+sapply(res_list90, dim, simplify=FALSE)
+sapply(names(res_list90), function(x) unique(na.omit(res_list90[[x]]$ID)))
+```
+
+## BioMart's Paralogs
+
+For a set of query genes the corresponding UniProt IDs as well as paralogs are
+obtained with `biomaRt`. Query genes can be Gene Names or ENSEMBL Gene IDs from
+_H. sapiens_. The result is similar to IDMs and SSNNs from the `getUniprotIDs` function,
+but instead of UNIREF clusters, biomaRt's paralogs are used to obtain SSNNs. 
+
+```{r getParalogs1, eval=TRUE}
+queryBy <- list(molType="gene", idType="external_gene_name", ids=c("ANKRD31", "BLOC1S1", "KANSL1"))
+queryBy <- list(molType="gene", idType="ensembl_gene_id", ids=c("ENSG00000145700", "ENSG00000135441", "ENSG00000120071"))
+res_list <- getParalogs(queryBy)
+```
+
+The following shows the first `data.frame` containing the ID mapping results.
+
+```{r getParalogs2, eval=TRUE, message=FALSE}
+library(DT)
+datatable(res_list[[1]], filter = 'top', options = list(
+  pageLength = 100, scrollX = TRUE, scrollY = "600px", autoWidth = TRUE
+))
+```
+The following shows how to return the dimensions of the two `data.frames` and how to
+obtain the UniProt IDs as character vectors required for the downstream analysis steps.
+
+```{r getParalogs3, eval=TRUE}
+sapply(res_list, dim, simplify=FALSE)
+sapply(names(res_list), function(x) unique(na.omit(res_list[[x]]$ID_up_sp)))
+```
+
+# Query Drug-Target Annotations 
+
+The `drugTargetAnnot` function returns for a set of compound or gene/protein
+IDs the corresponding known drug-target annotation data available in ChEMBL. A
+related function called `getDrugTarget` is described in the following
+subsection. This method generates very similar results but uses internally pre-computed
+annotation summary tables which is less flexible than the usage of pure SQL statements. 
+Thus, `getDrugTarget` will be deprecated soon and is only included here for backwards compatibility.
+
+## Using `drugTargetAnnot` 
+
+The `drugTargetAnnot` function queries the ChEMBL database with SQL statements without
+depending on pre-computed annotation tables. 
+
+### Query with Compound IDs
+
+```{r drugTargetQuery1cmp, eval=TRUE}
+queryBy <- list(molType="cmp", idType="chembl_id", ids=c("CHEMBL17", "CHEMBL19", "CHEMBL1201117", "CHEMBL25", "nomatch", "CHEMBL1742471"))
+qresult1 <- drugTargetAnnot(queryBy, config=config)
+```
+
+```{r cmp_query_result1, eval=TRUE, message=FALSE}
+library(DT)
+datatable(qresult1, filter = 'top', options = list(
+  pageLength = 100, scrollX = TRUE, scrollY = "600px", autoWidth = TRUE
+))
+```
+
+### Query with Protein IDs
+
+```{r drugTargetQuery1protein, eval=TRUE}
+queryBy <- list(molType="protein", idType="UniProt_ID", ids=c("P43166", "P00915"))
+qresult2 <- drugTargetAnnot(queryBy, config=config)
+```
+
+```{r protein_query_result1, eval=TRUE, message=FALSE}
+library(DT)
+datatable(qresult2, filter = 'top', options = list(
+  pageLength = 100, scrollX = TRUE, scrollY = "600px", autoWidth = TRUE
+))
+```
+
+### Query with Gene IDs
+
+The following returns drug-target annotations for a set of query Ensembl gene IDs.
+For this we first translate the Ensembl gene IDs into UniProt IDs using both the IDM 
+and SSNN approaches. 
+
+```{r getUniprotIDs, eval=TRUE, message=FALSE}
+keys <- c("ENSG00000120088", "ENSG00000135441", "ENSG00000120071")
+res_list90 <- getUniprotIDs(taxId=9606, kt="ENSEMBL", keys=keys, seq_cluster="UNIREF90") 
+id_list <- sapply(names(res_list90), function(x) unique(na.omit(res_list90[[x]]$ID)))
+```
+
+Next, drug-target annotations are returned for the Uniprot IDs from the IDM or
+SSNN methods.  The following example uses the UniProt IDs of the SSNN method.
+Note, to include the upstream Ensembl gene IDs in the final result table, the
+below Ensembl ID collapse step via a `tapply` is necessary since occasionally
+UniProt IDs are assigned to several Ensembl gene IDs (_e.g._ recent gene duplications).
+
+```{r drugTargetQuery2protein, eval=TRUE}
+queryBy <- list(molType="protein", idType="UniProt_ID", ids=id_list[[2]])
+qresultSSNN <- drugTargetAnnot( queryBy, config=config)
+ensidsSSNN <- tapply(res_list90[[2]]$ENSEMBL, res_list90[[2]]$ID, paste, collapse=", ") 
+qresultSSNN <- data.frame(Ensembl_IDs=ensidsSSNN[as.character(qresultSSNN$QueryIDs)], qresultSSNN)
+```
+
+```{r protein_query_result2, eval=TRUE, message=FALSE}
+library(DT)
+datatable(qresultSSNN, filter = 'top', options = list(
+  pageLength = 100, scrollX = TRUE, scrollY = "600px", autoWidth = TRUE
+))
+```
+
+## Using `getDrugTarget` 
+
+The `getDrugTarget` function generates similar results as `drugTargetAnnot`,
+but depends on a pre-computed query table (here `drugTargetAnnot.xls`). As
+mentioned above this function will be deprecated soon and should only be used
+to reproduce old results. 
+
+### Query with Compound IDs
+
+```{r cmp_query2, eval=TRUE}
+id_mapping <- c(chembl="chembl_id", pubchem="PubChem_ID", uniprot="UniProt_ID", drugbank="DrugBank_ID")
+queryBy <- list(molType="cmp", idType="pubchem", ids=c("2244", "65869", "2244"))
+queryBy <- list(molType="protein", idType="uniprot", ids=c("P43166", "P00915", "P43166"))
+queryBy <- list(molType="cmp", idType="drugbank", ids=c("DB00945", "DB01202"))
+#qresult3 <- getDrugTarget(queryBy=queryBy, id_mapping=id_mapping, columns=c(1,5,8,16,17,39,46:53))
+qresult3 <- getDrugTarget(queryBy=queryBy, id_mapping=id_mapping, columns=c(1,5,8,16,17))
+```
+
+```{r cmp_query_result2, eval=TRUE, message=FALSE}
+library(DT)
+datatable(qresult3, filter = 'top', options = list(
+  pageLength = 100, scrollX = TRUE, scrollY = "600px", autoWidth = TRUE
+))
+```
+
+### Query with Protein IDs
+
+```{r protein_query2, eval=TRUE}
+queryBy <- list(molType="protein", idType="chembl", ids=c("CHEMBL25", "nomatch", "CHEMBL1742471"))
+#qresult4 <- getDrugTarget(queryBy=queryBy, id_mapping, columns=c(1,5,8,16,17,39,46:52)) 
+qresult4 <- getDrugTarget(queryBy=queryBy, id_mapping=id_mapping, columns=c(1,5,8,16,17)) 
+```
+
+```{r protein_query_result3, eval=TRUE, message=FALSE}
+library(DT)
+datatable(qresult4, filter = 'top', options = list(
+  pageLength = 100, scrollX = TRUE, scrollY = "600px", autoWidth = TRUE
+))
+```
+
+# Query Bioassay Data
+
+The `drugTargetBioactivity` function returns for a set of compound or gene/protein IDs the
+corresponding bioassay data available in ChEMBL.
+
+## Query with Compound IDs
+
+Example query for compounds IDs.
+
+```{r bioassayQuery1cmp, eval=TRUE}
+queryBy <- list(molType="cmp", idType="DrugBank_ID", ids=c("DB00945", "DB00316", "DB01050"))
+qresultBAcmp <- drugTargetBioactivity(queryBy, config=config)
+```
+
+```{r cmpBA_query_result, eval=TRUE, message=FALSE}
+library(DT)
+datatable(qresultBAcmp, filter = 'top', options = list(
+  pageLength = 100, scrollX = TRUE, scrollY = "600px", autoWidth = TRUE
+))
+```
+
+## Query with Protein IDs
+
+Example query for protein IDs. Note, the Ensembl gene to UniProt ID mappings are derived from above and 
+stored in the named character vector: `ensidsSSNN`.
+
+```{r bioassayQuery1protein, eval=TRUE}
+queryBy <- list(molType="protein", idType="uniprot", ids=id_list[[1]])                                                                                                             
+qresultBApep <- drugTargetBioactivity(queryBy, config=config)                                                                                       
+qresultBApep <- data.frame(Ensembl_IDs=ensidsSSNN[as.character(qresultBApep$UniProt_ID)], qresultBApep)
+```
+
+```{r pepBA_query_result, eval=TRUE, message=FALSE}
+library(DT)
+datatable(qresultBApep, filter = 'top', options = list(
+  pageLength = 100, scrollX = TRUE, scrollY = "600px", autoWidth = TRUE
+))
+```
+
+# Workflow to Run Everything 
+
+This section explains how to run all of the above drug-target interaction
+analysis steps with a few convenience meta functions. Users mainly interested
+in generating analysis results can focus on this section only.
+
+## ID mapping 
+
+The `getSymEnsUp` function returns for a query of gene or protein IDs a mapping
+table containing: ENSEMBL Gene IDs, Gene Names/Symbols, UniProt IDs and ENSEMBL
+Protein IDs. Internally, the function uses the `ensembldb` package. Its results
+are returned in a list where the first slot contains the ID mapping table and
+the subsequent slots the corresponding named character vectors: `ens_gene_id`,
+`up_ens_id`, and `up_gene_id`. Currently, the following query IDs are supported
+by `getSymEnsUp`: `GENE_NAME`, `ENSEMBL_GENE_ID` and `UNIPROT_ID`.
+
+### Query with Gene Names 
+
+```{r gene_name, eval=TRUE, message=FALSE}
+gene_name <- c("CA7", "CFTR")
+idMap <- getSymEnsUp(EnsDb="EnsDb.Hsapiens.v86", ids=gene_name, idtype="GENE_NAME")
+ens_gene_id <- idMap$ens_gene_id
+ens_gene_id
+```
+
+### Query with ENSEBML Gene IDs
+
+```{r ens_gene_id, eval=TRUE, message=FALSE}
+ensembl_gene_id <- c("ENSG00000001626", "ENSG00000168748")
+idMap <- getSymEnsUp(EnsDb="EnsDb.Hsapiens.v86", ids=ensembl_gene_id, idtype="ENSEMBL_GENE_ID")
+ens_gene_id <- idMap$ens_gene_id
+```
+
+### Query with UniProt IDs
+
+```{r ens_uniprot_id, eval=TRUE, message=FALSE}
+uniprot_id <- c("P43166", "P13569") 
+idMap <- getSymEnsUp(EnsDb="EnsDb.Hsapiens.v86", ids=uniprot_id, idtype="UNIPROT_ID")
+ens_gene_id <- idMap$ens_gene_id
+```
+
+## Retrieve UniProt IDs 
+
+The perfect match and nearest neighbor UniProt IDs can be obtained from UniProt's
+UNIREF cluster or BioMart's paralog annotations.
+
+### UNIREF Cluster
+
+The corresponding IDM and SSNN UniProt IDs for the above ENSEMBL gene IDs are
+obtained with the `getUniprotIDs` function. This step is slow since the queries
+have to be performed with `chunksize=1` in order to reliably track the query ENSEMBL 
+gene ID information in the results. 
+
+```{r res_list_ens_gene_id_uniref, eval=FALSE, message=FALSE}
+res_list90 <- getUniprotIDs(taxId=9606, kt="ENSEMBL", keys=names(ens_gene_id), seq_cluster="UNIREF90", chunksize=1)
+sapply(res_list90, dim)
+```
+
+### BioMart Parlogs
+
+Here the corresponding perfect match (IDM) and paralog (SSNN) UniProt IDs for
+the above ENSEMBL gene IDs are obtained with the `getParalogs` function. The
+latter is much faster than `getUniprotIDs` and also covers wider evolutionary
+distances. Thus, it may be the preferred methods for many use cases.
+
+```{r res_list_ens_gene_id_paralog, eval=TRUE, message=FALSE}
+queryBy <- list(molType="gene", idType="ensembl_gene_id", ids=names(ens_gene_id))
+res_list <- getParalogs(queryBy)
+sapply(res_list, dim)
+```
+
+## Drug-Target Data
+
+Both drug-target annotation and bioassay data are obtained with a meta
+function called `runDrugTarget_Annot_Bioassay` that internally uses the main
+processing functions `drugTargetAnnot` and `drugTargetBioactivity`. It
+organizes the result in a list with the annotation and bioassay data
+(`data.frames`) in the first and second slot, respectively. Importantly, the
+results from the IDM and SSNN UniProt IDs are combined in a single table, where
+duplicated rows have been removed. To track in the result table, which method
+was used for obtaining UniProt IDs, an `IDM_Mapping_Type` column has been added.
+Note, the gene IDs in the SSNN rows have the string `Query_` prepended to
+indicate that they are not necessarily the genes encoding the SSNN UniProt
+proteins listed in the corresponding rows.  Instead they are the genes encoding
+the query proteins used for searching for SSNNs.  
+
+```{r runDrugTarget_Annot_Bioassay, eval=TRUE, message=FALSE}
+drug_target_list <- runDrugTarget_Annot_Bioassay(res_list=res_list, up_col_id="ID_up_sp", ens_gene_id, config=config) 
+sapply(drug_target_list, dim)
+```
+
+View content of annotation result slot:
+
+```{r runDrugTarget_Annot_Bioassay_result1, eval=TRUE, message=FALSE}
+datatable(drug_target_list$Annotation, filter = 'top', options = list(
+  pageLength = 100, scrollX = TRUE, scrollY = "600px", autoWidth = TRUE
+))
+```
+
+View content of bioassay result slot (restricted to first 500 rows):
+
+```{r runDrugTarget_Annot_Bioassay_result2, eval=TRUE, message=FALSE}
+datatable(drug_target_list$Bioassay[1:500,], filter = 'top', options = list(
+  pageLength = 100, scrollX = TRUE, scrollY = "600px", autoWidth = TRUE
+))
+```
+
+## Drug-Target Frequency 
+
+The following generates a summary table containing drug-target frequency information.
+
+```{r DrugTargetSummary, eval=TRUE, message=FALSE}
+df <- drug_target_list$Annotation
+df[,"GeneName"] <- gsub("Query_", "", as.character(df$GeneName))
+stats <- tapply(df$CHEMBL_CMP_ID, as.factor(df$GeneName), function(x) unique(x))
+stats <- sapply(names(stats), function(x) stats[[x]][nchar(stats[[x]]) > 0])
+stats <- sapply(names(stats), function(x) stats[[x]][!is.na(stats[[x]])])
+statsDF <- data.frame(GeneNames=names(stats), Drugs=sapply(stats, paste, collapse=", "), N_Drugs=sapply(stats, length))
+```
+
+Print drug-target frequency table.
+
+```{r DrugTargetSummary2, eval=TRUE, message=FALSE}
+datatable(statsDF, filter = 'top', options = list(
+  pageLength = 100, scrollX = TRUE, scrollY = "300px", autoWidth = TRUE
+))
+```
+
+## Write Results to Tabular Files
+
+Both the annotation and bioassay data of the `drug_target_list` object can
+be exported to separate tabular files as follows.
+
+```{r export_annotation_bioassay, eval=FALSE, message=FALSE}
+write.table(drug_target_list$Annotation, "DrugTargetAnnotation.xls", row.names=FALSE, quote=FALSE, na="", sep="\t")
+write.table(drug_target_list$Bioassay, "DrugTargetBioassay.xls", row.names=FALSE, quote=FALSE, na="", sep="\t")
+write.table(statDF, "statDF.xls", row.names=FALSE, quote=FALSE, na="", sep="\t")
+```
+
+# Session Info
+
+```{r sessionInfo}
+sessionInfo()
+```
+
+# References
+
