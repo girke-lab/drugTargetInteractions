@@ -150,18 +150,19 @@ usage of relative rather than absolute paths may be more flexible.
 ```{r dir_env, eval=TRUE}
 
 chembldb = system.file("extdata","chembl_sample.db",package = "drugTargetInteractions")
+resultsPath = system.file("extdata","results",package = "drugTargetInteractions")
+
 #chembldb = "/rhome/khoran/projects/longevity/drugTargetInteractions/inst/extdata/chembl_sample.db"
-#chembldb = "/rhome/khoran/projects/longevity/chembl_27.db"
-message("chembl db path: ",chembldb)
-config = genConfig(chemblDbPath=chembldb)
+#resultsPath = "/rhome/khoran/projects/longevity/drugTargetInteractions/inst/extdata/results"
+config = genConfig(chemblDbPath=chembldb,resultsPath=resultsPath)
 
 ```
 
 ```{r data_setup, eval=TRUE}
-rerun=FALSE
+rerun=TRUE
 downloadUniChem(config=config,rerun=rerun)
 cmpIdMapping(config=config,rerun=rerun)
-drugTargetAnnotTable(outfile=file.path(config$resultsPath,"drugTargetAnnot.xls"),config=config,rerun=rerun )
+#drugTargetAnnotTable(outfile=file.path(config$resultsPath,"drugTargetAnnot.xls"),config=config,rerun=rerun )
 ```
 
 
@@ -331,8 +332,8 @@ id_mapping <- c(chembl="chembl_id", pubchem="PubChem_ID", uniprot="UniProt_ID", 
 queryBy <- list(molType="cmp", idType="pubchem", ids=c("2244", "65869", "2244"))
 queryBy <- list(molType="protein", idType="uniprot", ids=c("P43166", "P00915", "P43166"))
 queryBy <- list(molType="cmp", idType="drugbank", ids=c("DB00945", "DB01202"))
-#qresult3 <- getDrugTarget(queryBy=queryBy, id_mapping=id_mapping, columns=c(1,5,8,16,17,39,46:53))
-qresult3 <- getDrugTarget(queryBy=queryBy, id_mapping=id_mapping, columns=c(1,5,8,16,17))
+#qresult3 <- getDrugTarget(queryBy=queryBy, id_mapping=id_mapping, columns=c(1,5,8,16,17,39,46:53),config=config)
+qresult3 <- getDrugTarget(queryBy=queryBy, id_mapping=id_mapping, columns=c(1,5,8,16,17),config=config)
 ```
 
 ```{r cmp_query_result2, eval=TRUE, message=FALSE}
@@ -346,8 +347,8 @@ datatable(qresult3, filter = 'top', options = list(
 
 ```{r protein_query2, eval=TRUE}
 queryBy <- list(molType="protein", idType="chembl", ids=c("CHEMBL25", "nomatch", "CHEMBL1742471"))
-#qresult4 <- getDrugTarget(queryBy=queryBy, id_mapping, columns=c(1,5,8,16,17,39,46:52)) 
-qresult4 <- getDrugTarget(queryBy=queryBy, id_mapping=id_mapping, columns=c(1,5,8,16,17)) 
+#qresult4 <- getDrugTarget(queryBy=queryBy, id_mapping, columns=c(1,5,8,16,17,39,46:52),config=config) 
+qresult4 <- getDrugTarget(queryBy=queryBy, id_mapping=id_mapping, columns=c(1,5,8,16,17),config=config) 
 ```
 
 ```{r protein_query_result3, eval=TRUE, message=FALSE}

@@ -1,11 +1,11 @@
 Package: drugTargetInteractions
 Type: Package
 Title: Drug-Target Interactions
-Version: 1.0.13
-Date: 2020-09-14
+Version: 1.0.14
+Date: 2020-11-30
 Author: Thomas Girke
 Maintainer: Thomas Girke <thomas.girke@ucr.edu>
-Description: More about what it does (maybe more than one line)
+Description: Provides utilities for identifying drug-target interactions for sets of small molecule or gene/protein identifiers. The required drug-target interaction information is obained from a local SQLite instance of the ChEMBL database. 
 Depends: methods
 Imports: stats,utils,BiocGenerics, R.utils, BatchJobs, BiocParallel, RSQLite, UniProt.ws, biomaRt,ensembldb
 Suggests: RUnit, BiocStyle, knitr, rmarkdown, ggplot2, reshape2

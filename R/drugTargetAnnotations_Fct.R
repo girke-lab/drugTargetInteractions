@@ -9,8 +9,6 @@ genConfig<- function(
 	downloadPath = "downloads",
 	resultsPath = "results" ){
 
-	if(! file.exists(chemblDbPath))
-		warning("no chembl db found at ",chemblDbPath)
 	if(!dir.exists(downloadPath))
 		dir.create(downloadPath)
 	if(!dir.exists(resultsPath))
@@ -36,6 +34,24 @@ downloadUniChem <- function(rerun=TRUE,config = genConfig()) {
         ## ChEMBL to ChEBI mapping in src1src7.txt.gz
         download.file("ftp://ftp.ebi.ac.uk/pub/databases/chembl/UniChem/data/wholeSourceMapping/src_id1/src1src7.txt.gz", file.path(config$downloadPath,"src1src7.txt.gz"))
     }
+}
+downloadChemblDb <- function(version,rerun=TRUE,config=genConfig()){
+	if(rerun==TRUE){
+		url = paste("ftp://ftp.ebi.ac.uk/pub/databases/chembl/ChEMBLdb/latest/chembl_",version,"_sqlite.tar.gz",sep="")
+		tarFile = file.path(config$downloadPath,"chembl_sqlite.tar.gz")
+		tempDir = tempdir()
+
+		dbPath = paste("chembl_",version,"/chembl_",version,"_sqlite/chembl_",version,".db",sep="")
+		download.file(url,tarFile)
+		untar(tarFile,c(dbPath),exdir=tempDir)
+		sourceDbFile = file.path(tempDir,
+										 paste("chembl_",version,sep=""),
+										 paste("chembl_",version,"_sqlite",sep=""),
+										 paste("chembl_",version,".db",sep=""))
+
+		file.copy(from=sourceDbFile, to = config$chemblDbPath)
+		file.remove(sourceDbFile)
+	}
 }
 ## Usage:
 #downloadUniChem(rerun=FALSE)
@@ -321,8 +337,6 @@ drugTargetAnnot <- function(queryBy=list(molType=NULL, idType=NULL, ids=NULL), c
         #                          "GROUP BY d.molregno, c.accession
         #                           ORDER BY c.accession, c.description"))
         
-		  message("drugTargetAnnot accession: ")
-		  print(idvec)
         ## Current version
         myquery <- dbSendQuery(mydb, paste("SELECT d.molregno, e.chembl_id, e.pref_name AS Drug_Name, d.mechanism_of_action AS MOA, d.action_type AS Action_Type, 
                                                    e.first_approval AS First_Approval, a.chembl_id AS ChEMBL_TID, d.tid AS TID, c.accession AS UniProt_ID, 
@@ -349,17 +363,20 @@ drugTargetAnnot <- function(queryBy=list(molType=NULL, idType=NULL, ids=NULL), c
         }
         if(queryBy$idType=="chembl_id") {
             cmp_ids <- cmp_ids[!duplicated(cmp_ids$chembl_id),]
-            cmpvec <- as.character(cmp_ids$molregno); names(cmpvec) <- as.character(cmp_ids$chembl_id)     
+            cmpvec <- as.character(cmp_ids$molregno); 
+				names(cmpvec) <- as.character(cmp_ids$chembl_id)     
             cmpvec <- cmpvec[queryBy$ids]
         }
         if(queryBy$idType=="PubChem_ID") {
             cmp_ids <- cmp_ids[!duplicated(cmp_ids$PubChem_ID),]
-            cmpvec <- as.character(cmp_ids$molregno); names(cmpvec) <- as.character(cmp_ids$PubChem_ID)     
+            cmpvec <- as.character(cmp_ids$molregno); 
+				names(cmpvec) <- as.character(cmp_ids$PubChem_ID)     
             cmpvec <- cmpvec[queryBy$ids]
         }
         if(queryBy$idType=="DrugBank_ID") {
             cmp_ids <- cmp_ids[!duplicated(cmp_ids$DrugBank_ID),]
-            cmpvec <- as.character(cmp_ids$molregno); names(cmpvec) <- as.character(cmp_ids$DrugBank_ID)     
+            cmpvec <- as.character(cmp_ids$molregno); 
+				names(cmpvec) <- as.character(cmp_ids$DrugBank_ID)     
             cmpvec <- cmpvec[queryBy$ids]
         }
         idvec <- paste0("(\"", paste(cmpvec, collapse="\", \""), "\")") 
@@ -384,8 +401,6 @@ drugTargetAnnot <- function(queryBy=list(molType=NULL, idType=NULL, ids=NULL), c
         #                          "GROUP BY e.molregno, c.accession
         #                           ORDER BY e.molregno, e.pref_name"))
         
-		  message("drugTargetAnnot molregno: ")
-		  print(idvec)
 
         ## Current version
         myquery <- dbSendQuery(mydb, paste("SELECT a.molregno, a.chembl_id, a.pref_name AS Drug_Name, b.mechanism_of_action AS MOA, 
@@ -497,7 +512,6 @@ getDrugTarget <- function(dt_file=file.path(config$resultsPath,"drugTargetAnnot.
         return(df)
     }
     df <- .queryFct(dt_file, myid)
-	 #print(df[1:2,])
     dfsub <- df[,columns]
     rownames(dfsub) <- NULL
     return(dfsub)
@@ -595,7 +609,9 @@ cmpIdMapping <- function(outfile=file.path(config$resultsPath,"cmp_ids.rds"), re
         chembl2chebi_vec <- tapply(as.character(chembl2chebi[,2]), factor(chembl2chebi[,1]), paste, collapse=", ")
         ## Create final CMP ID mapping table (very slow!!)
         # cmp_ids <- cbind(chemblid_lookup, PubChem_ID=chembl2pubchem_vec[as.character(chemblid_lookup$chembl_id)], DrugBank_ID=chembl2drugbank_vec[as.character(chemblid_lookup$chembl_id)], ChEBI_ID=chembl2chebi_vec[as.character(chemblid_lookup$chembl_id)])
-        cmp_ids <- cbind(chemblid_lookup, PubChem_ID=chembl2pubchem_vec[as.character(chemblid_lookup$chembl_id)], DrugBank_ID=chembl2drugbank_vec[as.character(chemblid_lookup$chembl_id)])
+        cmp_ids <- cbind(chemblid_lookup, 
+								 PubChem_ID=chembl2pubchem_vec[as.character(chemblid_lookup$chembl_id)], 
+								 DrugBank_ID=chembl2drugbank_vec[as.character(chemblid_lookup$chembl_id)])
         saveRDS(cmp_ids, outfile)
     }
 }
@@ -636,8 +652,6 @@ drugTargetBioactivity <- function( queryBy=list(molType=NULL, idType=NULL, ids=N
         ## Kevin's version
         # myquery <- dbSendQuery(mydb, paste(mainQuery, "WHERE component_sequences.accession IN", idvec))
         
-		  message("component_sequence accession idvec: ")
-		  print(idvec)
 
         ## Current version
         #myquery <- dbSendQuery(mydb, paste("SELECT activities.molregno, pref_name, activity_id, assays.chembl_id AS chembl_assay_id, accession AS UniProt_ID, component_sequences.description, organism, drug_indication.mesh_heading, activities.standard_value, activities.standard_units, activities.standard_flag, activities.standard_type
@@ -674,8 +688,6 @@ drugTargetBioactivity <- function( queryBy=list(molType=NULL, idType=NULL, ids=N
             cmpvec <- cmpvec[queryBy$ids]
         }
         idvec <- paste0("(\"", paste(cmpvec, collapse="\", \""), "\")") 
-		  message("molregno: ")
-		  print(idvec)
         
         ## Kevin's version
         # myquery <- dbSendQuery(mydb, paste(mainQuery, "WHERE activities.molregno IN", idvec))
