@@ -2,7 +2,7 @@ Package: drugTargetInteractions
 Type: Package
 Title: Drug-Target Interactions
 Version: 1.0.14
-Date: 2020-11-30
+Date: 2020-12-03
 Author: Thomas Girke
 Maintainer: Thomas Girke <thomas.girke@ucr.edu>
 Description: Provides utilities for identifying drug-target interactions for sets of small molecule or gene/protein identifiers. The required drug-target interaction information is obained from a local SQLite instance of the ChEMBL database. 
