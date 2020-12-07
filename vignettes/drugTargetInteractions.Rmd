@@ -1,6 +1,6 @@
 ---
 title: Drug-Target Interactions 
-author: "Authors: Yuzhu Duan, Dan Evans, Jamison McCorrison, Nicholas Schork, Kevin Horan, Austin Leong, Xinyang Li, Siddharth Sai and Thomas Girke"
+author: "Authors: Kevin Horan, Yuzhu Duan, Austin Leong, Dan Evans, Jamison McCorrison, Nicholas Schork and Thomas Girke"
 date: "Last update: `r format(Sys.time(), '%d %B, %Y')`" 
 always_allow_html: yes
 output:
@@ -38,139 +38,100 @@ knitr::opts_chunk$set(
     cache=as.logical(Sys.getenv("KNITR_CACHE", "TRUE")))
 ```
 
-
-# Access information
-
-This page is password protected. The access information is:
-
-+ URL: [http://bit.ly/2Fl7CbU](http://bit.ly/2Fl7CbU)
-+ User name: `longevity`
-+ ***REMOVED***
-
-The corresponding GitHub repository is available [here](https://github.com/longevity-consortium/LC_Chemoinformatics). 
-Currently, this repository is private. To request access, please email thomas.girke@ucr.edu.
-
 # Introduction
 
 ## Overview
 
 The `drugTargetInteractions` package provides utilities for identifying
-drug-target interactions for sets of small molecule or gene/protein
-identifiers [@Wu2006-jm]. The required drug-target interaction information is obained from 
-a local SQLite instance of the ChEMBL database [@Gaulton2012-dv; @Bento2014-ry]. 
+drug-target interactions for sets of small molecule and/or gene/protein
+identifiers [@Wu2006-jm]. The required drug-target interaction information is
+obained from a downloaded SQLite instance of the [ChEMBL](https://www.ebi.ac.uk/chembl/) 
+database [@Gaulton2012-dv; @Bento2014-ry]. ChEMBL has been chosen for this purpose, 
+because it provides one of the most comprehensive and best annotatated knowledge resources
+for drug-target information available in the public domain.
 
+## Install Package
 
-## About this report
+As Bioconductor package `drugTargetInteraction` can be installed with the `BiocManager::install()` function.
 
-This report uses R Markdown to maintain a high level of reprodicibility of the
-analysis code. The following links to the source code and the rendered HTML and
-PDF versions of the report. 
-
-+ [Rendered report (HTML)](https://github.com/longevity-consortium/LC_Chemoinformatics/blob/master/Rpackages/drugTargetInteractions/vignettes/drugTargetInteractions.html)
-+ [Rendered report (PDF)](https://github.com/longevity-consortium/LC_Chemoinformatics/blob/master/Rpackages/drugTargetInteractions/vignettes/drugTargetInteractions.pdf)
-+ [R markdown (Rmd)](https://github.com/longevity-consortium/LC_Chemoinformatics/blob/master/Rpackages/drugTargetInteractions/vignettes/drugTargetInteractions.Rmd)
-+ [R code only (R)](https://github.com/longevity-consortium/LC_Chemoinformatics/blob/master/Rpackages/drugTargetInteractions/vignettes/drugTargetInteractions.R)
-
-__How to navigate this report?__
-
-By default the code sections of this analysis report are shown. To hide all
-of them at once, click on the top right corner the `Code` button and then
-select `Hide All Code`. Individual code sections can also be hidden and expanded on demand
-by clicking the corresponding `Code` buttons available on the right side
-along the text. 
-
-## Install package
-
-The following shows how to install the package with the `install_github`
-function of the `devtools` package. Since the GitHub repository of the 
-package is private, a personal access token (PAT) needs to be assigned to the
-`GITHUB_PAT` variable (here: `GITHUB_PAT=<PAT>`) in a user's `.Renviron`
-file. The function call `github_pat()` will pass this variable to the
-`auth_token` argument (see below). PATs can be generated on GitHub
-[here](https://github.com/settings/tokens). More install details are available
-on the [README](https://github.com/longevity-consortium/LC_Chemoinformatics) page of
-the package repository.
-
-```{r pkg_install, eval=FALSE}
-library(devtools)
-install_github("longevity-consortium/LC_Chemoinformatics", subdir="Rpackages/drugTargetInteractions", auth_token=github_pat())
+```{r pkg_install_bioc, eval=FALSE}
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+BiocManager::install("drugTargetInteractions")
 ```
 
-## Resource request on HPC Cluster                                                                                                                                                       
+Alternatively, the package can be installed from GitHub as follows. 
 
-The following is only relevant for HPC Cluster users and can be skipped by other users. The `srun` command
-establishes an interactive session on a computer node. Subsequently, R can be started from there.
-
-```{r cluster_session, eval=FALSE}
-# $ sinfo                                                                                                                                                                 
-# $ srun --x11 --partition=girkelab --mem=20gb --cpus-per-task 1 --ntasks 1 --time 20:00:00 --pty bash -l
+```{r pkg_install_github, eval=FALSE}
+devtools::install_github("girke-lab/drugTargetInteractions", build_vignettes=TRUE) # Installs from github
 ```
 
-## Load packages
+## Load Package and Access Help
 
-Package load and help commands
+To use `drugTargetInteractions`, the package needs to be loaded in a user's R session.
 
-```{r documentation, eval=TRUE}
+```{r package load, eval=TRUE, warning=FALSE}
 library("drugTargetInteractions") # Loads the package
-# library(help="drugTargetInteractions") # Lists package info
-# vignette(topic="drugTargetInteractions", package="drugTargetInteractions") # Opens vignette
 ```
 
-# Working environment
+The following commands are useful to list the available help files and open the 
+the vignette of the package.
 
-## Import custom functions 
-
-Custem functions can be imported with the `source` command from a local R
-script (here `drugTargetInteractions_Fct.R`).  Skip this step if such a script
-is not available.
-
-```{r source_fct, eval=FALSE}
- source("/rhome/khoran/projects/longevity/drugTargetInteractions/R/drugTargetAnnotations_Fct.R")
+```{r documentation, eval=FALSE}
+library(help="drugTargetInteractions") # Lists package info
+vignette(topic="drugTargetInteractions", package="drugTargetInteractions") # Opens vignette
 ```
 
-## Required files and directories
+# Working Environment
 
-When using the `drugTargetInteractions` package it is necessary to download and uncompress
-a recent SQLite instance of the ChEMBL database either from [here](ftp://ftp.ebi.ac.uk/pub/databases/chembl/ChEMBLdb/) 
-or a custom copy from [here](http://cluster.hpcc.ucr.edu/~tgirke/projects/longevity/LongevityConsortium/drugTargetInteraction/chembl_24.db);
-as well as a precomputed lookup table for translating compound identifiers from [here](http://cluster.hpcc.ucr.edu/~tgirke/projects/longevity/LongevityConsortium/drugTargetInteraction/cmp_ids.rds). 
-This lookup table has been generated from [UniChem](ftp://ftp.ebi.ac.uk/pub/databases/chembl/UniChem/data/wholeSourceMapping/).
-In addition, the sample code of this manual expects three sub-directories in the
-working environment of a user's R session that are named `data`, `results` and `downloads`.
-The names of these directories can be changed but then the paths in the
-following code needs to be adjusted accordingly.  
+## Required Files and Directories
 
-The following assigns the absolute paths of the above five dependencies (here 2
-datasets and 3 directories) to variables. Note, the exact paths apply to the
-environment of the author of this package, and thus have to be changed to the
-situation on a user's systems. Without assigning here the correct paths the 
-subsequent analysis code is unlikely to work without errors. In many cases the
-usage of relative rather than absolute paths may be more flexible. 
+The `drugTargetInteractions` package uses a downloaded SQLite instance of the
+[ChEMBL](https://www.ebi.ac.uk/chembl/) database. The following code in this
+vignette uses a slimmed down toy version of this database that is small enough
+to be included in this package for demonstrating the usage of its functions.
+For real drug-target analysis work, it is important that users download and
+uncompress a recent version of the ChEMBL SQLite database from
+[here](ftp://ftp.ebi.ac.uk/pub/databases/chembl/ChEMBLdb/), and then replace
+the path assigned to `chembldb` below with the path to the full version of the
+ChEMBL database they have downloaded to their system. Since the SQLite database
+from ChEMBL can be used as is by this package, creating a copy of the ChEMBL
+SQLite database on Bioconductor's
+[AnnotationHub](https://bioconductor.org/packages/release/bioc/html/AnnotationHub.html)
+is not necessary at this point. This way users can always use the latest or
+historical versions of ChEMBL without the need of updating mirror instances. 
+
+The following `genConfig` function call creates a list containing the paths to
+input and output directories used by the sample code introduced in this
+vignette.  For real analyses, users want to customize these paths to match the
+environment on their system. Usually, this means all paths generated by the
+`system.file` function need to be changed, as those are specific to work with
+the test data of a package (_e.g._ toy ChEMBL SQLite instance).
 
 ```{r dir_env, eval=TRUE}
-
-chembldb = system.file("extdata","chembl_sample.db",package = "drugTargetInteractions")
-resultsPath = system.file("extdata","results",package = "drugTargetInteractions")
-
-#chembldb = "/rhome/khoran/projects/longevity/drugTargetInteractions/inst/extdata/chembl_sample.db"
-#resultsPath = "/rhome/khoran/projects/longevity/drugTargetInteractions/inst/extdata/results"
-config = genConfig(chemblDbPath=chembldb,resultsPath=resultsPath)
-
+chembldb <- system.file("extdata", "chembl_sample.db", package="drugTargetInteractions")
+resultsPath <- system.file("extdata", "results", package="drugTargetInteractions")
+config <- genConfig(chemblDbPath=chembldb, resultsPath=resultsPath)
 ```
+
+In addition, a lookup table is downloaded on the fly from UniChem (see [web
+page](https://www.ebi.ac.uk/unichem/ucquery/listSources) and corresponding [ftp
+site](ftp://ftp.ebi.ac.uk/pub/databases/chembl/UniChem/data/wholeSourceMapping/).
+This lookup table is used by `drugTargetInteractions` to translate compound
+identifiers across different drug databases. Currently, this includes three types of 
+compound identifiers: DrugBank, PubChem, and ChEBI. 
 
 ```{r data_setup, eval=TRUE}
 rerun=TRUE
-downloadUniChem(config=config,rerun=rerun)
-cmpIdMapping(config=config,rerun=rerun)
-#drugTargetAnnotTable(outfile=file.path(config$resultsPath,"drugTargetAnnot.xls"),config=config,rerun=rerun )
+downloadUniChem(config=config, rerun=rerun)
+cmpIdMapping(config=config, rerun=rerun)
 ```
-
 
 # Produce Results Quickly
 
 Users mainly interested in generating analysis results can can skip the
 technical details in the following sections and continue with the section
-entitled [Workflow to Run Everything](#8_workflow_to_run_everything).
+entitled [Workflow to Run Everything](#7_Workflow_to_Run_Everything).
 
 # Retrieve UniProt IDs
 
@@ -203,9 +164,7 @@ The following shows the first `data.frame` containing the ID mapping results.
 
 ```{r getUniprotIDs2, eval=TRUE, message=FALSE}
 library(DT)
-datatable(res_list90[[1]], filter = 'top', options = list(
-  pageLength = 100, scrollX = TRUE, scrollY = "600px", autoWidth = TRUE
-))
+datatable(res_list90[[1]])
 ```
 The following shows how to return the dimensions of the two `data.frames` and how to
 obtain the UniProt IDs as character vectors required for the downstream analysis steps.
@@ -232,9 +191,7 @@ The following shows the first `data.frame` containing the ID mapping results.
 
 ```{r getParalogs2, eval=TRUE, message=FALSE}
 library(DT)
-datatable(res_list[[1]], filter = 'top', options = list(
-  pageLength = 100, scrollX = TRUE, scrollY = "600px", autoWidth = TRUE
-))
+datatable(res_list[[1]])
 ```
 The following shows how to return the dimensions of the two `data.frames` and how to
 obtain the UniProt IDs as character vectors required for the downstream analysis steps.
@@ -267,9 +224,7 @@ qresult1 <- drugTargetAnnot(queryBy, config=config)
 
 ```{r cmp_query_result1, eval=TRUE, message=FALSE}
 library(DT)
-datatable(qresult1, filter = 'top', options = list(
-  pageLength = 100, scrollX = TRUE, scrollY = "600px", autoWidth = TRUE
-))
+datatable(qresult1)
 ```
 
 ### Query with Protein IDs
@@ -281,9 +236,7 @@ qresult2 <- drugTargetAnnot(queryBy, config=config)
 
 ```{r protein_query_result1, eval=TRUE, message=FALSE}
 library(DT)
-datatable(qresult2, filter = 'top', options = list(
-  pageLength = 100, scrollX = TRUE, scrollY = "600px", autoWidth = TRUE
-))
+datatable(qresult2)
 ```
 
 ### Query with Gene IDs
@@ -313,9 +266,7 @@ qresultSSNN <- data.frame(Ensembl_IDs=ensidsSSNN[as.character(qresultSSNN$QueryI
 
 ```{r protein_query_result2, eval=TRUE, message=FALSE}
 library(DT)
-datatable(qresultSSNN, filter = 'top', options = list(
-  pageLength = 100, scrollX = TRUE, scrollY = "600px", autoWidth = TRUE
-))
+datatable(qresultSSNN)
 ```
 
 ## Using `getDrugTarget` 
@@ -338,9 +289,7 @@ qresult3 <- getDrugTarget(queryBy=queryBy, id_mapping=id_mapping, columns=c(1,5,
 
 ```{r cmp_query_result2, eval=TRUE, message=FALSE}
 library(DT)
-datatable(qresult3, filter = 'top', options = list(
-  pageLength = 100, scrollX = TRUE, scrollY = "600px", autoWidth = TRUE
-))
+datatable(qresult3)
 ```
 
 ### Query with Protein IDs
@@ -353,9 +302,7 @@ qresult4 <- getDrugTarget(queryBy=queryBy, id_mapping=id_mapping, columns=c(1,5,
 
 ```{r protein_query_result3, eval=TRUE, message=FALSE}
 library(DT)
-datatable(qresult4, filter = 'top', options = list(
-  pageLength = 100, scrollX = TRUE, scrollY = "600px", autoWidth = TRUE
-))
+datatable(qresult4)
 ```
 
 # Query Bioassay Data
@@ -374,9 +321,7 @@ qresultBAcmp <- drugTargetBioactivity(queryBy, config=config)
 
 ```{r cmpBA_query_result, eval=TRUE, message=FALSE}
 library(DT)
-datatable(qresultBAcmp, filter = 'top', options = list(
-  pageLength = 100, scrollX = TRUE, scrollY = "600px", autoWidth = TRUE
-))
+datatable(qresultBAcmp)
 ```
 
 ## Query with Protein IDs
@@ -392,9 +337,7 @@ qresultBApep <- data.frame(Ensembl_IDs=ensidsSSNN[as.character(qresultBApep$UniP
 
 ```{r pepBA_query_result, eval=TRUE, message=FALSE}
 library(DT)
-datatable(qresultBApep, filter = 'top', options = list(
-  pageLength = 100, scrollX = TRUE, scrollY = "600px", autoWidth = TRUE
-))
+datatable(qresultBApep)
 ```
 
 # Workflow to Run Everything 
@@ -491,17 +434,13 @@ sapply(drug_target_list, dim)
 View content of annotation result slot:
 
 ```{r runDrugTarget_Annot_Bioassay_result1, eval=TRUE, message=FALSE}
-datatable(drug_target_list$Annotation, filter = 'top', options = list(
-  pageLength = 100, scrollX = TRUE, scrollY = "600px", autoWidth = TRUE
-))
+datatable(drug_target_list$Annotation)
 ```
 
 View content of bioassay result slot (restricted to first 500 rows):
 
 ```{r runDrugTarget_Annot_Bioassay_result2, eval=TRUE, message=FALSE}
-datatable(drug_target_list$Bioassay[1:500,], filter = 'top', options = list(
-  pageLength = 100, scrollX = TRUE, scrollY = "600px", autoWidth = TRUE
-))
+datatable(drug_target_list$Bioassay[1:500,])
 ```
 
 ## Drug-Target Frequency 
@@ -520,9 +459,7 @@ statsDF <- data.frame(GeneNames=names(stats), Drugs=sapply(stats, paste, collaps
 Print drug-target frequency table.
 
 ```{r DrugTargetSummary2, eval=TRUE, message=FALSE}
-datatable(statsDF, filter = 'top', options = list(
-  pageLength = 100, scrollX = TRUE, scrollY = "300px", autoWidth = TRUE
-))
+datatable(statsDF)
 ```
 
 ## Write Results to Tabular Files

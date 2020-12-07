@@ -4,7 +4,7 @@
 ## Author: Thomas Girke
 ## Last update: 05-Apr-20
 
-genConfig<- function(
+genConfig <- function(
 	chemblDbPath = "chembldb.db",
 	downloadPath = "downloads",
 	resultsPath = "results" ){
