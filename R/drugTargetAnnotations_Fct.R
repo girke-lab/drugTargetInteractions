@@ -9,8 +9,8 @@ genConfig <- function(
 	downloadPath = "downloads",
 	resultsPath = "results" ){
 
-	if(!dir.exists(downloadPath))
-		dir.create(downloadPath)
+	#if(!dir.exists(downloadPath))
+	#	dir.create(downloadPath)
 	if(!dir.exists(resultsPath))
 		dir.create(resultsPath)
 	return(list(chemblDbPath=chemblDbPath,downloadPath=downloadPath,resultsPath=resultsPath))
@@ -25,21 +25,59 @@ genConfig <- function(
 ## Note: above html table gives numbering to select proper src_id for ftp downloads, e.g. DrugBank is src2
 ##      ftp://ftp.ebi.ac.uk/pub/databases/chembl/UniChem/data/wholeSourceMapping/
 ## Examples:
+
+.getCache <- function(){
+	return(BiocFileCache(cache = rappdirs::user_cache_dir(appname="drugTargetInteractions"),ask=FALSE))
+}
+.getCacheFile <- function(name){
+	return(dplyr::arrange(bfcquery(.getCache(),name,field=c("rname")),desc(create_time))[1,"rpath"][[1]])
+}
+
+.downloadFile <- function(url,name, verbose = FALSE )
+{
+
+    bfc <- .getCache()
+    rid <- bfcquery(bfc, name, "rname")$rid
+    if (length(rid) == 0) {
+     if( verbose )
+         message( "Downloading ",name)
+     rid <- names(bfcadd(bfc, name, url))
+    }
+    if(!isFALSE(bfcneedsupdate(bfc, rid)))
+		 bfcdownload(bfc, rid)
+
+    bfcrpath(bfc, rids = rid)
+}
+.cacheFileFromZip <- function(zipFileUrl, name) {
+	tempDir = tempdir()
+	zipFile = file.path(tempDir,name)
+
+	download.file(zipFileUrl,zipFile)
+	unzip(zipFile,exdir=tempDir)
+
+	bfc=.getCache()
+	rid=names(bfcadd(bfc,name,file.path(tempDir,name),action="move"))
+
+	bfcrpath(bfc,rids=rid)
+}
 downloadUniChem <- function(rerun=TRUE,config = genConfig()) {
     if(rerun==TRUE) {
+		  urlBase = "ftp://ftp.ebi.ac.uk/pub/databases/chembl/UniChem/data/wholeSourceMapping/src_id1/"
+		  bfc = .getCache()
         ## ChEMBL to DrugBank mapping in src1src2.txt.gz: 
-        download.file("ftp://ftp.ebi.ac.uk/pub/databases/chembl/UniChem/data/wholeSourceMapping/src_id1/src1src2.txt.gz", file.path(config$downloadPath,"src1src2.txt.gz"))
+		  .downloadFile(paste(urlBase,"src1src2.txt.gz",sep=""),"src1src2.txt.gz")
         ## ChEMBL to PubChem CID mapping in src1src22.txt.gz
-        download.file("ftp://ftp.ebi.ac.uk/pub/databases/chembl/UniChem/data/wholeSourceMapping/src_id1/src1src22.txt.gz", file.path(config$downloadPath,"src1src22.txt.gz"))
+		  .downloadFile(paste(urlBase,"src1src22.txt.gz",sep=""),"src1src22.txt.gz")
         ## ChEMBL to ChEBI mapping in src1src7.txt.gz
-        download.file("ftp://ftp.ebi.ac.uk/pub/databases/chembl/UniChem/data/wholeSourceMapping/src_id1/src1src7.txt.gz", file.path(config$downloadPath,"src1src7.txt.gz"))
+		  .downloadFile(paste(urlBase,"src1src7.txt.gz",sep=""),"src1src7.txt.gz")
     }
+	 invisible(NULL) 
 }
 downloadChemblDb <- function(version,rerun=TRUE,config=genConfig()){
 	if(rerun==TRUE){
 		url = paste("ftp://ftp.ebi.ac.uk/pub/databases/chembl/ChEMBLdb/latest/chembl_",version,"_sqlite.tar.gz",sep="")
-		tarFile = file.path(config$downloadPath,"chembl_sqlite.tar.gz")
 		tempDir = tempdir()
+		tarFile = file.path(tempDir,"chembl_sqlite.tar.gz")
 
 		dbPath = paste("chembl_",version,"/chembl_",version,"_sqlite/chembl_",version,".db",sep="")
 		download.file(url,tarFile)
@@ -49,8 +87,11 @@ downloadChemblDb <- function(version,rerun=TRUE,config=genConfig()){
 										 paste("chembl_",version,"_sqlite",sep=""),
 										 paste("chembl_",version,".db",sep=""))
 
-		file.copy(from=sourceDbFile, to = config$chemblDbPath)
-		file.remove(sourceDbFile)
+		bfc=.getCache()
+		rid=names(bfcadd(bfc,paste("chembl_",version,".db",sep=""),sourceDbFile,action="move"))
+		return(bfcrpath(bfc,rids=rid))
+		#file.copy(from=sourceDbFile, to = config$chemblDbPath)
+		#file.remove(sourceDbFile)
 	}
 }
 ## Usage:
@@ -287,8 +328,11 @@ getParalogs <- function(queryBy) {
 
 ## Function to query known drug-target annotations
 drugTargetAnnot <- function(queryBy=list(molType=NULL, idType=NULL, ids=NULL), cmpid_file=file.path(config$resultsPath,"cmp_ids.rds"), config=genConfig()) {
-    if(any(names(queryBy) != c("molType", "idType", "ids"))) stop("All three list components in 'queryBy' (named: 'molType', 'idType' and 'ids') need to be present.")
-    if(any(sapply(queryBy, length) == 0)) stop("All components in 'queryBy' list need to be populated with corresponding character vectors.")
+
+    if(any(names(queryBy) != c("molType", "idType", "ids"))) 
+		 stop("All three list components in 'queryBy' (named: 'molType', 'idType' and 'ids') need to be present.")
+    if(any(sapply(queryBy, length) == 0)) 
+		 stop("All components in 'queryBy' list need to be populated with corresponding character vectors.")
 
     
     ## Load ChEMBL SQLite
@@ -455,13 +499,17 @@ drugTargetAnnotTable <- function(outfile, rerun=TRUE,config=genConfig()) {
 
         ## Get UniChem Info
         ## ChEMBL to DrubBank mapping in src1src2.txt.gz: 
-        chembl2drugbank <- read.delim(gzfile(file.path(config$downloadPath,"src1src2.txt.gz")))
+
+        chembl2drugbank <- read.delim(gzfile(.getCacheFile("src1src2.txt.gz")))
+        #chembl2drugbank <- read.delim(gzfile(file.path(config$downloadPath,"src1src2.txt.gz")))
         chembl2drugbank_vec <- tapply(as.character(chembl2drugbank[,2]), factor(chembl2drugbank[,1]), paste, collapse=", ")
         ## ChEMBL to PubChem CID mapping in src1src22.txt.gz
-        chembl2pubchem <- read.delim(gzfile(file.path(config$downloadPath,"src1src22.txt.gz")))
+        chembl2pubchem <- read.delim(gzfile(.getCacheFile("src1src22.txt.gz")))
+        #chembl2pubchem <- read.delim(gzfile(file.path(config$downloadPath,"src1src22.txt.gz")))
         chembl2pubchem_vec <- tapply(as.character(chembl2pubchem[,2]), factor(chembl2pubchem[,1]), paste, collapse=", ")
         ## ChEMBL to ChEBI mapping in src1src7.txt.gz
-        chembl2chebi <- read.delim(gzfile(file.path(config$downloadPath,"src1src7.txt.gz")))
+        chembl2chebi <- read.delim(gzfile(.getCacheFile("src1src7.txt.gz")))
+        #chembl2chebi <- read.delim(gzfile(file.path(config$downloadPath,"src1src7.txt.gz")))
         chembl2chebi_vec <- tapply(as.character(chembl2chebi[,2]), factor(chembl2chebi[,1]), paste, collapse=", ")
         allmech <- cbind(allmech, PubChem_ID=chembl2pubchem_vec[allmech$chembl_id], DrugBank_ID=chembl2drugbank_vec[allmech$chembl_id], ChEBI_ID=chembl2chebi_vec[allmech$chembl_id])
 
@@ -531,10 +579,12 @@ getDrugTarget <- function(dt_file=file.path(config$resultsPath,"drugTargetAnnot.
 ## Source file of DrugAge is linked here: http://genomics.senescence.info/drugs/ 
 processDrugage <- function(drugagefile=file.path(config$resultsPath,"drugage_id_mapping.xls"), redownloaddrugage=TRUE,config=genConfig()) {
     if(redownloaddrugage==TRUE) {
-        download.file("http://genomics.senescence.info/drugs/dataset.zip", file.path(config$downloadPath,"dataset.zip"))
-        unzip(file.path(config$downloadPath,"dataset.zip"), exdir=config$downloadPath)
+		  .cacheFileFromZip( "http://genomics.senescence.info/drugs/dataset.zip","drugage.csv")
+        #download.file("http://genomics.senescence.info/drugs/dataset.zip", file.path(config$downloadPath,"dataset.zip"))
+        #unzip(file.path(config$downloadPath,"dataset.zip"), exdir=config$downloadPath)
     }
-    drugage <- read.csv(file.path(config$downloadPath,"drugage.csv"))
+    drugage <- read.csv(.getCacheFile("drugage.csv"))
+    #drugage <- read.csv(file.path(config$downloadPath,"drugage.csv"))
     drugage <- drugage[!duplicated(drugage$compound_name),]
     ## Get mol_dict table from chembl_db
     chembldb <- config$chemblDbPath
@@ -545,9 +595,11 @@ processDrugage <- function(drugagefile=file.path(config$resultsPath,"drugage_id_
     chemblid <- as.character(mol_dict_sub$chembl_id)
     fact <- tapply(chemblid, factor(prefname), paste, collapse=", ")
     ## Load ChEMBL to PubChem CID and DrugBank ID mappings (generated above with downloadUniChem Fct)
-    chembl2pubchem <- read.delim(gzfile(file.path(config$downloadPath,"src1src22.txt.gz")))
+    chembl2pubchem <- read.delim(gzfile(.getCacheFile("src1src22.txt.gz")))
+    #chembl2pubchem <- read.delim(gzfile(file.path(config$downloadPath,"src1src22.txt.gz")))
     chembl2pubchem_vec <- tapply(as.character(chembl2pubchem[,2]), factor(chembl2pubchem[,1]), paste, collapse=", ")
-    chembl2drugbank <- read.delim(gzfile(file.path(config$downloadPath,"src1src2.txt.gz")))
+    chembl2drugbank <- read.delim(gzfile(.getCacheFile("src1src2.txt.gz")))
+    #chembl2drugbank <- read.delim(gzfile(file.path(config$downloadPath,"src1src2.txt.gz")))
     chembl2drugbank_vec <- tapply(as.character(chembl2drugbank[,2]), factor(chembl2drugbank[,1]), paste, collapse=", ")
     ## Assemble results
     drugage <- cbind(drugage, pref_name=names(fact[toupper(drugage$compound_name)]), chembl_id=fact[toupper(drugage$compound_name)])
@@ -563,9 +615,12 @@ processDrugage <- function(drugagefile=file.path(config$resultsPath,"drugage_id_
 ########################################################
 ## Query performed for Nik Schork
 ## ID crossmatching table
-transformTTD <- function(ttdfile=file.path(config$downloadPath,"TTD_IDs.txt"), redownloadTTD=TRUE,config=genConfig()) {
-    if(redownloadTTD==TRUE) download.file("https://db.idrblab.org/ttd/sites/default/files/ttd_database/P1-02-TTD_crossmatching.txt", ttdfile)
-    df <- read.delim(ttdfile, skip=12, header=FALSE, col.names=c("TTD_ID", "No", "Source", "Name"))
+transformTTD <- function(ttdfile="TTD_IDs.txt", redownloadTTD=TRUE,config=genConfig()) {
+    if(redownloadTTD==TRUE){
+		 #download.file("https://db.idrblab.org/ttd/sites/default/files/ttd_database/P1-02-TTD_crossmatching.txt", ttdfile)
+		 .downloadFile("https://db.idrblab.org/ttd/sites/default/files/ttd_database/P1-02-TTD_crossmatching.txt", ttdfile)
+	 }
+    df <- read.delim(.getCacheFile(ttdfile), skip=12, header=FALSE, col.names=c("TTD_ID", "No", "Source", "Name"))
     df_sub <- df[grep("DrugName|PubChem CID", df$Source),]
     list_sub <- split(df_sub, df_sub$TTD_ID)
     list_sub <- list_sub[lapply(list_sub, nrow)==2]
@@ -599,13 +654,16 @@ cmpIdMapping <- function(outfile=file.path(config$resultsPath,"cmp_ids.rds"), re
        
         ## CMP ID mappings from UniChem (very slow!)
         ## ChEMBL to DrubBank mapping in src1src2.txt.gz: 
-        chembl2drugbank <- read.delim(gzfile(file.path(config$downloadPath,"src1src2.txt.gz")))
+		  chembl2drugbank <- read.delim(gzfile(.getCacheFile("src1src2.txt.gz")))
+        #chembl2drugbank <- read.delim(gzfile(file.path(config$downloadPath,"src1src2.txt.gz")))
         chembl2drugbank_vec <- tapply(as.character(chembl2drugbank[,2]), factor(chembl2drugbank[,1]), paste, collapse=", ")
         ## ChEMBL to PubChem CID mapping in src1src22.txt.gz
-        chembl2pubchem <- read.delim(gzfile(file.path(config$downloadPath,"src1src22.txt.gz")))
+		  chembl2pubchem <- read.delim(gzfile(.getCacheFile("src1src22.txt.gz")))
+        #chembl2pubchem <- read.delim(gzfile(file.path(config$downloadPath,"src1src22.txt.gz")))
         chembl2pubchem_vec <- tapply(as.character(chembl2pubchem[,2]), factor(chembl2pubchem[,1]), paste, collapse=", ")
         ## ChEMBL to ChEBI mapping in src1src7.txt.gz
-        chembl2chebi <- read.delim(gzfile(file.path(config$downloadPath,"src1src7.txt.gz")))
+		  chembl2chebi <- read.delim(gzfile(.getCacheFile("src1src7.txt.gz")))
+        #chembl2chebi <- read.delim(gzfile(file.path(config$downloadPath,"src1src7.txt.gz")))
         chembl2chebi_vec <- tapply(as.character(chembl2chebi[,2]), factor(chembl2chebi[,1]), paste, collapse=", ")
         ## Create final CMP ID mapping table (very slow!!)
         # cmp_ids <- cbind(chemblid_lookup, PubChem_ID=chembl2pubchem_vec[as.character(chemblid_lookup$chembl_id)], DrugBank_ID=chembl2drugbank_vec[as.character(chemblid_lookup$chembl_id)], ChEBI_ID=chembl2chebi_vec[as.character(chemblid_lookup$chembl_id)])
