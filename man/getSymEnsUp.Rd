@@ -37,9 +37,7 @@ Thomas Girke
 }
 
 \examples{
-	\dontrun{
-		 gene_name <- c("CA7", "CFTR")
-		 getSymEnsUp(EnsDb="EnsDb.Hsapiens.v86", ids=gene_name, idtype="GENE_NAME")
-	}
+	 gene_name <- c("CA7", "CFTR")
+	 getSymEnsUp(EnsDb="EnsDb.Hsapiens.v86", ids=gene_name, idtype="GENE_NAME")
 }
 \keyword{ utilities }

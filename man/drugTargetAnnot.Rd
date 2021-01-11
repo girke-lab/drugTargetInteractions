@@ -32,12 +32,14 @@ drugTargetAnnot(queryBy=list(molType=NULL, idType=NULL, ids=NULL), cmpid_file=fi
 	\code{\link{queryBy}}
 	\code{\link{cmpIdMapping}}
 }
-\examples{
-	\dontrun{
-		 chembldb <- "chembl_24.db" # path to full ChEMBL SQLite database
-		 cmp_ids.rds <- "cmp_ids.rds"
-		 cmpIdMapping(cmp_ids.rds,rerun=TRUE)
-		 queryBy <- list(molType="cmp", idType="chembl_id", ids=c("CHEMBL1233058", "CHEMBL1200916", "CHEMBL437765"))
-		 qresult <- drugTargetAnnot(dbpath=chembldb, queryBy, cmpid_file=cmp_ids.rds)
-	}	
+\examples{	
+	# Tthese are just sample files included in the package. 
+	# You should use your own data files.
+	config = genConfig(chemblDbPath= 
+									system.file("extdata", "chembl_sample.db", package="drugTargetInteractions"),
+							  resultsPath = 
+									system.file("extdata", "results", package="drugTargetInteractions"))
+
+	queryBy <- list(molType="cmp", idType="chembl_id", ids=c("CHEMBL1233058", "CHEMBL1200916", "CHEMBL437765"))
+	qresult <- drugTargetAnnot(queryBy, config=config)
 }

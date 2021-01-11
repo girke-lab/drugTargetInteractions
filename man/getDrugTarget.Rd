@@ -42,18 +42,24 @@ getDrugTarget(dt_file=file.path(config$resultsPath,"drugTargetAnnot.xls"), query
 	\code{\link{drugTargetAnnotTable}}
 }
 \examples{
-	\dontrun{
+
+
+		 config = genConfig(chemblDbPath= 
+									system.file("extdata", "chembl_sample.db", package="drugTargetInteractions"),
+							  resultsPath = 
+									system.file("extdata", "results", package="drugTargetInteractions"))
 		 id_mapping <- c(chembl="chembl_id", pubchem="PubChem_ID", uniprot="UniProt_ID", drugbank="DrugBank_ID")
 
 		 queryBy <- list(molType="cmp", idType="chembl", ids=c("CHEMBL25", "CHEMBL1742471"))
-		 getDrugTarget(dt_file="results/drugTargetAnnot.xls", queryBy=queryBy, id_mapping, columns=c(1,5,8,16,17,39,46:52)) 
+		 getDrugTarget(queryBy=queryBy, id_mapping=id_mapping,
+								 columns=c(1,5,8,16,17),config=config) 
 
 		 queryBy <- list(molType="cmp", idType="pubchem", ids=c("2244", "65869", "2244"))
-		 getDrugTarget(dt_file="results/drugTargetAnnot.xls", queryBy=queryBy, id_mapping, columns=c(1,5,8,16,17,39,46:52)) 
+		 getDrugTarget(queryBy=queryBy, id_mapping=id_mapping,
+								 columns=c(1,5,8,16,17),config=config) 
 
 		 queryBy <- list(molType="protein", idType="uniprot", ids=c("P43166", "P00915", "P43166"))
-		 getDrugTarget(dt_file="results/drugTargetAnnot.xls", queryBy=queryBy, id_mapping, columns=c(1,5,8,16,17,39,46:52))
+		 getDrugTarget(queryBy=queryBy, id_mapping=id_mapping,
+								 columns=c(1,5,8,16,17),config=config)
 
-
-	}
 }

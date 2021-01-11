@@ -35,8 +35,8 @@ drugTargetAnnotTable(outfile, rerun=TRUE,config=genConfig())
 	\code{\link{downloadUniChem}}
 }
 \examples{
-	\dontrun{
-		drugTargetAnnotTable(outfile="drugTargetAnnot.xls", rerun=FALSE)
-	}	
+	config = genConfig(chemblDbPath= 
+					system.file("extdata", "chembl_sample.db", package="drugTargetInteractions"))
+	drugTargetAnnotTable(outfile="drugTargetAnnot.xls", config=config)
 
 }

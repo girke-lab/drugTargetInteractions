@@ -32,10 +32,8 @@ getParalogs(queryBy)
 	\code{\link{queryBy}}
 }
 \examples{
-	\dontrun{
-		 queryBy <- list(molType="gene", idType="external_gene_name", ids=c("ZPBP", "MAPK1", "EGFR"))
-		 result <- getParalogs(queryBy)
-	}
+	 queryBy <- list(molType="gene", idType="external_gene_name", ids=c("ZPBP", "MAPK1", "EGFR"))
+	 result <- getParalogs(queryBy)
 }
 % Add one or more standard keywords, see file 'KEYWORDS' in the
 % R documentation directory (show via RShowDoc("KEYWORDS")):

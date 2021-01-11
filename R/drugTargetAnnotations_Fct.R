@@ -44,19 +44,22 @@ genConfig <- function(
      rid <- names(bfcadd(bfc, name, url))
     }
     if(!isFALSE(bfcneedsupdate(bfc, rid)))
-		 bfcdownload(bfc, rid)
+		 bfcdownload(bfc, rid,ask=FALSE)
 
     bfcrpath(bfc, rids = rid)
 }
 .cacheFileFromZip <- function(zipFileUrl, name) {
 	tempDir = tempdir()
-	zipFile = file.path(tempDir,name)
+	zipFile = file.path(tempDir,"temp.zip")
 
 	download.file(zipFileUrl,zipFile)
 	unzip(zipFile,exdir=tempDir)
 
+	message("zip file: ",zipFile)
+	message("name: ",name)
+	message("file to extract: ",file.path(tempDir,name))
 	bfc=.getCache()
-	rid=names(bfcadd(bfc,name,file.path(tempDir,name),action="move"))
+	rid=names(bfcadd(bfc,name,file.path(tempDir,name),action="copy"))
 
 	bfcrpath(bfc,rids=rid)
 }
@@ -88,7 +91,8 @@ downloadChemblDb <- function(version,rerun=TRUE,config=genConfig()){
 										 paste("chembl_",version,".db",sep=""))
 
 		bfc=.getCache()
-		rid=names(bfcadd(bfc,paste("chembl_",version,".db",sep=""),sourceDbFile,action="move"))
+		rid=names(bfcadd(bfc,paste("chembl_",version,".db",sep=""),sourceDbFile,action="copy"))
+		file.remove(sourceDbFile)
 		return(bfcrpath(bfc,rids=rid))
 		#file.copy(from=sourceDbFile, to = config$chemblDbPath)
 		#file.remove(sourceDbFile)
@@ -154,7 +158,7 @@ getUniprotIDs <- function(taxId=9606, kt="ENSEMBL", keys, seq_cluster="UNIREF90"
     ## Run queries in chunks
     for(i in seq_along(keylist)) {
         ## ID mappings (IDMs)
-        res_ID <- try(select(up, keys=keylist[[i]], columns, kt), silent=TRUE)
+        res_ID <- try(UniProt.ws::select(up, keys=keylist[[i]], columns, kt), silent=TRUE)
         if(!inherits(res_ID, "try-error")) {
             if(chunksize==1) {
                 res_ID <- data.frame(QueryID=keylist[[i]][1], res_ID, check.names=FALSE) 
@@ -180,7 +184,7 @@ getUniprotIDs <- function(taxId=9606, kt="ENSEMBL", keys, seq_cluster="UNIREF90"
             names(unirefcontainer) <- names(unirefkeylist)
             ## SSNN queries are run in subloop since number of uniref keys is larger than in IDM query
             for(j in seq_along(unirefkeylist)) {
-                tmp <- try(select(up, keys=unirefkeylist[[j]], columns, seq_cluster), silent=TRUE)
+                tmp <- try(UniProt.ws::select(up, keys=unirefkeylist[[j]], columns, seq_cluster), silent=TRUE)
                 if(!inherits(tmp, "try-error")) {
                     if(chunksize==1) {
                         unirefcontainer[[j]] <- data.frame(QueryID=keylist[[i]][1], tmp[,columns], check.names=FALSE) 
@@ -547,6 +551,7 @@ drugTargetAnnotTable <- function(outfile, rerun=TRUE,config=genConfig()) {
 getDrugTarget <- function(dt_file=file.path(config$resultsPath,"drugTargetAnnot.xls"), queryBy=list(molType=NULL, idType=NULL, ids=NULL), 
 								  id_mapping=c(chembl="chembl_id", pubchem="PubChem_ID", uniprot="UniProt_ID"), columns,config=genConfig()) {
 	#stop("dt_file: ",dt_file)
+	message("dt_file: ",dt_file)
     dt_file <- read.delim(dt_file)
     myid <- id_mapping[queryBy$idType]
     .queryFct <- function(dt_file, myid) {

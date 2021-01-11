@@ -34,7 +34,5 @@ https://www.ebi.ac.uk/unichem/ucquery/listSources
 	\code{\link{drugTargetAnnotTable}}
 }
 \examples{
-	\dontrun{
-		downloadUniChem(rerun=TRUE)
-	}
+	downloadUniChem(rerun=TRUE)
 }

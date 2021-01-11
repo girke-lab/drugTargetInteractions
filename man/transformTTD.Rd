@@ -32,8 +32,10 @@ transformTTD(ttdfile=file.path(config$downloadPath,"TTD_IDs.txt"), redownloadTTD
 
 
 \examples{
-	\dontrun{
-		ttd = transformTTD("ttd.txt",TRUE)
-	}
-
+		ttd=tryCatch(
+			transformTTD(),
+			error=function(e){
+				message("Failed to download TTD file, please try again later")
+			}
+		)
 }

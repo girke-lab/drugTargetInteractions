@@ -30,7 +30,5 @@ Kevin Horan
 
 
 \examples{
-	\dontrun{
-		config = genConfig()
-	}
+	config = genConfig()
 }

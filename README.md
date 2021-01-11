@@ -12,9 +12,5 @@ See README of this repository [here](https://github.com/longevity-consortium/LC_
 
 ## Vignette for `drugTargetInteractions` package
 
-The vignette for the `drugTargetInteractions` package can be opened with the following access information. 
-Alternatively, it can be found in the corresponding [subdirectory](https://github.com/longevity-consortium/LC_Chemoinformatics/tree/master/Rpackages/drugTargetInteractions/vignettes) of the package.
-
-+ URL: [http://bit.ly/2Fl7CbU](http://bit.ly/2Fl7CbU)
-+ User name: longevity
-+ ***REMOVED***
+The vignette for the `drugTargetInteractions` package can be found in the 
+corresponding [subdirectory](https://github.com/longevity-consortium/LC_Chemoinformatics/tree/master/Rpackages/drugTargetInteractions/vignettes) of the package.

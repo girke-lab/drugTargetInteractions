@@ -31,21 +31,22 @@ drugTargetBioactivity( queryBy=list(molType=NULL, idType=NULL, ids=NULL), cmpid_
  \code{\link{cmpIdMapping}}
 }
 \examples{
-	\dontrun{
-		 chembldb <- "chembl_24.db"
+		 config = genConfig(chemblDbPath= 
+										system.file("extdata", "chembl_sample.db", package="drugTargetInteractions"),
+								  resultsPath = 
+										system.file("extdata", "results", package="drugTargetInteractions"))
 
 		 queryBy <- list(molType="protein", idType="uniprot", ids=c("P05979", "P35354", "P33033", "Q8VCT3", "P29475", "P51511"))
-		 qresult <- drugTargetBioactivity(dbpath=chembldb, queryBy, cmpid_file="cmp_ids.rds")
+		 qresult <- drugTargetBioactivity( queryBy, config=config)
 
 		 queryBy <- list(molType="cmp", idType="molregno", ids=c("101036", "101137", "1384464")) 
-		 qresult <- drugTargetBioactivity(dbpath=chembldb, queryBy, cmpid_file="cmp_ids.rds")
+		 qresult <- drugTargetBioactivity( queryBy, config=config)
 
 		 queryBy <- list(molType="cmp", idType="DrugBank_ID", ids=c("DB00945", "DB00316", "DB01050")) 
-		 qresult <- drugTargetBioactivity(dbpath=chembldb, queryBy, cmpid_file="cmp_ids.rds")
+		 qresult <- drugTargetBioactivity(queryBy, config=config)
 
 		 queryBy <- list(molType="cmp", idType="PubChem_ID", ids=c("2244", "3672", "1983")) 
-		 qresult <- drugTargetBioactivity(dbpath=chembldb, queryBy, cmpid_file="cmp_ids.rds")
+		 qresult <- drugTargetBioactivity(queryBy, config=config)
 
-	}
 
 }

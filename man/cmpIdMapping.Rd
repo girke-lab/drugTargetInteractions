@@ -39,8 +39,6 @@ cmpIdMapping(outfile=file.path(config$resultsPath,"cmp_ids.rds"), rerun=TRUE,con
 	\code{\link{downloadUniChem}}
 }
 \examples{
-	\dontrun{
-		 cmpIdMapping(outfile="cmp_ids.rds", rerun=TRUE)
-		 cmp_ids <- readRDS("cmp_ids.rds")
-	}
+	 
+	 cmpIdMapping("cmp_ids.rds",rerun=FALSE)
 }

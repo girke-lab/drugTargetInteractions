@@ -1,11 +1,13 @@
 import(RSQLite,methods)
+
+#these two conflict on 'select', so make sure all calls are prefixed
 import(UniProt.ws)
+import(dplyr)
+
 import(biomaRt)
 import(ensembldb)
 import(stats, utils)
 import(BiocFileCache)
-# don't import dplyr here as select function will enterfere with ensembldb and cause errors
-# just prefix dplyr functions with dplyr:
 
 
 exportPattern("^[[:alpha:]]+")

@@ -31,7 +31,8 @@ processDrugage(drugagefile=file.path(config$resultsPath,"drugage_id_mapping.xls"
 
 
 \examples{
-	\dontrun{
-		processDruage("druage_id_mapping.xls",TRUE)
-	}
+
+		config = genConfig(chemblDbPath= 
+									system.file("extdata", "chembl_sample.db", package="drugTargetInteractions"))
+		processDrugage("druage_id_mapping.xls",TRUE,config)
 }

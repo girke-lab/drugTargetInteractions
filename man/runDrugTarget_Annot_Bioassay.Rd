@@ -46,24 +46,24 @@ See also: \code{drugTargetAnnot} and \code{drugTargetBioactivity}
 }
 \examples{
 
-\dontrun{
+	config = genConfig(chemblDbPath= 
+									system.file("extdata", "chembl_sample.db", package="drugTargetInteractions"),
+							  resultsPath = 
+									system.file("extdata", "results", package="drugTargetInteractions"))
 
-## (1) Translate gene symbols to ENSEMBL gene IDs
-ensembl_gene_id <- c("ENSG00000001626", "ENSG00000168748")
-idMap <- getSymEnsUp(EnsDb="EnsDb.Hsapiens.v86", ids=ensembl_gene_id, idtype="ENSEMBL_GENE_ID")
-ens_gene_id <- idMap$ens_gene_id
+	## (1) Translate gene symbols to ENSEMBL gene IDs
+	ensembl_gene_id <- c("ENSG00000001626", "ENSG00000168748")
+	idMap <- getSymEnsUp(EnsDb="EnsDb.Hsapiens.v86", ids=ensembl_gene_id, idtype="ENSEMBL_GENE_ID")
+	ens_gene_id <- idMap$ens_gene_id
 
 
-## (2a) Retrieve UniProt IDs with both IDMs and SSNN paralogs
-queryBy <- list(molType="gene", idType="ensembl_gene_id", ids=names(ens_gene_id))
-res_list <- getParalogs(queryBy)
+	## (2a) Retrieve UniProt IDs with both IDMs and SSNN paralogs
+	queryBy <- list(molType="gene", idType="ensembl_gene_id", ids=names(ens_gene_id))
+	res_list <- getParalogs(queryBy)
 
-## (2b) Retrieve UniProt IDs with both IDMs and SSNN paralogs
-res_list90 <- getUniprotIDs(taxId=9606, kt="ENSEMBL", keys=names(ens_gene_id), seq_cluster="UNIREF90", chunksize=1)
+	## (3) Obtain Drug-Target Annotation and Bioassay Data 
+	drug_target_list <- runDrugTarget_Annot_Bioassay(res_list=res_list, 
+											up_col_id="ID_up_sp", ens_gene_id,config=config ) 
 
-## (3) Obtain Drug-Target Annotation and Bioassay Data 
-drug_target_list <- runDrugTarget_Annot_Bioassay(res_list=res_list, up_col_id="ID_up_sp", ens_gene_id ) 
-
-}
 }
 \keyword{utilities}
