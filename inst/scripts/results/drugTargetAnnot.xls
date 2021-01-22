@@ -1,0 +1,3 @@
+
+library(drugTargetInteractions)
+drugTargetAnnot <- druTargetAnnotTable("drugTargetAnnot.xls")

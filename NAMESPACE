@@ -2,7 +2,7 @@ import(RSQLite,methods)
 
 #these two conflict on 'select', so make sure all calls are prefixed
 import(UniProt.ws)
-import(dplyr)
+#import(dplyr)
 
 import(biomaRt)
 import(ensembldb)
@@ -10,4 +10,20 @@ import(stats, utils)
 import(BiocFileCache)
 
 
-exportPattern("^[[:alpha:]]+")
+#exportPattern("^[[:alpha:]]+")
+export( "genConfig",
+    "cmpIdMapping",
+    "downloadChemblDb",
+    "downloadUniChem",
+    "drugTargetAnnot",
+    "drugTargetAnnotTable",
+    "drugTargetBioactivity",
+    "getDrugTarget",
+    "getParalogs",
+    "getSymEnsUp",
+    "getUniprotIDs",
+    "runDrugTarget_Annot_Bioassay",
+    "transformTTD",
+    "processDrugage"
+
+)

@@ -1,0 +1,4 @@
+
+library(drugTargetInteractions)
+downloadChemblDb(27)
+# remove whatever tables/rows are not required to create the smaller sample db 

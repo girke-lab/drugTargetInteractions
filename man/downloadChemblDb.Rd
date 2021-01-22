@@ -30,7 +30,8 @@ Kevin Horan
 
 
 \examples{
-	\dontrun{
+%% this will download a 30GB file
+	\donttest{
 		downloadChemblDb(27)
 	}
 }

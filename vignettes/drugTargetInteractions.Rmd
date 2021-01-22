@@ -122,9 +122,8 @@ identifiers across different drug databases. Currently, this includes three type
 compound identifiers: DrugBank, PubChem, and ChEBI. 
 
 ```{r data_setup, eval=TRUE}
-rerun=TRUE
-downloadUniChem(config=config, rerun=rerun)
-cmpIdMapping(config=config, rerun=rerun)
+downloadUniChem(config=config)
+cmpIdMapping(config=config)
 ```
 
 # Produce Results Quickly
