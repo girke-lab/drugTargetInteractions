@@ -1,0 +1,3 @@
+keys <- c("ENSG00000145700", "ENSG00000135441", "ENSG00000120071") 
+res_list90 <- getUniprotIDs(taxId=9606, kt="ENSEMBL", keys=keys, seq_cluster="UNIREF90")
+saveRDS(res_list90,"../extdata/res_list90.rds")

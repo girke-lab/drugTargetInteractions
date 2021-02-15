@@ -1,0 +1,4 @@
+library(drugTargetInteractions)
+queryBy <- list(molType="gene", idType="ensembl_gene_id", ids=c("ENSG00000145700", "ENSG00000135441", "ENSG00000120071"))
+res_list <- getParalogs(queryBy)  
+saveRDS(res_list,"../extdata/paralogs1_res_list.rds")

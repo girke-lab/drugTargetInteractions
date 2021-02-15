@@ -1,0 +1,10 @@
+
+library(drugTargetInteractions)
+
+uniprot_id <- c("P43166", "P13569") 
+idMap <- getSymEnsUp(EnsDb="EnsDb.Hsapiens.v86", ids=uniprot_id, idtype="UNIPROT_ID")
+ens_gene_id <- idMap$ens_gene_id
+
+queryBy <- list(molType="gene", idType="ensembl_gene_id", ids=names(ens_gene_id))
+res_list <- getParalogs(queryBy)  
+saveRDS(res_list,"../extdata/paralogs2_res_list.rds")

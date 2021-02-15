@@ -154,11 +154,14 @@ assigned one of: `UNIREF100`, `UNIREF90` or `UNIREF50`. The result is a list
 with two `data.frames`. The first one is based on IDMs and the second one on
 SSNNs.
 
-```{r getUniprotIDs1, eval=TRUE, message=FALSE, warning=FALSE}
+```{r getUniprotIDs1, eval=FALSE, message=FALSE, warning=FALSE}
 keys <- c("ENSG00000145700", "ENSG00000135441", "ENSG00000120071")
 res_list90 <- getUniprotIDs(taxId=9606, kt="ENSEMBL", keys=keys, seq_cluster="UNIREF90") 
 ```
 
+```{r load_res_list90, echo = FALSE, results = 'asis'}
+res_list90 <- readRDS(system.file("extdata", "res_list90.rds", package="drugTargetInteractions"))
+```
 The following shows the first `data.frame` containing the ID mapping results.
 
 ```{r getUniprotIDs2, eval=TRUE, message=FALSE}
@@ -181,10 +184,14 @@ Gene IDs from _H. sapiens_. The result is similar to IDMs and SSNNs from the
 `getUniprotIDs` function, but instead of UNIREF clusters, biomaRt's paralogs
 are used to obtain SSNNs. 
 
-```{r getParalogs1, eval=TRUE}
+```{r getParalogs1, eval=FALSE}
 queryBy <- list(molType="gene", idType="external_gene_name", ids=c("ANKRD31", "BLOC1S1", "KANSL1"))
 queryBy <- list(molType="gene", idType="ensembl_gene_id", ids=c("ENSG00000145700", "ENSG00000135441", "ENSG00000120071"))
 res_list <- getParalogs(queryBy)
+```
+
+```{r getParalogs1_load, eval=TRUE,echo=FALSE}
+res_list <- readRDS(system.file("extdata", "paralogs1_res_list.rds", package="drugTargetInteractions"))
 ```
 
 The following shows the first `data.frame` containing the ID mapping results.
@@ -244,9 +251,11 @@ The following returns drug-target annotations for a set of query Ensembl gene ID
 For this the Ensembl gene IDs are translated into UniProt IDs using both the IDM 
 and SSNN approaches. 
 
-```{r getUniprotIDs, eval=TRUE, message=FALSE}
+```{r getUniprotIDs, eval=FALSE, message=FALSE}
 keys <- c("ENSG00000120088", "ENSG00000135441", "ENSG00000120071")
 res_list90 <- getUniprotIDs(taxId=9606, kt="ENSEMBL", keys=keys, seq_cluster="UNIREF90") 
+```
+```{r getUniprotIDs4, eval=TRUE, message=FALSE}
 id_list <- sapply(names(res_list90), function(x) unique(na.omit(res_list90[[x]]$ID)))
 ```
 
@@ -402,9 +411,15 @@ the above ENSEMBL gene IDs are obtained with the `getParalogs` function. The
 latter is much faster than `getUniprotIDs`, and also covers wider evolutionary
 distances. Thus, it may be the preferred methods for many use cases.
 
-```{r res_list_ens_gene_id_paralog, eval=TRUE, message=FALSE}
+```{r res_list_ens_gene_id_paralog, eval=FALSE, message=FALSE}
 queryBy <- list(molType="gene", idType="ensembl_gene_id", ids=names(ens_gene_id))
 res_list <- getParalogs(queryBy)
+```
+
+```{r res_list_ens_gene_id_paralog_load , eval=TRUE,echo=FALSE}
+res_list <- readRDS(system.file("extdata", "paralogs2_res_list.rds", package="drugTargetInteractions"))
+```
+```{r res_list_ens_gene_id_paralog_part2, eval=TRUE}
 sapply(res_list, dim)
 ```
 

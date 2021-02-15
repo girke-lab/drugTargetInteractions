@@ -61,9 +61,9 @@ genConfig <- function(
     download.file(zipFileUrl,zipFile)
     unzip(zipFile,exdir=tempDir)
 
-    message("zip file: ",zipFile)
-    message("name: ",name)
-    message("file to extract: ",file.path(tempDir,name))
+    #message("zip file: ",zipFile)
+    #message("name: ",name)
+    #message("file to extract: ",file.path(tempDir,name))
     bfc=.getCache()
     rid=names(bfcadd(bfc,name,file.path(tempDir,name),action="copy"))
 
@@ -626,7 +626,6 @@ getDrugTarget <- function(dt_file=file.path(config$resultsPath,
                                        uniprot="UniProt_ID"),
                           columns,config=genConfig()) {
     #stop("dt_file: ",dt_file)
-    message("dt_file: ",dt_file)
     dt_file <- read.delim(dt_file)
     myid <- id_mapping[queryBy$idType]
     .queryFct <- function(dt_file, myid) {
