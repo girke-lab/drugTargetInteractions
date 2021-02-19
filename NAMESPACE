@@ -6,7 +6,8 @@ import(UniProt.ws)
 
 import(biomaRt)
 import(ensembldb)
-import(stats, utils)
+#import(stats, utils)
+import( utils)
 import(BiocFileCache)
 
 

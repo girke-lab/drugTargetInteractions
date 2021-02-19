@@ -207,7 +207,7 @@ getUniprotIDs <- function(taxId=9606, kt="ENSEMBL", keys,
 
         ## Sequence Similarity (SSNNs) using UNIREF*
         if(!inherits(res_ID, "try-error")) {
-            unirefkeys <- as.character(na.omit(unique(res_ID[,seq_cluster])))
+            unirefkeys <- as.character(stats::na.omit(unique(res_ID[,seq_cluster])))
             unirefkeylist <- split(unirefkeys,
                                    ceiling(seq_along(unirefkeys)/chunksize))
             unirefcontainer <- vector("list", length(unirefkeylist))
@@ -1004,7 +1004,7 @@ runDrugTarget_Annot_Bioassay <- function(res_list, up_col_id="ID",
     ##   ensids.
     id_list <- sapply(names(res_list),
                       function(x)
-                        unique(na.omit(as.character(res_list[[x]][,up_col_id]))),
+                        unique(stats::na.omit(as.character(res_list[[x]][,up_col_id]))),
                         simplify=FALSE)
     ensids <- tapply(res_list[[2]]$QueryID, res_list[[2]][,up_col_id],
                      function(x) as.character(unique(x)), simplify=FALSE)

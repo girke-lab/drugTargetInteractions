@@ -59,7 +59,13 @@ See also: \code{drugTargetAnnot} and \code{drugTargetBioactivity}
 
 	## (2a) Retrieve UniProt IDs with both IDMs and SSNN paralogs
 	queryBy <- list(molType="gene", idType="ensembl_gene_id", ids=names(ens_gene_id))
-	res_list <- getParalogs(queryBy)
+	\dontrun{ 
+		#this function is slow and requires a network connection
+		res_list <- getParalogs(queryBy)
+	}
+	\dontshow{ #just use a cached result
+		res_list <- readRDS(system.file("extdata", "paralogs2_res_list.rds", package="drugTargetInteractions"))
+	}
 
 	## (3) Obtain Drug-Target Annotation and Bioassay Data 
 	drug_target_list <- runDrugTarget_Annot_Bioassay(res_list=res_list, 
