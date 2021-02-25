@@ -70,7 +70,8 @@ genConfig <- function(
     bfcrpath(bfc,rids=rid)
 }
 downloadUniChem <- function(rerun=TRUE,config = genConfig()) {
-    urlBase = "ftp://ftp.ebi.ac.uk/pub/databases/chembl/UniChem/data/wholeSourceMapping/src_id1/"
+    #urlBase = "ftp://ftp.ebi.ac.uk/pub/databases/chembl/UniChem/data/wholeSourceMapping/src_id1/"
+    urlBase = "https://drug-target-interactions-data.s3-us-west-1.amazonaws.com/"
     if(rerun==TRUE) {
         bfc = .getCache()
         ## ChEMBL to DrugBank mapping in src1src2.txt.gz:
@@ -146,6 +147,7 @@ downloadChemblDb <- function(version,rerun=TRUE,config=genConfig()){
 getUniprotIDs <- function(taxId=9606, kt="ENSEMBL", keys,
                           seq_cluster="UNIREF90",
                           chunksize=20) {
+    require(UniProt.ws)
     up <- UniProt.ws(taxId) # Attach organism, here human
 
     ## Validity checks
@@ -280,6 +282,8 @@ getUniprotIDs <- function(taxId=9606, kt="ENSEMBL", keys,
 ## obtain SSNNs.
 
 getParalogs <- function(queryBy) {
+
+    require(biomaRt)
     mart <- useMart("ensembl", dataset = "hsapiens_gene_ensembl")
 
     ## ID Matching (IDM) result table

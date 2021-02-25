@@ -1,17 +1,14 @@
 import(RSQLite,methods)
 
-#these two conflict on 'select', so make sure all calls are prefixed
-import(UniProt.ws)
-#import(dplyr)
+#import(UniProt.ws)
 
-import(biomaRt)
-import(ensembldb)
-#import(stats, utils)
+#import(biomaRt)
+#import(ensembldb)
+#
 import( utils)
 import(BiocFileCache)
 
 
-#exportPattern("^[[:alpha:]]+")
 export( "genConfig",
     "cmpIdMapping",
     "downloadChemblDb",
