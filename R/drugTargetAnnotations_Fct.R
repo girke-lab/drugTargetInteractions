@@ -147,7 +147,7 @@ downloadChemblDb <- function(version,rerun=TRUE,config=genConfig()){
 getUniprotIDs <- function(taxId=9606, kt="ENSEMBL", keys,
                           seq_cluster="UNIREF90",
                           chunksize=20) {
-    require(UniProt.ws)
+    requireNamespace(UniProt.ws)
     up <- UniProt.ws(taxId) # Attach organism, here human
 
     ## Validity checks
@@ -283,7 +283,7 @@ getUniprotIDs <- function(taxId=9606, kt="ENSEMBL", keys,
 
 getParalogs <- function(queryBy) {
 
-    require(biomaRt)
+    requireNamespace(biomaRt)
     mart <- useMart("ensembl", dataset = "hsapiens_gene_ensembl")
 
     ## ID Matching (IDM) result table
@@ -931,7 +931,7 @@ drugTargetBioactivity <- function( queryBy=list(molType=NULL,
 ## Ensembl Gene IDs and UniProt IDs.
 getSymEnsUp <- function(EnsDb="EnsDb.Hsapiens.v86", ids, idtype) {
 
-     require(EnsDb,character.only=TRUE)
+    require(EnsDb,character.only=TRUE)
     ## ID columns to return
     idcolumns <- c("gene_id", "gene_name", "uniprot_id", "protein_id")
 

@@ -1,10 +1,10 @@
 import(RSQLite,methods)
 
-#import(UniProt.ws)
+import(UniProt.ws)
 
-#import(biomaRt)
-#import(ensembldb)
-#
+import(biomaRt)
+import(ensembldb)
+
 import( utils)
 import(BiocFileCache)
 
