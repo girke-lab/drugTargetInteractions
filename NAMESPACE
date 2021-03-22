@@ -1,9 +1,12 @@
-import(RSQLite,methods)
 
-import(UniProt.ws)
+import(RSQLite)
+import(methods)
 
-import(biomaRt)
-import(ensembldb)
+importFrom(UniProt.ws,UniProt.ws)
+
+importFrom(biomaRt,useMart,getBM)
+
+importFrom(ensembldb,genes,proteins)
 
 import( utils)
 import(BiocFileCache)

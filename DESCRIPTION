@@ -1,16 +1,17 @@
 Package: drugTargetInteractions
 Type: Package
 Title: Drug-Target Interactions
-Version: 0.99.5
-Date: 2021-02-22
+Version: 0.99.6
+Date: 2021-03-22
 Authors@R: person("Thomas", "Girke", email="thomas.girke@ucr.edu", role=c("cre", "aut"))
-Description: Provides utilities for identifying drug-target interactions for sets of small molecule or gene/protein identifiers. The required drug-target interaction information is obained from a local SQLite instance of the ChEMBL database. 
-Depends: methods, R (>= 4.1)
-Imports: utils, RSQLite, UniProt.ws, biomaRt,ensembldb, BiocFileCache,dplyr,rappdirs
-Suggests: RUnit, BiocStyle, knitr, rmarkdown, ggplot2, reshape2
+Description: Provides utilities for identifying drug-target interactions for sets of small molecule or gene/protein identifiers. The required drug-target interaction information is obained from a local SQLite instance of the ChEMBL database. ChEMBL has been chosen for this purpose, because it provides one of the most comprehensive and best annotatated knowledge resources for drug-target information available in the public domain.
+Depends: methods, R (>= 4.0)
+Imports: utils, RSQLite, UniProt.ws, biomaRt,ensembldb, BiocFileCache,dplyr,rappdirs, AnnotationFilter, S4Vectors
+Suggests: RUnit, BiocStyle, knitr, rmarkdown, ggplot2, reshape2, DT, EnsDb.Hsapiens.v86
 VignetteBuilder: knitr
 License: Artistic-2.0
 NeedsCompilation: no
 URL: https://github.com/longevity-consortium/LC_Chemoinformatics
 biocViews: Cheminformatics, BiomedicalInformatics, Pharmacogenetics, Pharmacogenomics, Proteomics, Metabolomics
 RoxygenNote: 7.1.1
+BugReports: https://github.com/girke-lab/drugTargetInteractions

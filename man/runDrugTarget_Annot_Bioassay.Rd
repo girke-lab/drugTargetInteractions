@@ -59,7 +59,7 @@ See also: \code{drugTargetAnnot} and \code{drugTargetBioactivity}
 
 	## (2a) Retrieve UniProt IDs with both IDMs and SSNN paralogs
 	queryBy <- list(molType="gene", idType="ensembl_gene_id", ids=names(ens_gene_id))
-	\dontrun{ 
+	\donttest{ 
 		#this function is slow and requires a network connection
 		res_list <- getParalogs(queryBy)
 	}

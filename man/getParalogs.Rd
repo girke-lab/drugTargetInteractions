@@ -33,7 +33,7 @@ getParalogs(queryBy)
 }
 \examples{
 	 queryBy <- list(molType="gene", idType="external_gene_name", ids=c("ZPBP", "MAPK1", "EGFR"))
-	 \dontrun{
+	 \donttest{
 		 #requires network connection and is slow
 		 result <- getParalogs(queryBy)
 	 }

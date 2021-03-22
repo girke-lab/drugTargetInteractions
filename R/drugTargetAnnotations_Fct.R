@@ -34,6 +34,8 @@ genConfig <- function(
              ask=FALSE))
 }
 .getCacheFile <- function(name){
+	 # create_time is a column in the DF returned by bfcquery. It is resolved
+	 # in the context of the DF inside dplyr::arrange.
     return(dplyr::arrange(bfcquery(.getCache(),name,field=c("rname")),
               dplyr::desc(create_time))[1,"rpath"][[1]])
 
@@ -50,9 +52,30 @@ genConfig <- function(
         rid <- names(bfcadd(bfc, name, url))
     }
     if(!isFALSE(bfcneedsupdate(bfc, rid)))
-        bfcdownload(bfc, rid,ask=FALSE)
+        #bfcdownload(bfc, rid,ask=FALSE)
+		  .downloadWithRetries(bfc,rid,name)
 
     bfcrpath(bfc, rids = rid)
+}
+
+.downloadWithRetries <- function(bfc,rid,name,tries=2){
+	 tries <- as.integer(tries)
+    stopifnot(length(tries) == 1L, !is.na(tries))
+
+    while (tries > 0) {
+        result <- tryCatch(bfcdownload(bfc,rid,ask=FALSE), error=identity)
+        if (!inherits(result, "error"))
+            break
+        tries <- tries - 1
+    }
+
+    if (tries == 0) {
+        stop("'bfcdownload()' failed:",
+             "\n  filename: ", name,
+             "\n  error: ", conditionMessage(result))
+    }
+
+    result
 }
 .cacheFileFromZip <- function(zipFileUrl, name) {
     tempDir = tempdir()
@@ -283,13 +306,12 @@ getUniprotIDs <- function(taxId=9606, kt="ENSEMBL", keys,
 
 getParalogs <- function(queryBy) {
 
-    requireNamespace(biomaRt)
-    mart <- useMart("ensembl", dataset = "hsapiens_gene_ensembl")
+    mart <- biomaRt::useMart("ensembl", dataset = "hsapiens_gene_ensembl")
 
     ## ID Matching (IDM) result table
     ## To list available uniprot annotation fields, run:
     # listAttributes(mart)[grep("uniprot", listAttributes(mart)[,"name"]),]
-    IDMresult <- getBM(attributes = c("ensembl_gene_id",
+    IDMresult <- biomaRt::getBM(attributes = c("ensembl_gene_id",
                                     "uniprot_gn_symbol",
                                     "uniprotswissprot",
                                     "uniprotsptrembl",
@@ -306,7 +328,7 @@ getParalogs <- function(queryBy) {
     ## Paralog (Sequence Similarity Nearest Neighbors - SSNN) result table
     ## To list available paralog annotation fields, run:
     # listAttributes(mart)[grep("paralog", listAttributes(mart)[,"name"]),]
-    result <- getBM(attributes = c("external_gene_name",
+    result <- biomaRt::getBM(attributes = c("external_gene_name",
                                     "ensembl_gene_id",
                                     "hsapiens_paralog_associated_gene_name",
                                     "hsapiens_paralog_ensembl_gene",
@@ -337,7 +359,7 @@ getParalogs <- function(queryBy) {
     ## Retrieve for ENSEMBL gene IDs in results the corresponding UniProt IDs.
     ## Note, this needs to be done in separate query since attributes from
     ## multiple attribue pages are not allowed.
-    uniprot <- getBM(attributes = c("ensembl_gene_id",
+    uniprot <- biomaRt::getBM(attributes = c("ensembl_gene_id",
                                     "uniprot_gn_symbol",
                                     "uniprotswissprot",
                                     "uniprotsptrembl",
@@ -350,7 +372,7 @@ getParalogs <- function(queryBy) {
     up_sp <- tapply(uniprot$uniprotswissprot, uniprot$ensembl_gene_id,
                     function(x) unique(as.character(x)[nchar(x)>0]),
                     simplify=FALSE)
-    index <- sapply(up_sp, length)
+    index <- vapply(up_sp, length,integer(1))
     up_sp[index==0] <- ""
     index[index==0] <- 1
     index <- index[as.character(resultDF$ENSEMBL)]
@@ -362,7 +384,7 @@ getParalogs <- function(queryBy) {
     up_sp_tr <- tapply(uniprot$uniprotsptrembl, uniprot$ensembl_gene_id,
                        function(x) unique(as.character(x)[nchar(x)>0]),
                        simplify=FALSE)
-    index <- sapply(up_sp_tr, length)
+    index <- vapply(up_sp_tr, length,integer(1))
     up_sp_tr[index==0] <- ""
     index[index==0] <- 1
     index <- index[as.character(resultDF$ENSEMBL)]
@@ -408,7 +430,7 @@ drugTargetAnnot <- function(queryBy=list(molType=NULL, idType=NULL, ids=NULL),
     if(any(names(queryBy) != c("molType", "idType", "ids")))
          stop("All three list components in 'queryBy' (named: 'molType',",
               " 'idType' and 'ids') need to be present.")
-    if(any(sapply(queryBy, length) == 0))
+    if(any(vapply(queryBy, length,integer(1)) == 0))
          stop("All components in 'queryBy' list need to be populated with ",
               "corresponding character vectors.")
 
@@ -513,13 +535,14 @@ drugTargetAnnot <- function(queryBy=list(molType=NULL, idType=NULL, ids=NULL),
     ## Remove rows with identical values in all fields
     resultDF <- resultDF[!duplicated(apply(resultDF, 1, paste, collapse="_")),]
     ## Add query column and sort rows in result table according to query
-    index_list <- sapply(queryBy$ids,
+    index_list <- lapply(queryBy$ids,
                          function(x)
                              which(toupper(resultDF[,queryBy$idType]) %in%
-                                   toupper(x)), simplify=FALSE)
-    index_list[sapply(index_list,length)==0] <- Inf
+                                   toupper(x)))
+	 names(index_list) = queryBy$ids
+    index_list[vapply(index_list,length,integer(1))==0] <- Inf
     index_df <- data.frame(ids=rep(names(index_list),
-                                   sapply(index_list, length)),
+                                   vapply(index_list, length,integer(1))),
                            rowids=unlist(index_list))
     resultDF <- data.frame(QueryIDs=index_df[,1],
                            resultDF[as.numeric(index_df$rowids),])
@@ -634,17 +657,16 @@ getDrugTarget <- function(dt_file=file.path(config$resultsPath,
     myid <- id_mapping[queryBy$idType]
     .queryFct <- function(dt_file, myid) {
         idlist <- strsplit(as.character(dt_file[,myid]), ", ")
-        index_list <- sapply(queryBy$ids,
-                             function(x)
-                                 which(sapply(seq_along(idlist),
+        index_list <- lapply(queryBy$ids,
+                             function(x) which(vapply(seq_along(idlist),
                                           function(y)
-                                              any(tolower(idlist[[y]]) %in%
-                                                  tolower(x)))),
-                             simplify=FALSE)
+                                              any(tolower(idlist[[y]]) %in% tolower(x)),
+															 logical(1))) )
+		  names(index_list) = queryBy$ids
         ## To include no matches in result, inject Inf in corresponding slots
-        index_list[sapply(index_list,length)==0] <- Inf
+        index_list[vapply(index_list,length,integer(1))==0] <- Inf
         index_df <- data.frame(ids=rep(names(index_list),
-                                       sapply(index_list, length)),
+                                       vapply(index_list, length,integer(1))),
                                rowids=unlist(index_list))
         df <- data.frame(QueryIDs=index_df[,1],
                          dt_file[as.numeric(index_df$rowids),])
@@ -803,7 +825,7 @@ drugTargetBioactivity <- function( queryBy=list(molType=NULL,
                                   cmpid_file=file.path(config$resultsPath,
                                                        "cmp_ids.rds"),
                                   config=genConfig()) {
-    if(any(sapply(queryBy, is.null)))
+    if(any(vapply(queryBy, is.null,logical(1))))
         stop("All components in 'queryBy' list need to be populated ",
              "with corresponding character vectors.")
 
@@ -937,19 +959,19 @@ getSymEnsUp <- function(EnsDb="EnsDb.Hsapiens.v86", ids, idtype) {
 
     ## With gene names
     if(idtype=="GENE_NAME") {
-        idDF <- genes(get(EnsDb), filter = GeneNameFilter(ids),
+        idDF <- ensembldb::genes(get(EnsDb), filter = AnnotationFilter::GeneNameFilter(ids),
                       columns = idcolumns)
-        idDF <- idDF[!is.na(values(idDF)$uniprot_id),]
-        idDF <- values(idDF)
+        idDF <- idDF[!is.na(S4Vectors::values(idDF)$uniprot_id),]
+        idDF <- S4Vectors::values(idDF)
     ## With ENSEBML Gene IDs
     } else if(idtype=="ENSEMBL_GENE_ID") {
-        idDF <- genes(get(EnsDb), filter = GeneIdFilter(ids),
+        idDF <- ensembldb::genes(get(EnsDb), filter = AnnotationFilter::GeneIdFilter(ids),
                       columns = idcolumns)
-        idDF <- idDF[!is.na(values(idDF)$uniprot_id),]
-        idDF <- values(idDF)
+        idDF <- idDF[!is.na(S4Vectors::values(idDF)$uniprot_id),]
+        idDF <- S4Vectors::values(idDF)
     ## With UniProt IDs
     } else if(idtype=="UNIPROT_ID") {
-        idDF <- proteins(get(EnsDb), filter = UniprotFilter(ids),
+        idDF <- ensembldb::proteins(get(EnsDb), filter = AnnotationFilter::UniprotFilter(ids),
                          columns = idcolumns)
         idDF <- idDF[!is.na(idDF$uniprot_id),]
     } else {
@@ -1006,20 +1028,17 @@ runDrugTarget_Annot_Bioassay <- function(res_list, up_col_id="ID",
     ##   paralog genes/proteins mapping to several query genes. Thus, this
     ##   one-to-many relationship needs to be resolved for both geneids and
     ##   ensids.
-    id_list <- sapply(names(res_list),
+    id_list <- lapply(names(res_list),
                       function(x)
-                        unique(stats::na.omit(as.character(res_list[[x]][,up_col_id]))),
-                        simplify=FALSE)
+                        unique(stats::na.omit(as.character(res_list[[x]][,up_col_id]))))
+    names(id_list) = names(res_list)
     ensids <- tapply(res_list[[2]]$QueryID, res_list[[2]][,up_col_id],
                      function(x) as.character(unique(x)), simplify=FALSE)
-    geneids <- sapply(names(ensids), function(x) ens_gene_id[ensids[[x]]],
-                      simplify=FALSE)
-    ensids <- sapply(names(ensids), function(x) paste(ensids[[x]],
-                                                      collapse=", "))
-    geneids <- sapply(names(geneids), function(x) paste(geneids[[x]],
-                                                        collapse=", "))
-    ensids <- unlist(ensids[nchar(names(ensids)) > 0])
+    geneids <- vapply(names(ensids), function(x) ens_gene_id[ensids[[x]]], character(1))
     geneids <- unlist(geneids[nchar(names(geneids)) > 0])
+
+    ensids <- vapply(names(ensids), function(x) paste(ensids[[x]], collapse=", "),character(1))
+    ensids <- unlist(ensids[nchar(names(ensids)) > 0])
 
     ## (1.3) Obtain drug-target annotations for IDM
     idm_ids <- id_list$IDM
