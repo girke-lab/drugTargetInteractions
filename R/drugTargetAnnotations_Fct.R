@@ -5,17 +5,19 @@
 ## Last update: 05-Apr-20
 
 genConfig <- function(
-    chemblDbPath = "chembldb.db",
-    downloadPath = "downloads",
-    resultsPath = "results" ){
+                      chemblDbPath = "chembldb.db",
+                      downloadPath = "downloads",
+                      resultsPath = "results") {
 
-    #if(!dir.exists(downloadPath))
+    # if(!dir.exists(downloadPath))
     #    dir.create(downloadPath)
-    if(!dir.exists(resultsPath))
+    if (!dir.exists(resultsPath)) {
         dir.create(resultsPath)
-    return(list(chemblDbPath=chemblDbPath,downloadPath=downloadPath,
-        resultsPath=resultsPath))
-
+    }
+    return(list(
+        chemblDbPath = chemblDbPath, downloadPath = downloadPath,
+        resultsPath = resultsPath
+    ))
 }
 
 #############
@@ -28,115 +30,134 @@ genConfig <- function(
 ##    ftp://ftp.ebi.ac.uk/pub/databases/chembl/UniChem/data/wholeSourceMapping/
 ## Examples:
 
-.getCache <- function(){
-    return(BiocFileCache(cache =
-             rappdirs::user_cache_dir(appname="drugTargetInteractions"),
-             ask=FALSE))
+.getCache <- function() {
+    return(BiocFileCache(
+        cache =
+            rappdirs::user_cache_dir(appname = "drugTargetInteractions"),
+        ask = FALSE
+    ))
 }
-.getCacheFile <- function(name){
-	 # create_time is a column in the DF returned by bfcquery. It is resolved
-	 # in the context of the DF inside dplyr::arrange.
-    return(dplyr::arrange(bfcquery(.getCache(),name,field=c("rname")),
-              dplyr::desc(create_time))[1,"rpath"][[1]])
-
+.getCacheFile <- function(name) {
+    # create_time is a column in the DF returned by bfcquery. It is resolved
+    # in the context of the DF inside dplyr::arrange.
+    return(dplyr::arrange(
+        bfcquery(.getCache(), name, field = c("rname")),
+        dplyr::desc(create_time)
+    )[1, "rpath"][[1]])
 }
 
-.downloadFile <- function(url,name, verbose = FALSE )
-{
-
+.downloadFile <- function(url, name, verbose = FALSE) {
     bfc <- .getCache()
     rid <- bfcquery(bfc, name, "rname")$rid
     if (length(rid) == 0) {
-        if( verbose )
-            message( "Downloading ",name)
+        if (verbose) {
+            message("Downloading ", name)
+        }
         rid <- names(bfcadd(bfc, name, url))
     }
-    if(!isFALSE(bfcneedsupdate(bfc, rid)))
-        #bfcdownload(bfc, rid,ask=FALSE)
-		  .downloadWithRetries(bfc,rid,name)
+    if (!isFALSE(bfcneedsupdate(bfc, rid))) {
+        # bfcdownload(bfc, rid,ask=FALSE)
+        .downloadWithRetries(bfc, rid, name)
+    }
 
     bfcrpath(bfc, rids = rid)
 }
 
-.downloadWithRetries <- function(bfc,rid,name,tries=2){
-	 tries <- as.integer(tries)
+.downloadWithRetries <- function(bfc, rid, name, tries = 2) {
+    tries <- as.integer(tries)
     stopifnot(length(tries) == 1L, !is.na(tries))
 
     while (tries > 0) {
-        result <- tryCatch(bfcdownload(bfc,rid,ask=FALSE), error=identity)
-        if (!inherits(result, "error"))
+        result <- tryCatch(bfcdownload(bfc, rid, ask = FALSE), error = identity)
+        if (!inherits(result, "error")) {
             break
+        }
         tries <- tries - 1
     }
 
     if (tries == 0) {
-        stop("'bfcdownload()' failed:",
-             "\n  filename: ", name,
-             "\n  error: ", conditionMessage(result))
+        stop(
+            "'bfcdownload()' failed:",
+            "\n  filename: ", name,
+            "\n  error: ", conditionMessage(result)
+        )
     }
 
     result
 }
 .cacheFileFromZip <- function(zipFileUrl, name) {
-    tempDir = tempdir()
-    zipFile = file.path(tempDir,"temp.zip")
+    tempDir <- tempdir()
+    zipFile <- file.path(tempDir, "temp.zip")
 
-    download.file(zipFileUrl,zipFile)
-    unzip(zipFile,exdir=tempDir)
+    download.file(zipFileUrl, zipFile)
+    unzip(zipFile, exdir = tempDir)
 
-    #message("zip file: ",zipFile)
-    #message("name: ",name)
-    #message("file to extract: ",file.path(tempDir,name))
-    bfc=.getCache()
-    rid=names(bfcadd(bfc,name,file.path(tempDir,name),action="copy"))
+    # message("zip file: ",zipFile)
+    # message("name: ",name)
+    # message("file to extract: ",file.path(tempDir,name))
+    bfc <- .getCache()
+    rid <- names(bfcadd(bfc, name, file.path(tempDir, name), action = "copy"))
 
-    bfcrpath(bfc,rids=rid)
+    bfcrpath(bfc, rids = rid)
 }
-downloadUniChem <- function(rerun=TRUE,config = genConfig()) {
-    #urlBase = "ftp://ftp.ebi.ac.uk/pub/databases/chembl/UniChem/data/wholeSourceMapping/src_id1/"
-    urlBase = "https://drug-target-interactions-data.s3-us-west-1.amazonaws.com/"
-    if(rerun==TRUE) {
-        bfc = .getCache()
+downloadUniChem <- function(rerun = TRUE, config = genConfig()) {
+    # urlBase = "ftp://ftp.ebi.ac.uk/pub/databases/chembl/UniChem/data/wholeSourceMapping/src_id1/"
+    urlBase <- "https://drug-target-interactions-data.s3-us-west-1.amazonaws.com/"
+    if (rerun == TRUE) {
+        bfc <- .getCache()
         ## ChEMBL to DrugBank mapping in src1src2.txt.gz:
-        .downloadFile(paste(urlBase,"src1src2.txt.gz",sep=""),
-                      "src1src2.txt.gz")
+        .downloadFile(
+            paste(urlBase, "src1src2.txt.gz", sep = ""),
+            "src1src2.txt.gz"
+        )
         ## ChEMBL to PubChem CID mapping in src1src22.txt.gz
-        .downloadFile(paste(urlBase,"src1src22.txt.gz",sep=""),
-                      "src1src22.txt.gz")
+        .downloadFile(
+            paste(urlBase, "src1src22.txt.gz", sep = ""),
+            "src1src22.txt.gz"
+        )
         ## ChEMBL to ChEBI mapping in src1src7.txt.gz
-        .downloadFile(paste(urlBase,"src1src7.txt.gz",sep=""),
-                      "src1src7.txt.gz")
+        .downloadFile(
+            paste(urlBase, "src1src7.txt.gz", sep = ""),
+            "src1src7.txt.gz"
+        )
     }
-     invisible(NULL)
+    invisible(NULL)
 }
-downloadChemblDb <- function(version,rerun=TRUE,config=genConfig()){
+downloadChemblDb <- function(version, rerun = TRUE, config = genConfig()) {
+    url <- paste("ftp://ftp.ebi.ac.uk/pub/databases/chembl/ChEMBLdb/latest/",
+        "chembl_", version, "_sqlite.tar.gz",
+        sep = ""
+    )
+    if (rerun == TRUE) {
+        tempDir <- tempdir()
+        tarFile <- file.path(tempDir, "chembl_sqlite.tar.gz")
 
-    url = paste("ftp://ftp.ebi.ac.uk/pub/databases/chembl/ChEMBLdb/latest/",
-                "chembl_", version,"_sqlite.tar.gz",sep="")
-    if(rerun==TRUE){
-        tempDir = tempdir()
-        tarFile = file.path(tempDir,"chembl_sqlite.tar.gz")
+        dbPath <- paste("chembl_", version, "/chembl_", version, "_sqlite/chembl_",
+            version, ".db",
+            sep = ""
+        )
+        download.file(url, tarFile)
+        untar(tarFile, c(dbPath), exdir = tempDir)
+        sourceDbFile <- file.path(
+            tempDir,
+            paste("chembl_", version, sep = ""),
+            paste("chembl_", version, "_sqlite", sep = ""),
+            paste("chembl_", version, ".db", sep = "")
+        )
 
-        dbPath = paste("chembl_",version,"/chembl_",version,"_sqlite/chembl_",
-             version,".db",sep="")
-        download.file(url,tarFile)
-        untar(tarFile,c(dbPath),exdir=tempDir)
-        sourceDbFile = file.path(tempDir,
-                                     paste("chembl_",version,sep=""),
-                                     paste("chembl_",version,"_sqlite",sep=""),
-                                     paste("chembl_",version,".db",sep=""))
-
-        bfc=.getCache()
-        rid=names(bfcadd(bfc,paste("chembl_",version,".db",sep=""),
-             sourceDbFile,action="copy"))
+        bfc <- .getCache()
+        rid <- names(bfcadd(bfc, paste("chembl_", version, ".db", sep = ""),
+            sourceDbFile,
+            action = "copy"
+        ))
         file.remove(sourceDbFile)
-        return(bfcrpath(bfc,rids=rid))
-        #file.copy(from=sourceDbFile, to = config$chemblDbPath)
-        #file.remove(sourceDbFile)
+        return(bfcrpath(bfc, rids = rid))
+        # file.copy(from=sourceDbFile, to = config$chemblDbPath)
+        # file.remove(sourceDbFile)
     }
 }
 ## Usage:
-#downloadUniChem(rerun=FALSE)
+# downloadUniChem(rerun=FALSE)
 
 ###############################################################
 ## Retrieve with UniProt.ws UniProt IDs using IDMs and SSNNs ##
@@ -167,61 +188,74 @@ downloadChemblDb <- function(version,rerun=TRUE,config=genConfig()){
 # Attaches mouse as species to UniProt.ws (here 'up') object
 # # taxId(up) <- 10090
 
-getUniprotIDs <- function(taxId=9606, kt="ENSEMBL", keys,
-                          seq_cluster="UNIREF90",
-                          chunksize=20) {
+getUniprotIDs <- function(taxId = 9606, kt = "ENSEMBL", keys,
+                          seq_cluster = "UNIREF90",
+                          chunksize = 20) {
     requireNamespace(UniProt.ws)
     up <- UniProt.ws(taxId) # Attach organism, here human
 
     ## Validity checks
-    if(!kt %in% c("ENSEMBL", "UNIPROTKB"))
-    stop("Argument kt needs to be one of: 'ENSEMBL', 'UNIPROTKB'")
-    if(!seq_cluster %in% c("UNIREF100", "UNIREF90", "UNIREF50"))
-        stop("Argument seq_cluster needs to be one of:",
-             " 'UNIREF100', 'UNIREF90', 'UNIREF50'")
+    if (!kt %in% c("ENSEMBL", "UNIPROTKB")) {
+        stop("Argument kt needs to be one of: 'ENSEMBL', 'UNIPROTKB'")
+    }
+    if (!seq_cluster %in% c("UNIREF100", "UNIREF90", "UNIREF50")) {
+        stop(
+            "Argument seq_cluster needs to be one of:",
+            " 'UNIREF100', 'UNIREF90', 'UNIREF50'"
+        )
+    }
 
     ## Columns to return
-    df <- data.frame('ENSEMBL'=character(),
-                     'ID'=character(),
-                     'GENES'=character(),
-                     'UNIREF100'=character(),
-                     'UNIREF90'=character(),
-                     'UNIREF50'=character(),
-                     'ORGANISM'=character(),
-                     'PROTEIN-NAMES'=character(),
-                     check.names=FALSE)
+    df <- data.frame(
+        "ENSEMBL" = character(),
+        "ID" = character(),
+        "GENES" = character(),
+        "UNIREF100" = character(),
+        "UNIREF90" = character(),
+        "UNIREF50" = character(),
+        "ORGANISM" = character(),
+        "PROTEIN-NAMES" = character(),
+        check.names = FALSE
+    )
     columns <- colnames(df)
 
     ## Arrange keys in chunk list, with list components of length<='chunksize'
     keys <- unique(keys)
-    keylist <- split(keys, ceiling(seq_along(keys)/chunksize))
+    keylist <- split(keys, ceiling(seq_along(keys) / chunksize))
 
     ## Empty list container
     listcontainer <- vector("list", length(keylist))
     names(listcontainer) <- names(keylist)
-    res_list <- list(IDM=listcontainer, SSNN=listcontainer)
+    res_list <- list(IDM = listcontainer, SSNN = listcontainer)
 
     ## Run queries in chunks
-    for(i in seq_along(keylist)) {
+    for (i in seq_along(keylist)) {
         ## ID mappings (IDMs)
-        res_ID <- try(UniProt.ws::select(up, keys=keylist[[i]], columns, kt),
-                      silent=TRUE)
-        if(!inherits(res_ID, "try-error")) {
-            if(chunksize==1) {
-                res_ID <- data.frame(QueryID=keylist[[i]][1], res_ID,
-                                     check.names=FALSE)
-                res_list[[1]][[i]] <- res_ID[,c("QueryID", columns)]
+        res_ID <- try(UniProt.ws::select(up, keys = keylist[[i]], columns, kt),
+            silent = TRUE
+        )
+        if (!inherits(res_ID, "try-error")) {
+            if (chunksize == 1) {
+                res_ID <- data.frame(
+                    QueryID = keylist[[i]][1], res_ID,
+                    check.names = FALSE
+                )
+                res_list[[1]][[i]] <- res_ID[, c("QueryID", columns)]
             } else {
-                res_list[[1]][[i]] <- res_ID[,columns]
+                res_list[[1]][[i]] <- res_ID[, columns]
             }
         } else {
-            if(chunksize==1) {
-                res_list[[1]][[i]] <- data.frame(QueryID=character(), df,
-                                                 check.names=FALSE)
+            if (chunksize == 1) {
+                res_list[[1]][[i]] <- data.frame(
+                    QueryID = character(), df,
+                    check.names = FALSE
+                )
                 # Required since current iteration will not
                 # enter next step (SSNN)
-                res_list[[2]][[i]] <- data.frame(QueryID=character(), df,
-                                                 check.names=FALSE)
+                res_list[[2]][[i]] <- data.frame(
+                    QueryID = character(), df,
+                    check.names = FALSE
+                )
             } else {
                 res_list[[1]][[i]] <- df
                 # Required since current iteration will not
@@ -231,46 +265,57 @@ getUniprotIDs <- function(taxId=9606, kt="ENSEMBL", keys,
         }
 
         ## Sequence Similarity (SSNNs) using UNIREF*
-        if(!inherits(res_ID, "try-error")) {
-            unirefkeys <- as.character(stats::na.omit(unique(res_ID[,seq_cluster])))
-            unirefkeylist <- split(unirefkeys,
-                                   ceiling(seq_along(unirefkeys)/chunksize))
+        if (!inherits(res_ID, "try-error")) {
+            unirefkeys <- as.character(stats::na.omit(unique(res_ID[, seq_cluster])))
+            unirefkeylist <- split(
+                unirefkeys,
+                ceiling(seq_along(unirefkeys) / chunksize)
+            )
             unirefcontainer <- vector("list", length(unirefkeylist))
             names(unirefcontainer) <- names(unirefkeylist)
             ## SSNN queries are run in subloop since number of uniref keys is
             # larger than in IDM query
-            for(j in seq_along(unirefkeylist)) {
-                tmp <- try(UniProt.ws::select(up, keys=unirefkeylist[[j]],
-                                              columns, seq_cluster),
-                           silent=TRUE)
-                if(!inherits(tmp, "try-error")) {
-                    if(chunksize==1) {
-                        unirefcontainer[[j]] <- data.frame(QueryID=
-                                                             keylist[[i]][1],
-                                                           tmp[,columns],
-                                                           check.names=FALSE)
+            for (j in seq_along(unirefkeylist)) {
+                tmp <- try(UniProt.ws::select(up,
+                    keys = unirefkeylist[[j]],
+                    columns, seq_cluster
+                ),
+                silent = TRUE
+                )
+                if (!inherits(tmp, "try-error")) {
+                    if (chunksize == 1) {
+                        unirefcontainer[[j]] <- data.frame(
+                            QueryID =
+                                keylist[[i]][1],
+                            tmp[, columns],
+                            check.names = FALSE
+                        )
                     } else {
-                        unirefcontainer[[j]] <- tmp[,columns]
+                        unirefcontainer[[j]] <- tmp[, columns]
                     }
                 } else {
-                    if(chunksize==1) {
-                        unirefcontainer <- data.frame(QueryID=character(), df,
-                                                      check.names=FALSE)
+                    if (chunksize == 1) {
+                        unirefcontainer <- data.frame(
+                            QueryID = character(), df,
+                            check.names = FALSE
+                        )
                     } else {
                         unirefcontainer[[j]] <- df
                     }
                 }
             }
             res_CL <- do.call("rbind", unirefcontainer)
-            if(chunksize==1) {
-                res_list[[2]][[i]] <- res_CL[,c("QueryID", columns)]
+            if (chunksize == 1) {
+                res_list[[2]][[i]] <- res_CL[, c("QueryID", columns)]
             } else {
-                res_list[[2]][[i]] <- res_CL[,columns]
+                res_list[[2]][[i]] <- res_CL[, columns]
             }
         }
         ## Status message
-        print(paste("Processed",chunksize * i,"keys of total of",length(keys),
-                    "keys."))
+        print(paste(
+            "Processed", chunksize * i, "keys of total of", length(keys),
+            "keys."
+        ))
     }
     ## Assemble and return results
     res_list[[1]] <- do.call("rbind", res_list[[1]])
@@ -305,106 +350,131 @@ getUniprotIDs <- function(taxId=9606, kt="ENSEMBL", keys,
 ## obtain SSNNs.
 
 getParalogs <- function(queryBy) {
-
     mart <- biomaRt::useMart("ensembl", dataset = "hsapiens_gene_ensembl")
 
     ## ID Matching (IDM) result table
     ## To list available uniprot annotation fields, run:
     # listAttributes(mart)[grep("uniprot", listAttributes(mart)[,"name"]),]
-    IDMresult <- biomaRt::getBM(attributes = c("ensembl_gene_id",
-                                    "uniprot_gn_symbol",
-                                    "uniprotswissprot",
-                                    "uniprotsptrembl",
-                                    "description"),
-                    filters = queryBy$idType,
-                    values = queryBy$ids,
-                    mart = mart)
-    IDMresult <- data.frame(QueryID=as.character(IDMresult$ensembl_gene_id),
-                            ENSEMBL=as.character(IDMresult$ensembl_gene_id),
-                            GENES=as.character(IDMresult$uniprot_gn_symbol),
-                            ID_up_sp=as.character(IDMresult$uniprotswissprot),
-                           ID_up_sp_tr=as.character(IDMresult$uniprotsptrembl))
+    IDMresult <- biomaRt::getBM(
+        attributes = c(
+            "ensembl_gene_id",
+            "uniprot_gn_symbol",
+            "uniprotswissprot",
+            "uniprotsptrembl",
+            "description"
+        ),
+        filters = queryBy$idType,
+        values = queryBy$ids,
+        mart = mart
+    )
+    IDMresult <- data.frame(
+        QueryID = as.character(IDMresult$ensembl_gene_id),
+        ENSEMBL = as.character(IDMresult$ensembl_gene_id),
+        GENES = as.character(IDMresult$uniprot_gn_symbol),
+        ID_up_sp = as.character(IDMresult$uniprotswissprot),
+        ID_up_sp_tr = as.character(IDMresult$uniprotsptrembl)
+    )
 
     ## Paralog (Sequence Similarity Nearest Neighbors - SSNN) result table
     ## To list available paralog annotation fields, run:
     # listAttributes(mart)[grep("paralog", listAttributes(mart)[,"name"]),]
-    result <- biomaRt::getBM(attributes = c("external_gene_name",
-                                    "ensembl_gene_id",
-                                    "hsapiens_paralog_associated_gene_name",
-                                    "hsapiens_paralog_ensembl_gene",
-                                    "hsapiens_paralog_perc_id",
-                                    "hsapiens_paralog_perc_id_r1"),
-                    filters = queryBy$idType,
-                    values = queryBy$ids,
-                    mart = mart)
+    result <- biomaRt::getBM(
+        attributes = c(
+            "external_gene_name",
+            "ensembl_gene_id",
+            "hsapiens_paralog_associated_gene_name",
+            "hsapiens_paralog_ensembl_gene",
+            "hsapiens_paralog_perc_id",
+            "hsapiens_paralog_perc_id_r1"
+        ),
+        filters = queryBy$idType,
+        values = queryBy$ids,
+        mart = mart
+    )
     ## Reshape result table
-    query <- result[!duplicated(result$ensembl_gene_id),]
-    query <- data.frame(QueryID=as.character(query$ensembl_gene_id),
-                        ENSEMBL=as.character(query$ensembl_gene_id),
-                        GENES=as.character(query$external_gene_name),
-                        stringsAsFactors=FALSE)
-    query <- cbind(query, paralog_perc_id=100, paralog_perc_id_r1=100)
+    query <- result[!duplicated(result$ensembl_gene_id), ]
+    query <- data.frame(
+        QueryID = as.character(query$ensembl_gene_id),
+        ENSEMBL = as.character(query$ensembl_gene_id),
+        GENES = as.character(query$external_gene_name),
+        stringsAsFactors = FALSE
+    )
+    query <- cbind(query, paralog_perc_id = 100, paralog_perc_id_r1 = 100)
 
     # removes rows with no paralog matches
-    result <- result[nchar(result$hsapiens_paralog_ensembl_gene) > 0,]
-    paralog <- data.frame(QueryID=result$ensembl_gene_id,
-                          ENSEMBL=result$hsapiens_paralog_ensembl_gene,
-                          GENES=result$hsapiens_paralog_associated_gene_name,
-                          paralog_perc_id=result$hsapiens_paralog_perc_id,
-                          paralog_perc_id_r1=result$hsapiens_paralog_perc_id_r1,
-                          stringsAsFactors=FALSE)
+    result <- result[nchar(result$hsapiens_paralog_ensembl_gene) > 0, ]
+    paralog <- data.frame(
+        QueryID = result$ensembl_gene_id,
+        ENSEMBL = result$hsapiens_paralog_ensembl_gene,
+        GENES = result$hsapiens_paralog_associated_gene_name,
+        paralog_perc_id = result$hsapiens_paralog_perc_id,
+        paralog_perc_id_r1 = result$hsapiens_paralog_perc_id_r1,
+        stringsAsFactors = FALSE
+    )
     resultDF <- rbind(query, paralog)
-    resultDF <- resultDF[order(resultDF$QueryID),]
+    resultDF <- resultDF[order(resultDF$QueryID), ]
 
     ## Retrieve for ENSEMBL gene IDs in results the corresponding UniProt IDs.
     ## Note, this needs to be done in separate query since attributes from
     ## multiple attribue pages are not allowed.
-    uniprot <- biomaRt::getBM(attributes = c("ensembl_gene_id",
-                                    "uniprot_gn_symbol",
-                                    "uniprotswissprot",
-                                    "uniprotsptrembl",
-                                    "description"),
-                    filters = "ensembl_gene_id",
-                    values = resultDF$ENSEMBL,
-                    mart = mart)
+    uniprot <- biomaRt::getBM(
+        attributes = c(
+            "ensembl_gene_id",
+            "uniprot_gn_symbol",
+            "uniprotswissprot",
+            "uniprotsptrembl",
+            "description"
+        ),
+        filters = "ensembl_gene_id",
+        values = resultDF$ENSEMBL,
+        mart = mart
+    )
 
     ## For UniProtKB/Swiss-Prot IDs (curated entries)
     up_sp <- tapply(uniprot$uniprotswissprot, uniprot$ensembl_gene_id,
-                    function(x) unique(as.character(x)[nchar(x)>0]),
-                    simplify=FALSE)
-    index <- vapply(up_sp, length,integer(1))
-    up_sp[index==0] <- ""
-    index[index==0] <- 1
+        function(x) unique(as.character(x)[nchar(x) > 0]),
+        simplify = FALSE
+    )
+    index <- vapply(up_sp, length, integer(1))
+    up_sp[index == 0] <- ""
+    index[index == 0] <- 1
     index <- index[as.character(resultDF$ENSEMBL)]
     up_sp <- up_sp[names(index)]
-    resultDF <- cbind(resultDF[rep(seq_along(resultDF$ENSEMBL), index),],
-                      ID_up_sp=as.character(unlist(up_sp)))
+    resultDF <- cbind(resultDF[rep(seq_along(resultDF$ENSEMBL), index), ],
+        ID_up_sp = as.character(unlist(up_sp))
+    )
 
     ## UniProtKB/TrEMBL IDs (less curated entries)
     up_sp_tr <- tapply(uniprot$uniprotsptrembl, uniprot$ensembl_gene_id,
-                       function(x) unique(as.character(x)[nchar(x)>0]),
-                       simplify=FALSE)
-    index <- vapply(up_sp_tr, length,integer(1))
-    up_sp_tr[index==0] <- ""
-    index[index==0] <- 1
+        function(x) unique(as.character(x)[nchar(x) > 0]),
+        simplify = FALSE
+    )
+    index <- vapply(up_sp_tr, length, integer(1))
+    up_sp_tr[index == 0] <- ""
+    index[index == 0] <- 1
     index <- index[as.character(resultDF$ENSEMBL)]
     up_sp_tr <- up_sp_tr[names(index)]
-    resultDF <- cbind(resultDF[rep(seq_along(resultDF$ENSEMBL), index),],
-                      ID_up_sp_tr=as.character(unlist(up_sp_tr)))
+    resultDF <- cbind(resultDF[rep(seq_along(resultDF$ENSEMBL), index), ],
+        ID_up_sp_tr = as.character(unlist(up_sp_tr))
+    )
     row.names(resultDF) <- NULL
 
     ## Assemble result list
 
     # This makes behavior more similar to result from getUniprotIDs
     IDMresult[IDMresult == ""] <- NA
-    for(i in colnames(IDMresult))
-        if(is.factor(IDMresult[,i]))
-            IDMresult[,i] <- as.character(IDMresult[,i])
+    for (i in colnames(IDMresult)) {
+        if (is.factor(IDMresult[, i])) {
+            IDMresult[, i] <- as.character(IDMresult[, i])
+        }
+    }
     resultDF[resultDF == ""] <- NA
-    for(i in colnames(resultDF))
-        if(is.factor(resultDF[,i]))
-            resultDF[,i] <- as.character(resultDF[,i])
-    resultList <- list(IDM=IDMresult, SSNN=resultDF)
+    for (i in colnames(resultDF)) {
+        if (is.factor(resultDF[, i])) {
+            resultDF[, i] <- as.character(resultDF[, i])
+        }
+    }
+    resultList <- list(IDM = IDMresult, SSNN = resultDF)
     return(resultList)
 }
 ## Usage:
@@ -423,23 +493,28 @@ getParalogs <- function(queryBy) {
 #####################################################
 
 ## Function to query known drug-target annotations
-drugTargetAnnot <- function(queryBy=list(molType=NULL, idType=NULL, ids=NULL),
-                         cmpid_file=file.path(config$resultsPath,"cmp_ids.rds"),
-                            config=genConfig()) {
-
-    if(any(names(queryBy) != c("molType", "idType", "ids")))
-         stop("All three list components in 'queryBy' (named: 'molType',",
-              " 'idType' and 'ids') need to be present.")
-    if(any(vapply(queryBy, length,integer(1)) == 0))
-         stop("All components in 'queryBy' list need to be populated with ",
-              "corresponding character vectors.")
+drugTargetAnnot <- function(queryBy = list(molType = NULL, idType = NULL, ids = NULL),
+                            cmpid_file = file.path(config$resultsPath, "cmp_ids.rds"),
+                            config = genConfig()) {
+    if (any(names(queryBy) != c("molType", "idType", "ids"))) {
+        stop(
+            "All three list components in 'queryBy' (named: 'molType',",
+            " 'idType' and 'ids') need to be present."
+        )
+    }
+    if (any(vapply(queryBy, length, integer(1)) == 0)) {
+        stop(
+            "All components in 'queryBy' list need to be populated with ",
+            "corresponding character vectors."
+        )
+    }
 
 
     ## Load ChEMBL SQLite
     ## ChEMBL SQLite downloaded from here: ftp://ftp.ebi.ac.uk/pub/databases/
     ##    chembl/ChEMBLdb/latest/chembl_24_1_sqlite.tar.gz
     ## after unpacking you get chembl_xx.db
-     dbpath = config$chemblDbPath
+    dbpath <- config$chemblDbPath
     mydb <- dbConnect(SQLite(), dbpath)
 
     ## Input file for following step was generated by cmpIdMapping()
@@ -447,11 +522,13 @@ drugTargetAnnot <- function(queryBy=list(molType=NULL, idType=NULL, ids=NULL),
     rownames(cmp_ids) <- as.character(cmp_ids$molregno)
 
     ## Query by targets
-    if(queryBy$molType=="protein" & grepl("Uniprot", queryBy$idType[[1]],
-                                          ignore.case=TRUE)) {
-        idvec <- paste0("(\"", paste(queryBy$ids, collapse="\", \""), "\")")
+    if (queryBy$molType == "protein" & grepl("Uniprot", queryBy$idType[[1]],
+        ignore.case = TRUE
+    )) {
+        idvec <- paste0("(\"", paste(queryBy$ids, collapse = "\", \""), "\")")
 
-        query = paste("SELECT d.molregno,e.chembl_id, e.pref_name AS Drug_Name,
+        query <- paste(
+            "SELECT d.molregno,e.chembl_id, e.pref_name AS Drug_Name,
                               d.mechanism_of_action AS MOA,
                               d.action_type AS Action_Type,
                               e.first_approval AS First_Approval,
@@ -471,40 +548,42 @@ drugTargetAnnot <- function(queryBy=list(molType=NULL, idType=NULL, ids=NULL),
                           LEFT JOIN drug_indication AS f
                             ON e.molregno = f.molregno
                           WHERE c.accession IN", idvec,
-                          "GROUP BY d.molregno, c.accession
-                           ORDER BY c.accession, c.description")
-        myquery <- dbSendQuery(mydb, query )
+            "GROUP BY d.molregno, c.accession
+                           ORDER BY c.accession, c.description"
+        )
+        myquery <- dbSendQuery(mydb, query)
         activityassays <- dbFetch(myquery)
         dbClearResult(myquery)
     }
 
     ## Query by compounds
-    if(queryBy$molType=="cmp") {
+    if (queryBy$molType == "cmp") {
         ## ID conversions
-        if(queryBy$idType=="molregno") {
+        if (queryBy$idType == "molregno") {
             cmpvec <- queryBy$ids
         }
-        if(queryBy$idType=="chembl_id") {
-            cmp_ids <- cmp_ids[!duplicated(cmp_ids$chembl_id),]
-            cmpvec <- as.character(cmp_ids$molregno);
-                names(cmpvec) <- as.character(cmp_ids$chembl_id)
+        if (queryBy$idType == "chembl_id") {
+            cmp_ids <- cmp_ids[!duplicated(cmp_ids$chembl_id), ]
+            cmpvec <- as.character(cmp_ids$molregno)
+            names(cmpvec) <- as.character(cmp_ids$chembl_id)
             cmpvec <- cmpvec[queryBy$ids]
         }
-        if(queryBy$idType=="PubChem_ID") {
-            cmp_ids <- cmp_ids[!duplicated(cmp_ids$PubChem_ID),]
-            cmpvec <- as.character(cmp_ids$molregno);
-                names(cmpvec) <- as.character(cmp_ids$PubChem_ID)
+        if (queryBy$idType == "PubChem_ID") {
+            cmp_ids <- cmp_ids[!duplicated(cmp_ids$PubChem_ID), ]
+            cmpvec <- as.character(cmp_ids$molregno)
+            names(cmpvec) <- as.character(cmp_ids$PubChem_ID)
             cmpvec <- cmpvec[queryBy$ids]
         }
-        if(queryBy$idType=="DrugBank_ID") {
-            cmp_ids <- cmp_ids[!duplicated(cmp_ids$DrugBank_ID),]
-            cmpvec <- as.character(cmp_ids$molregno);
-                names(cmpvec) <- as.character(cmp_ids$DrugBank_ID)
+        if (queryBy$idType == "DrugBank_ID") {
+            cmp_ids <- cmp_ids[!duplicated(cmp_ids$DrugBank_ID), ]
+            cmpvec <- as.character(cmp_ids$molregno)
+            names(cmpvec) <- as.character(cmp_ids$DrugBank_ID)
             cmpvec <- cmpvec[queryBy$ids]
         }
-        idvec <- paste0("(\"", paste(cmpvec, collapse="\", \""), "\")")
+        idvec <- paste0("(\"", paste(cmpvec, collapse = "\", \""), "\")")
 
-        query=paste("SELECT a.molregno, a.chembl_id, a.pref_name AS Drug_Name,
+        query <- paste(
+            "SELECT a.molregno, a.chembl_id, a.pref_name AS Drug_Name,
                             b.mechanism_of_action AS MOA,
                             b.action_type AS Action_Type,
                             a.first_approval AS First_Approval,
@@ -522,30 +601,42 @@ drugTargetAnnot <- function(queryBy=list(molType=NULL, idType=NULL, ids=NULL),
                         ON d.component_id = e.component_id
                       LEFT JOIN drug_indication AS f ON a.molregno = f.molregno
                       WHERE a.molregno IN", idvec,
-                      "GROUP BY a.molregno, e.accession
-                       ORDER BY a.molregno, a.pref_name")
-        myquery <- dbSendQuery(mydb,query )
+            "GROUP BY a.molregno, e.accession
+                       ORDER BY a.molregno, a.pref_name"
+        )
+        myquery <- dbSendQuery(mydb, query)
         activityassays <- dbFetch(myquery)
         dbClearResult(myquery)
     }
-    resultDF <- data.frame(cmp_ids[as.character(activityassays$molregno),
-                           -c(2,4)], activityassays[,-c(1,2)])
+    resultDF <- data.frame(cmp_ids[
+        as.character(activityassays$molregno),
+        -c(2, 4)
+    ], activityassays[, -c(1, 2)])
     dbDisconnect(mydb)
 
     ## Remove rows with identical values in all fields
-    resultDF <- resultDF[!duplicated(apply(resultDF, 1, paste, collapse="_")),]
+    resultDF <- resultDF[!duplicated(apply(resultDF, 1, paste, collapse = "_")), ]
     ## Add query column and sort rows in result table according to query
-    index_list <- lapply(queryBy$ids,
-                         function(x)
-                             which(toupper(resultDF[,queryBy$idType]) %in%
-                                   toupper(x)))
-	 names(index_list) = queryBy$ids
-    index_list[vapply(index_list,length,integer(1))==0] <- Inf
-    index_df <- data.frame(ids=rep(names(index_list),
-                                   vapply(index_list, length,integer(1))),
-                           rowids=unlist(index_list))
-    resultDF <- data.frame(QueryIDs=index_df[,1],
-                           resultDF[as.numeric(index_df$rowids),])
+    index_list <- lapply(
+        queryBy$ids,
+        function(x) {
+            which(toupper(resultDF[, queryBy$idType]) %in%
+                toupper(x))
+        }
+    )
+    names(index_list) <- queryBy$ids
+    index_list[vapply(index_list, length, integer(1)) == 0] <- Inf
+    index_df <- data.frame(
+        ids = rep(
+            names(index_list),
+            vapply(index_list, length, integer(1))
+        ),
+        rowids = unlist(index_list)
+    )
+    resultDF <- data.frame(
+        QueryIDs = index_df[, 1],
+        resultDF[as.numeric(index_df$rowids), ]
+    )
     rownames(resultDF) <- NULL
     return(resultDF)
 }
@@ -554,8 +645,8 @@ drugTargetAnnot <- function(queryBy=list(molType=NULL, idType=NULL, ids=NULL),
 ## Query Known Drug-Target Annotations ##
 #########################################
 ## Function to generate drugTargetAnnot.xls table
-drugTargetAnnotTable <- function(outfile, rerun=TRUE,config=genConfig()) {
-    if(rerun==TRUE) {
+drugTargetAnnotTable <- function(outfile, rerun = TRUE, config = genConfig()) {
+    if (rerun == TRUE) {
         ## Load ChEMBL SQLite
         ## ChEMBL SQLite downloaded from here: ftp://ftp.ebi.ac.uk/pub/
         ##          databases/chembl/ChEMBLdb/latest/chembl_24_1_sqlite.tar.gz
@@ -564,79 +655,94 @@ drugTargetAnnotTable <- function(outfile, rerun=TRUE,config=genConfig()) {
         mydb <- dbConnect(SQLite(), chembldb)
 
         ## Joins for drug mech
-        allmech <- dbGetQuery(mydb, 'SELECT *
+        allmech <- dbGetQuery(mydb, "SELECT *
                                     FROM drug_mechanism,
                                          molecule_dictionary
                                     WHERE drug_mechanism.molregno =
-                                        molecule_dictionary.molregno')
+                                        molecule_dictionary.molregno")
 
         ## Set values in "mechanism_comment" column to NA since it contains
         ## weird characters resulting in row duplications when writing to files
-        allmech[ , colnames(allmech) %in% "mechanism_comment"] <-
+        allmech[, colnames(allmech) %in% "mechanism_comment"] <-
             rep(NA, nrow(allmech))
 
         ## Get UniChem Info
         ## ChEMBL to DrubBank mapping in src1src2.txt.gz:
 
         chembl2drugbank <- read.delim(gzfile(.getCacheFile("src1src2.txt.gz")))
-        chembl2drugbank_vec <- tapply(as.character(chembl2drugbank[,2]),
-                                      factor(chembl2drugbank[,1]), paste,
-                                      collapse=", ")
+        chembl2drugbank_vec <- tapply(as.character(chembl2drugbank[, 2]),
+            factor(chembl2drugbank[, 1]), paste,
+            collapse = ", "
+        )
         ## ChEMBL to PubChem CID mapping in src1src22.txt.gz
         chembl2pubchem <- read.delim(gzfile(.getCacheFile("src1src22.txt.gz")))
-        chembl2pubchem_vec <- tapply(as.character(chembl2pubchem[,2]),
-                                     factor(chembl2pubchem[,1]), paste,
-                                     collapse=", ")
+        chembl2pubchem_vec <- tapply(as.character(chembl2pubchem[, 2]),
+            factor(chembl2pubchem[, 1]), paste,
+            collapse = ", "
+        )
         ## ChEMBL to ChEBI mapping in src1src7.txt.gz
         chembl2chebi <- read.delim(gzfile(.getCacheFile("src1src7.txt.gz")))
-        chembl2chebi_vec <- tapply(as.character(chembl2chebi[,2]),
-                                   factor(chembl2chebi[,1]), paste,
-                                   collapse=", ")
+        chembl2chebi_vec <- tapply(as.character(chembl2chebi[, 2]),
+            factor(chembl2chebi[, 1]), paste,
+            collapse = ", "
+        )
         allmech <- cbind(allmech,
-                         PubChem_ID=chembl2pubchem_vec[allmech$chembl_id],
-                         DrugBank_ID=chembl2drugbank_vec[allmech$chembl_id],
-                         ChEBI_ID=chembl2chebi_vec[allmech$chembl_id])
+            PubChem_ID = chembl2pubchem_vec[allmech$chembl_id],
+            DrugBank_ID = chembl2drugbank_vec[allmech$chembl_id],
+            ChEBI_ID = chembl2chebi_vec[allmech$chembl_id]
+        )
 
         ## Joins for target ids
-        targetids <- dbGetQuery(mydb, 'SELECT *
+        targetids <- dbGetQuery(mydb, "SELECT *
                                        FROM target_components,
                                             component_sequences
                                        WHERE target_components.component_id =
-                                           component_sequences.component_id')
+                                           component_sequences.component_id")
         tid2accession <- tapply(targetids$accession, as.factor(targetids$tid),
-                                paste, collapse=", ")
+            paste,
+            collapse = ", "
+        )
         tid2description <- tapply(targetids$description,
-                                  as.factor(targetids$tid), paste,
-                                  collapse=", ")
+            as.factor(targetids$tid), paste,
+            collapse = ", "
+        )
         tid2organism <- tapply(targetids$organism, as.factor(targetids$tid),
-                               paste, collapse=", ")
-        target_dict <- dbGetQuery(mydb, 'SELECT * FROM target_dictionary')
+            paste,
+            collapse = ", "
+        )
+        target_dict <- dbGetQuery(mydb, "SELECT * FROM target_dictionary")
         chembl_tid <- as.character(target_dict$chembl_id)
         names(chembl_tid) <- as.character(target_dict$tid)
-        tidDF <- data.frame(row.names=names(tid2accession),
-                            ChEMBL_TID=chembl_tid[names(tid2accession)],
-                            UniProt_ID=tid2accession,
-                            Desc=tid2description[names(tid2accession)],
-                            Organism=tid2organism[names(tid2accession)])
+        tidDF <- data.frame(
+            row.names = names(tid2accession),
+            ChEMBL_TID = chembl_tid[names(tid2accession)],
+            UniProt_ID = tid2accession,
+            Desc = tid2description[names(tid2accession)],
+            Organism = tid2organism[names(tid2accession)]
+        )
 
         ## Join mesh and efo indication
-        indication <- dbGetQuery(mydb, 'SELECT * FROM drug_indication')
-        mesh <- paste(indication$mesh_id, indication$mesh_heading, sep=": ")
+        indication <- dbGetQuery(mydb, "SELECT * FROM drug_indication")
+        mesh <- paste(indication$mesh_id, indication$mesh_heading, sep = ": ")
         mesh2molregno <- tapply(mesh, as.factor(indication$molregno), paste,
-                                collapse=", ")
-        efo <- paste(indication$efo_id, indication$efo_term, sep=": ")
+            collapse = ", "
+        )
+        efo <- paste(indication$efo_id, indication$efo_term, sep = ": ")
         efo2molregno <- tapply(efo, as.factor(indication$molregno), paste,
-                               collapse=", ")
+            collapse = ", "
+        )
 
         ## Assemble everything
-        allmech <- data.frame(row.names=seq_along(allmech[,1]),
-                              allmech,
-                              tidDF[as.character(allmech$tid),],
-                              MeshIndication=
-                                mesh2molregno[as.character(allmech$molregno)],
-                              EFOIndication=
-                                efo2molregno[as.character(allmech$molregno)])
-        write.table(allmech, outfile, row.names=FALSE, quote=FALSE, sep="\t")
+        allmech <- data.frame(
+            row.names = seq_along(allmech[, 1]),
+            allmech,
+            tidDF[as.character(allmech$tid), ],
+            MeshIndication =
+                mesh2molregno[as.character(allmech$molregno)],
+            EFOIndication =
+                efo2molregno[as.character(allmech$molregno)]
+        )
+        write.table(allmech, outfile, row.names = FALSE, quote = FALSE, sep = "\t")
     }
 }
 ## Usage:
@@ -646,34 +752,51 @@ drugTargetAnnotTable <- function(outfile, rerun=TRUE,config=genConfig()) {
 ## download here: https://www.ebi.ac.uk/chembl/old/drug/targets
 
 ## Query functions for drugTargetAnnot.xls
-getDrugTarget <- function(dt_file=file.path(config$resultsPath,
-                                            "drugTargetAnnot.xls"),
-                          queryBy=list(molType=NULL, idType=NULL, ids=NULL),
-                          id_mapping=c(chembl="chembl_id",pubchem="PubChem_ID",
-                                       uniprot="UniProt_ID"),
-                          columns,config=genConfig()) {
-    #stop("dt_file: ",dt_file)
+getDrugTarget <- function(dt_file = file.path(
+                              config$resultsPath,
+                              "drugTargetAnnot.xls"
+                          ),
+                          queryBy = list(molType = NULL, idType = NULL, ids = NULL),
+                          id_mapping = c(
+                              chembl = "chembl_id", pubchem = "PubChem_ID",
+                              uniprot = "UniProt_ID"
+                          ),
+                          columns, config = genConfig()) {
+    # stop("dt_file: ",dt_file)
     dt_file <- read.delim(dt_file)
     myid <- id_mapping[queryBy$idType]
     .queryFct <- function(dt_file, myid) {
-        idlist <- strsplit(as.character(dt_file[,myid]), ", ")
-        index_list <- lapply(queryBy$ids,
-                             function(x) which(vapply(seq_along(idlist),
-                                          function(y)
-                                              any(tolower(idlist[[y]]) %in% tolower(x)),
-															 logical(1))) )
-		  names(index_list) = queryBy$ids
+        idlist <- strsplit(as.character(dt_file[, myid]), ", ")
+        index_list <- lapply(
+            queryBy$ids,
+            function(x) {
+                which(vapply(
+                    seq_along(idlist),
+                    function(y) {
+                        any(tolower(idlist[[y]]) %in% tolower(x))
+                    },
+                    logical(1)
+                ))
+            }
+        )
+        names(index_list) <- queryBy$ids
         ## To include no matches in result, inject Inf in corresponding slots
-        index_list[vapply(index_list,length,integer(1))==0] <- Inf
-        index_df <- data.frame(ids=rep(names(index_list),
-                                       vapply(index_list, length,integer(1))),
-                               rowids=unlist(index_list))
-        df <- data.frame(QueryIDs=index_df[,1],
-                         dt_file[as.numeric(index_df$rowids),])
+        index_list[vapply(index_list, length, integer(1)) == 0] <- Inf
+        index_df <- data.frame(
+            ids = rep(
+                names(index_list),
+                vapply(index_list, length, integer(1))
+            ),
+            rowids = unlist(index_list)
+        )
+        df <- data.frame(
+            QueryIDs = index_df[, 1],
+            dt_file[as.numeric(index_df$rowids), ]
+        )
         return(df)
     }
     df <- .queryFct(dt_file, myid)
-    dfsub <- df[,columns]
+    dfsub <- df[, columns]
     rownames(dfsub) <- NULL
     return(dfsub)
 }
@@ -697,46 +820,58 @@ getDrugTarget <- function(dt_file=file.path(config$resultsPath,
 ## DrugAge ##
 #############
 ## Source file of DrugAge is linked here: http://genomics.senescence.info/drugs
-processDrugage <- function(drugagefile=file.path(config$resultsPath,
-                                                 "drugage_id_mapping.xls"),
-                           redownloaddrugage=TRUE,config=genConfig()) {
-    if(redownloaddrugage==TRUE) {
-          .cacheFileFromZip("http://genomics.senescence.info/drugs/dataset.zip",
-                            "drugage.csv")
+processDrugage <- function(drugagefile = file.path(
+                               config$resultsPath,
+                               "drugage_id_mapping.xls"
+                           ),
+                           redownloaddrugage = TRUE, config = genConfig()) {
+    if (redownloaddrugage == TRUE) {
+        .cacheFileFromZip(
+            "http://genomics.senescence.info/drugs/dataset.zip",
+            "drugage.csv"
+        )
     }
     drugage <- read.csv(.getCacheFile("drugage.csv"))
-    #drugage <- read.csv(file.path(config$downloadPath,"drugage.csv"))
-    drugage <- drugage[!duplicated(drugage$compound_name),]
+    # drugage <- read.csv(file.path(config$downloadPath,"drugage.csv"))
+    drugage <- drugage[!duplicated(drugage$compound_name), ]
     ## Get mol_dict table from chembl_db
     chembldb <- config$chemblDbPath
     mydb <- dbConnect(SQLite(), chembldb)
-    mol_dict <- dbGetQuery(mydb,
-                           'SELECT pref_name,chembl_id
-                             FROM molecule_dictionary')
-    mol_dict_sub <- mol_dict[!is.na(mol_dict$pref_name),] # mol_dict from below
+    mol_dict <- dbGetQuery(
+        mydb,
+        "SELECT pref_name,chembl_id
+                             FROM molecule_dictionary"
+    )
+    mol_dict_sub <- mol_dict[!is.na(mol_dict$pref_name), ] # mol_dict from below
     prefname <- as.character(mol_dict_sub$pref_name)
     chemblid <- as.character(mol_dict_sub$chembl_id)
-    fact <- tapply(chemblid, factor(prefname), paste, collapse=", ")
+    fact <- tapply(chemblid, factor(prefname), paste, collapse = ", ")
     ## Load ChEMBL to PubChem CID and DrugBank ID mappings
     ## (generated above with downloadUniChem Fct)
     chembl2pubchem <- read.delim(gzfile(.getCacheFile("src1src22.txt.gz")))
-    chembl2pubchem_vec <- tapply(as.character(chembl2pubchem[,2]),
-                                 factor(chembl2pubchem[,1]), paste,
-                                 collapse=", ")
+    chembl2pubchem_vec <- tapply(as.character(chembl2pubchem[, 2]),
+        factor(chembl2pubchem[, 1]), paste,
+        collapse = ", "
+    )
     chembl2drugbank <- read.delim(gzfile(.getCacheFile("src1src2.txt.gz")))
-    chembl2drugbank_vec <- tapply(as.character(chembl2drugbank[,2]),
-                                  factor(chembl2drugbank[,1]), paste,
-                                  collapse=", ")
+    chembl2drugbank_vec <- tapply(as.character(chembl2drugbank[, 2]),
+        factor(chembl2drugbank[, 1]), paste,
+        collapse = ", "
+    )
     ## Assemble results
     drugage <- cbind(drugage,
-                     pref_name=names(fact[toupper(drugage$compound_name)]),
-                     chembl_id=fact[toupper(drugage$compound_name)])
+        pref_name = names(fact[toupper(drugage$compound_name)]),
+        chembl_id = fact[toupper(drugage$compound_name)]
+    )
     drugage <- cbind(drugage,
-                     pubchem_cid=chembl2pubchem_vec[
-                                        as.character(drugage$chembl_id)],
-                     drugbank_id=chembl2drugbank_vec[
-                                        as.character(drugage$chembl_id)])
-    write.table(drugage, drugagefile, row.names=FALSE, quote=FALSE, sep="\t")
+        pubchem_cid = chembl2pubchem_vec[
+            as.character(drugage$chembl_id)
+        ],
+        drugbank_id = chembl2drugbank_vec[
+            as.character(drugage$chembl_id)
+        ]
+    )
+    write.table(drugage, drugagefile, row.names = FALSE, quote = FALSE, sep = "\t")
 }
 ## Usage:
 # processDrugage(drugagefile="results/drugage_id_mapping.xls",
@@ -749,23 +884,27 @@ processDrugage <- function(drugagefile=file.path(config$resultsPath,
 ########################################################
 ## Query performed for Nik Schork
 ## ID crossmatching table
-transformTTD <- function(ttdfile=file.path(config$downloadPath,"TTD_IDs.txt"),
-                         redownloadTTD=TRUE,config=genConfig()) {
-    url="https://db.idrblab.org/ttd/sites/default/files/ttd_database/P1-02-TTD_crossmatching.txt"
-    if(redownloadTTD==TRUE){
-         .downloadFile(url, ttdfile)
-     }
-    df <- read.delim(.getCacheFile(ttdfile), skip=12, header=FALSE,
-                     col.names=c("TTD_ID", "No", "Source", "Name"))
-    df_sub <- df[grep("DrugName|PubChem CID", df$Source),]
+transformTTD <- function(ttdfile = file.path(config$downloadPath, "TTD_IDs.txt"),
+                         redownloadTTD = TRUE, config = genConfig()) {
+    url <- "https://db.idrblab.org/ttd/sites/default/files/ttd_database/P1-02-TTD_crossmatching.txt"
+    if (redownloadTTD == TRUE) {
+        .downloadFile(url, ttdfile)
+    }
+    df <- read.delim(.getCacheFile(ttdfile),
+        skip = 12, header = FALSE,
+        col.names = c("TTD_ID", "No", "Source", "Name")
+    )
+    df_sub <- df[grep("DrugName|PubChem CID", df$Source), ]
     list_sub <- split(df_sub, df_sub$TTD_ID)
-    list_sub <- list_sub[lapply(list_sub, nrow)==2]
+    list_sub <- list_sub[lapply(list_sub, nrow) == 2]
     list_sub <- lapply(list_sub, t)
     list_sub <- lapply(list_sub, tail, 1)
     df_sub <- do.call("rbind", list_sub)
     row.names(df_sub) <- names(list_sub)
-    df_sub <- data.frame(TTD_ID=rownames(df_sub), CMP_Name=df_sub[,1],
-                         PubChem_ID=gsub("^CID ","", as.character(df_sub[,2])))
+    df_sub <- data.frame(
+        TTD_ID = rownames(df_sub), CMP_Name = df_sub[, 1],
+        PubChem_ID = gsub("^CID ", "", as.character(df_sub[, 2]))
+    )
     return(df_sub)
 }
 ## Usage:
@@ -777,9 +916,9 @@ transformTTD <- function(ttdfile=file.path(config$downloadPath,"TTD_IDs.txt"),
 ## Query Bioactivity Data ##
 ############################
 ## Function to generate CMP ID mappings UniChem (current version very slow)
-cmpIdMapping <- function(outfile=file.path(config$resultsPath,"cmp_ids.rds"),
-                         rerun=TRUE,config=genConfig()) {
-    if(rerun==TRUE) {
+cmpIdMapping <- function(outfile = file.path(config$resultsPath, "cmp_ids.rds"),
+                         rerun = TRUE, config = genConfig()) {
+    if (rerun == TRUE) {
         chembldb <- config$chemblDbPath
         mydb <- dbConnect(SQLite(), chembldb)
 
@@ -787,31 +926,37 @@ cmpIdMapping <- function(outfile=file.path(config$resultsPath,"cmp_ids.rds"),
         chemblid_lookup <- dbGetQuery(mydb, 'SELECT *
                                              FROM chembl_id_lookup
                                              WHERE "entity_type" = "COMPOUND"')
-        colnames(chemblid_lookup)[colnames(chemblid_lookup)=="entity_id"] <-
+        colnames(chemblid_lookup)[colnames(chemblid_lookup) == "entity_id"] <-
             "molregno"
 
         ## CMP ID mappings from UniChem (very slow!)
         ## ChEMBL to DrubBank mapping in src1src2.txt.gz:
         chembl2drugbank <- read.delim(gzfile(.getCacheFile("src1src2.txt.gz")))
-        chembl2drugbank_vec <- tapply(as.character(chembl2drugbank[,2]),
-                                      factor(chembl2drugbank[,1]), paste,
-                                      collapse=", ")
+        chembl2drugbank_vec <- tapply(as.character(chembl2drugbank[, 2]),
+            factor(chembl2drugbank[, 1]), paste,
+            collapse = ", "
+        )
         ## ChEMBL to PubChem CID mapping in src1src22.txt.gz
         chembl2pubchem <- read.delim(gzfile(.getCacheFile("src1src22.txt.gz")))
-        chembl2pubchem_vec <- tapply(as.character(chembl2pubchem[,2]),
-                                     factor(chembl2pubchem[,1]), paste,
-                                     collapse=", ")
+        chembl2pubchem_vec <- tapply(as.character(chembl2pubchem[, 2]),
+            factor(chembl2pubchem[, 1]), paste,
+            collapse = ", "
+        )
         ## ChEMBL to ChEBI mapping in src1src7.txt.gz
         chembl2chebi <- read.delim(gzfile(.getCacheFile("src1src7.txt.gz")))
-        chembl2chebi_vec <- tapply(as.character(chembl2chebi[,2]),
-                                   factor(chembl2chebi[,1]), paste,
-                                   collapse=", ")
+        chembl2chebi_vec <- tapply(as.character(chembl2chebi[, 2]),
+            factor(chembl2chebi[, 1]), paste,
+            collapse = ", "
+        )
         ## Create final CMP ID mapping table (very slow!!)
         cmp_ids <- cbind(chemblid_lookup,
-                         PubChem_ID=chembl2pubchem_vec[
-                                      as.character(chemblid_lookup$chembl_id)],
-                         DrugBank_ID=chembl2drugbank_vec[
-                                      as.character(chemblid_lookup$chembl_id)])
+            PubChem_ID = chembl2pubchem_vec[
+                as.character(chemblid_lookup$chembl_id)
+            ],
+            DrugBank_ID = chembl2drugbank_vec[
+                as.character(chemblid_lookup$chembl_id)
+            ]
+        )
         saveRDS(cmp_ids, outfile)
     }
 }
@@ -820,16 +965,23 @@ cmpIdMapping <- function(outfile=file.path(config$resultsPath,"cmp_ids.rds"),
 # cmp_ids <- readRDS("results/cmp_ids.rds")
 
 ## Function to query bioactivity data by target or compound ids
-drugTargetBioactivity <- function( queryBy=list(molType=NULL,
-                                                idType=NULL, ids=NULL),
-                                  cmpid_file=file.path(config$resultsPath,
-                                                       "cmp_ids.rds"),
-                                  config=genConfig()) {
-    if(any(vapply(queryBy, is.null,logical(1))))
-        stop("All components in 'queryBy' list need to be populated ",
-             "with corresponding character vectors.")
+drugTargetBioactivity <- function(queryBy = list(
+                                      molType = NULL,
+                                      idType = NULL, ids = NULL
+                                  ),
+                                  cmpid_file = file.path(
+                                      config$resultsPath,
+                                      "cmp_ids.rds"
+                                  ),
+                                  config = genConfig()) {
+    if (any(vapply(queryBy, is.null, logical(1)))) {
+        stop(
+            "All components in 'queryBy' list need to be populated ",
+            "with corresponding character vectors."
+        )
+    }
 
-    dbpath = config$chemblDbPath
+    dbpath <- config$chemblDbPath
     mydb <- dbConnect(SQLite(), dbpath)
 
     ## Input file for following step was generated by cmpIdMapping()
@@ -838,10 +990,11 @@ drugTargetBioactivity <- function( queryBy=list(molType=NULL,
 
     ## Query bioactivity
     ## Query by targets
-    if(queryBy$molType=="protein" & queryBy$idType=="uniprot") {
-        idvec <- paste0("(\"", paste(queryBy$ids, collapse="\", \""), "\")")
+    if (queryBy$molType == "protein" & queryBy$idType == "uniprot") {
+        idvec <- paste0("(\"", paste(queryBy$ids, collapse = "\", \""), "\")")
 
-        myquery <- dbSendQuery(mydb, paste("SELECT activities.molregno,
+        myquery <- dbSendQuery(mydb, paste(
+            "SELECT activities.molregno,
                                                    pref_name,
                                                    activity_id,
                                                    assays.chembl_id AS chembl_assay_id,
@@ -861,36 +1014,37 @@ drugTargetBioactivity <- function( queryBy=list(molType=NULL,
                                     AND activities.molregno =
                                          molecule_dictionary.molregno
                                     WHERE component_sequences.accession IN",
-                                    idvec))
+            idvec
+        ))
         activityassays <- dbFetch(myquery)
         dbClearResult(myquery)
     }
 
     ## Query bioactivity by compounds
-    if(queryBy$molType=="cmp") {
+    if (queryBy$molType == "cmp") {
         ## ID conversions
-        if(queryBy$idType=="molregno") {
+        if (queryBy$idType == "molregno") {
             cmpvec <- queryBy$ids
         }
-        if(queryBy$idType=="chembl_id") {
-            cmp_ids <- cmp_ids[!duplicated(cmp_ids$chembl_id),]
-            cmpvec <- as.character(cmp_ids$molregno);
+        if (queryBy$idType == "chembl_id") {
+            cmp_ids <- cmp_ids[!duplicated(cmp_ids$chembl_id), ]
+            cmpvec <- as.character(cmp_ids$molregno)
             names(cmpvec) <- as.character(cmp_ids$chembl_id)
             cmpvec <- cmpvec[queryBy$ids]
         }
-        if(queryBy$idType=="PubChem_ID") {
-            cmp_ids <- cmp_ids[!duplicated(cmp_ids$PubChem_ID),]
-            cmpvec <- as.character(cmp_ids$molregno);
+        if (queryBy$idType == "PubChem_ID") {
+            cmp_ids <- cmp_ids[!duplicated(cmp_ids$PubChem_ID), ]
+            cmpvec <- as.character(cmp_ids$molregno)
             names(cmpvec) <- as.character(cmp_ids$PubChem_ID)
             cmpvec <- cmpvec[queryBy$ids]
         }
-        if(queryBy$idType=="DrugBank_ID") {
-            cmp_ids <- cmp_ids[!duplicated(cmp_ids$DrugBank_ID),]
-            cmpvec <- as.character(cmp_ids$molregno);
+        if (queryBy$idType == "DrugBank_ID") {
+            cmp_ids <- cmp_ids[!duplicated(cmp_ids$DrugBank_ID), ]
+            cmpvec <- as.character(cmp_ids$molregno)
             names(cmpvec) <- as.character(cmp_ids$DrugBank_ID)
             cmpvec <- cmpvec[queryBy$ids]
         }
-        idvec <- paste0("(\"", paste(cmpvec, collapse="\", \""), "\")")
+        idvec <- paste0("(\"", paste(cmpvec, collapse = "\", \""), "\")")
 
         myquery <- dbSendQuery(mydb, paste("SELECT activities.molregno,
                                                    pref_name,
@@ -915,8 +1069,10 @@ drugTargetBioactivity <- function( queryBy=list(molType=NULL,
         activityassays <- dbFetch(myquery)
         dbClearResult(myquery)
     }
-    resultDF <- data.frame(cmp_ids[as.character(activityassays$molregno),
-                           -c(2,4)], activityassays[,-1])
+    resultDF <- data.frame(cmp_ids[
+        as.character(activityassays$molregno),
+        -c(2, 4)
+    ], activityassays[, -1])
     dbDisconnect(mydb)
     rownames(resultDF) <- NULL
     return(resultDF)
@@ -951,56 +1107,63 @@ drugTargetBioactivity <- function( queryBy=list(molType=NULL,
 ## subsequent slots the corresponding named character vectors for: ens_gene_id,
 ## up_ens_id, and up_gene_id.  Currently, the query IDs can be Gene Names,
 ## Ensembl Gene IDs and UniProt IDs.
-getSymEnsUp <- function(EnsDb="EnsDb.Hsapiens.v86", ids, idtype) {
-
-    require(EnsDb,character.only=TRUE)
+getSymEnsUp <- function(EnsDb = "EnsDb.Hsapiens.v86", ids, idtype) {
+    require(EnsDb, character.only = TRUE)
     ## ID columns to return
     idcolumns <- c("gene_id", "gene_name", "uniprot_id", "protein_id")
 
     ## With gene names
-    if(idtype=="GENE_NAME") {
-        idDF <- ensembldb::genes(get(EnsDb), filter = AnnotationFilter::GeneNameFilter(ids),
-                      columns = idcolumns)
-        idDF <- idDF[!is.na(S4Vectors::values(idDF)$uniprot_id),]
+    if (idtype == "GENE_NAME") {
+        idDF <- ensembldb::genes(get(EnsDb),
+            filter = AnnotationFilter::GeneNameFilter(ids),
+            columns = idcolumns
+        )
+        idDF <- idDF[!is.na(S4Vectors::values(idDF)$uniprot_id), ]
         idDF <- S4Vectors::values(idDF)
-    ## With ENSEBML Gene IDs
-    } else if(idtype=="ENSEMBL_GENE_ID") {
-        idDF <- ensembldb::genes(get(EnsDb), filter = AnnotationFilter::GeneIdFilter(ids),
-                      columns = idcolumns)
-        idDF <- idDF[!is.na(S4Vectors::values(idDF)$uniprot_id),]
+        ## With ENSEBML Gene IDs
+    } else if (idtype == "ENSEMBL_GENE_ID") {
+        idDF <- ensembldb::genes(get(EnsDb),
+            filter = AnnotationFilter::GeneIdFilter(ids),
+            columns = idcolumns
+        )
+        idDF <- idDF[!is.na(S4Vectors::values(idDF)$uniprot_id), ]
         idDF <- S4Vectors::values(idDF)
-    ## With UniProt IDs
-    } else if(idtype=="UNIPROT_ID") {
-        idDF <- ensembldb::proteins(get(EnsDb), filter = AnnotationFilter::UniprotFilter(ids),
-                         columns = idcolumns)
-        idDF <- idDF[!is.na(idDF$uniprot_id),]
+        ## With UniProt IDs
+    } else if (idtype == "UNIPROT_ID") {
+        idDF <- ensembldb::proteins(get(EnsDb),
+            filter = AnnotationFilter::UniprotFilter(ids),
+            columns = idcolumns
+        )
+        idDF <- idDF[!is.na(idDF$uniprot_id), ]
     } else {
         stop("Argument 'idtype' can only be assigned one of:
              'GENE_NAME', 'ENSEMBL_GENE_ID', 'UNIPROT_ID'.")
     }
     ## Assemble ID mapping table
-    idDF <- idDF[,idcolumns]
+    idDF <- idDF[, idcolumns]
     row.names(idDF) <- NULL
 
     ## Assemble named char vector: ens_gene_id
     idDF <- as.data.frame(idDF)
-    ens_gene_idDF <- idDF[!duplicated(idDF$gene_id),]
+    ens_gene_idDF <- idDF[!duplicated(idDF$gene_id), ]
     ens_gene_id <- as.character(ens_gene_idDF$gene_name)
     names(ens_gene_id) <- as.character(ens_gene_idDF$gene_id)
 
     ## Assemble named char vector: up_ens_id
-    up_ens_idDF <- idDF[!duplicated(idDF$uniprot_id),]
+    up_ens_idDF <- idDF[!duplicated(idDF$uniprot_id), ]
     up_ens_id <- as.character(up_ens_idDF$gene_id)
     names(up_ens_id) <- as.character(up_ens_idDF$uniprot_id)
 
     ## Assemble named char vector: up_gene_id
-    up_gene_idDF <- idDF[!duplicated(idDF$uniprot_id),]
+    up_gene_idDF <- idDF[!duplicated(idDF$uniprot_id), ]
     up_gene_id <- as.character(up_gene_idDF$gene_name)
     names(up_gene_id) <- as.character(up_gene_idDF$uniprot_id)
 
     ## Return result as list
-    returnList <- list(idDF=idDF, ens_gene_id=ens_gene_id,
-                       up_ens_id=up_ens_id, up_gene_id=up_gene_id)
+    returnList <- list(
+        idDF = idDF, ens_gene_id = ens_gene_id,
+        up_ens_id = up_ens_id, up_gene_id = up_gene_id
+    )
     return(returnList)
 }
 ## Usage:
@@ -1016,11 +1179,13 @@ getSymEnsUp <- function(EnsDb="EnsDb.Hsapiens.v86", ids, idtype) {
 ## Convenience Drug-Target Wrapper Function ##
 ##############################################
 ## Meta-function to obtain both drug-target annotation and bioassay data
-runDrugTarget_Annot_Bioassay <- function(res_list, up_col_id="ID",
+runDrugTarget_Annot_Bioassay <- function(res_list, up_col_id = "ID",
                                          ens_gene_id,
-                                       cmpid_file=file.path(config$resultsPath,
-                                                              "cmp_ids.rds") ,
-                                         config=genConfig(), ...) {
+                                         cmpid_file = file.path(
+                                             config$resultsPath,
+                                             "cmp_ids.rds"
+                                         ),
+                                         config = genConfig(), ...) {
     ## (1.1) Check input validity
     ## To be added, once class system has been introduced...
     ## (1.2) Input ID mappings, note: Ensembl query IDs with similar sequences
@@ -1028,29 +1193,39 @@ runDrugTarget_Annot_Bioassay <- function(res_list, up_col_id="ID",
     ##   paralog genes/proteins mapping to several query genes. Thus, this
     ##   one-to-many relationship needs to be resolved for both geneids and
     ##   ensids.
-    id_list <- lapply(names(res_list),
-                      function(x)
-                        unique(stats::na.omit(as.character(res_list[[x]][,up_col_id]))))
-    names(id_list) = names(res_list)
-    ensids <- tapply(res_list[[2]]$QueryID, res_list[[2]][,up_col_id],
-                     function(x) as.character(unique(x)), simplify=FALSE)
+    id_list <- lapply(
+        names(res_list),
+        function(x) {
+            unique(stats::na.omit(as.character(res_list[[x]][, up_col_id])))
+        }
+    )
+    names(id_list) <- names(res_list)
+    ensids <- tapply(res_list[[2]]$QueryID, res_list[[2]][, up_col_id],
+        function(x) as.character(unique(x)),
+        simplify = FALSE
+    )
     geneids <- vapply(names(ensids), function(x) ens_gene_id[ensids[[x]]], character(1))
     geneids <- unlist(geneids[nchar(names(geneids)) > 0])
 
-    ensids <- vapply(names(ensids), function(x) paste(ensids[[x]], collapse=", "),character(1))
+    ensids <- vapply(names(ensids), function(x) paste(ensids[[x]], collapse = ", "), character(1))
     ensids <- unlist(ensids[nchar(names(ensids)) > 0])
 
     ## (1.3) Obtain drug-target annotations for IDM
     idm_ids <- id_list$IDM
-    if(length(idm_ids) > 0) {
-        queryBy <- list(molType="protein", idType="UniProt_ID", ids=idm_ids)
-        qresultIDM <- drugTargetAnnot( queryBy,
-                                      cmpid_file=cmpid_file,config=config)
-        qresultIDM <- data.frame(GeneName=as.character(
-                                    geneids[as.character(qresultIDM$QueryIDs)]),
-                                 Ensembl_IDs=as.character(
-                                    ensids[as.character(qresultIDM$QueryIDs)]),
-                                 qresultIDM)
+    if (length(idm_ids) > 0) {
+        queryBy <- list(molType = "protein", idType = "UniProt_ID", ids = idm_ids)
+        qresultIDM <- drugTargetAnnot(queryBy,
+            cmpid_file = cmpid_file, config = config
+        )
+        qresultIDM <- data.frame(
+            GeneName = as.character(
+                geneids[as.character(qresultIDM$QueryIDs)]
+            ),
+            Ensembl_IDs = as.character(
+                ensids[as.character(qresultIDM$QueryIDs)]
+            ),
+            qresultIDM
+        )
     } else {
         qresultIDM <- data.frame()
     }
@@ -1060,99 +1235,153 @@ runDrugTarget_Annot_Bioassay <- function(res_list, up_col_id="ID",
 
     # UniProt IDs only in SSNN
     ssnn_ids <- id_list$SSNN[!id_list$SSNN %in% idm_ids]
-    if(length(ssnn_ids) > 0) {
-        queryBy <- list(molType="protein", idType="UniProt_ID", ids=ssnn_ids)
-        qresultSSNN <- drugTargetAnnot( queryBy,
-                                       cmpid_file=cmpid_file,config=config)
-        qresultSSNN <- data.frame(GeneName=as.character(
-                                    geneids[as.character(qresultSSNN$QueryIDs)]),
-                                  Ensembl_IDs=as.character(
-                                    ensids[as.character(qresultSSNN$QueryIDs)]),
-                                  qresultSSNN)
+    if (length(ssnn_ids) > 0) {
+        queryBy <- list(molType = "protein", idType = "UniProt_ID", ids = ssnn_ids)
+        qresultSSNN <- drugTargetAnnot(queryBy,
+            cmpid_file = cmpid_file, config = config
+        )
+        qresultSSNN <- data.frame(
+            GeneName = as.character(
+                geneids[as.character(qresultSSNN$QueryIDs)]
+            ),
+            Ensembl_IDs = as.character(
+                ensids[as.character(qresultSSNN$QueryIDs)]
+            ),
+            qresultSSNN
+        )
         ## Prepend "Query_" to indicate that returned genes IDs are often not
         ## the ones encoding SSNN UniProt IDs
-        if(length(qresultSSNN[, "Ensembl_IDs"]) > 0)
-            qresultSSNN[, "Ensembl_IDs"] <- paste0("Query_",
-                                                  qresultSSNN[, "Ensembl_IDs"])
+        if (length(qresultSSNN[, "Ensembl_IDs"]) > 0) {
+            qresultSSNN[, "Ensembl_IDs"] <- paste0(
+                "Query_",
+                qresultSSNN[, "Ensembl_IDs"]
+            )
+        }
         # Fixes Query_NA strings in NA cases
-        qresultSSNN[qresultSSNN[,"Ensembl_IDs"]=="Query_NA","Ensembl_IDs"] <-NA
-        if(length(qresultSSNN[, "GeneName"]) > 0 )
-            qresultSSNN[, "GeneName"] <- paste0("Query_",
-                                                qresultSSNN[, "GeneName"])
+        qresultSSNN[qresultSSNN[, "Ensembl_IDs"] == "Query_NA", "Ensembl_IDs"] <- NA
+        if (length(qresultSSNN[, "GeneName"]) > 0) {
+            qresultSSNN[, "GeneName"] <- paste0(
+                "Query_",
+                qresultSSNN[, "GeneName"]
+            )
+        }
         # Fixes Query_NA strings in NA cases
-        qresultSSNN[qresultSSNN[,"GeneName"]=="Query_NA","GeneName"] <- NA
+        qresultSSNN[qresultSSNN[, "GeneName"] == "Query_NA", "GeneName"] <- NA
     } else {
         qresultSSNN <- data.frame()
     }
 
     ## (1.5) Combine IDM and SSNN_noIDM results
-    qresult <- rbind(cbind(ID_Mapping_Type=rep("IDM",
-                                               nrow(qresultIDM)),
-                           qresultIDM),
-                     cbind(ID_Mapping_Type=rep("SSNN_noIDM",
-                                               nrow(qresultSSNN)),
-                           qresultSSNN))
-    qresult <- qresult[order(gsub("Query_", "", qresult$GeneName),
-                             qresult$ID_Mapping_Type),]
-    colnames(qresult) <- c("ID_Mapping_Type", "GeneName", "Ensembl_IDs",
-                           "UniProt_QueryIDs", "CHEMBL_CMP_ID", "Molregno",
-                           "PubChem_ID", "DrugBank_ID", "Drug_Name", "MOA",
-                           "Action_Type", "First_Approval", "ChEMBL_TID",
-                           "TID", "UniProt_ID", "Target_Desc", "Organism",
-                           "Mesh_Indication")
+    qresult <- rbind(
+        cbind(
+            ID_Mapping_Type = rep(
+                "IDM",
+                nrow(qresultIDM)
+            ),
+            qresultIDM
+        ),
+        cbind(
+            ID_Mapping_Type = rep(
+                "SSNN_noIDM",
+                nrow(qresultSSNN)
+            ),
+            qresultSSNN
+        )
+    )
+    qresult <- qresult[order(
+        gsub("Query_", "", qresult$GeneName),
+        qresult$ID_Mapping_Type
+    ), ]
+    colnames(qresult) <- c(
+        "ID_Mapping_Type", "GeneName", "Ensembl_IDs",
+        "UniProt_QueryIDs", "CHEMBL_CMP_ID", "Molregno",
+        "PubChem_ID", "DrugBank_ID", "Drug_Name", "MOA",
+        "Action_Type", "First_Approval", "ChEMBL_TID",
+        "TID", "UniProt_ID", "Target_Desc", "Organism",
+        "Mesh_Indication"
+    )
     rownames(qresult) <- NULL
 
     ## (2.1) Obtain bioassay data for IDM
-    queryBy <- list(molType="protein", idType="uniprot", ids=idm_ids)
-    qresultBAIDM <- drugTargetBioactivity( queryBy, cmpid_file=cmpid_file,
-                                          config=config)
-    qresultBAIDM <- data.frame(GeneName=as.character(
-                                geneids[as.character(qresultBAIDM$UniProt_ID)]),
-                               Ensembl_IDs=as.character(
-                                ensids[as.character(qresultBAIDM$UniProt_ID)]),
-                               qresultBAIDM)
+    queryBy <- list(molType = "protein", idType = "uniprot", ids = idm_ids)
+    qresultBAIDM <- drugTargetBioactivity(queryBy,
+        cmpid_file = cmpid_file,
+        config = config
+    )
+    qresultBAIDM <- data.frame(
+        GeneName = as.character(
+            geneids[as.character(qresultBAIDM$UniProt_ID)]
+        ),
+        Ensembl_IDs = as.character(
+            ensids[as.character(qresultBAIDM$UniProt_ID)]
+        ),
+        qresultBAIDM
+    )
 
     ## (2.2) Obtain bioassay data for SSNN excluding IDM overlaps (SSNN_noIDM)
-    queryBy <- list(molType="protein", idType="uniprot", ids=ssnn_ids)
+    queryBy <- list(molType = "protein", idType = "uniprot", ids = ssnn_ids)
     qresultBASSNN <- suppressWarnings(drugTargetBioactivity(
-                                         queryBy,
-                                         cmpid_file=cmpid_file,config=config))
-    qresultBASSNN <- data.frame(GeneName=geneids[
-                                     as.character(qresultBASSNN$UniProt_ID)],
-                                Ensembl_IDs=ensids[
-                                     as.character(qresultBASSNN$UniProt_ID)],
-                                qresultBASSNN)
+        queryBy,
+        cmpid_file = cmpid_file, config = config
+    ))
+    qresultBASSNN <- data.frame(
+        GeneName = geneids[
+            as.character(qresultBASSNN$UniProt_ID)
+        ],
+        Ensembl_IDs = ensids[
+            as.character(qresultBASSNN$UniProt_ID)
+        ],
+        qresultBASSNN
+    )
     ## Prepend "Query_" to indicate that returned genes IDs are often not the
     ## ones encoding SSNN UniProt IDs
-    if(length(qresultBASSNN[, "Ensembl_IDs"]) > 0)
-        qresultBASSNN[, "Ensembl_IDs"] <- paste0("Query_",
-                                               qresultBASSNN[, "Ensembl_IDs"])
+    if (length(qresultBASSNN[, "Ensembl_IDs"]) > 0) {
+        qresultBASSNN[, "Ensembl_IDs"] <- paste0(
+            "Query_",
+            qresultBASSNN[, "Ensembl_IDs"]
+        )
+    }
     # Fixes Query_NA strings in NA cases
-    qresultBASSNN[qresultBASSNN[,"Ensembl_IDs"]=="Query_NA","Ensembl_IDs"] <-NA
-    if(length(qresultBASSNN[, "GeneName"]) > 0)
-        qresultBASSNN[, "GeneName"] <- paste0("Query_",
-                                              qresultBASSNN[, "GeneName"])
+    qresultBASSNN[qresultBASSNN[, "Ensembl_IDs"] == "Query_NA", "Ensembl_IDs"] <- NA
+    if (length(qresultBASSNN[, "GeneName"]) > 0) {
+        qresultBASSNN[, "GeneName"] <- paste0(
+            "Query_",
+            qresultBASSNN[, "GeneName"]
+        )
+    }
     # Fixes Query_NA strings in NA cases
-    qresultBASSNN[qresultBASSNN[,"GeneName"]=="Query_NA","GeneName"] <- NA
+    qresultBASSNN[qresultBASSNN[, "GeneName"] == "Query_NA", "GeneName"] <- NA
 
     ## (2.3) Combine IDM and SSNN_noIDM results
-    qresultBA <- rbind(cbind(ID_Mapping_Type=rep("IDM", nrow(qresultBAIDM)),
-                             qresultBAIDM),
-                       cbind(ID_Mapping_Type=rep("SSNN_noIDM",
-                                                 nrow(qresultBASSNN)),
-                             qresultBASSNN))
-    qresultBA <- qresultBA[order(gsub("Query_", "", qresultBA$GeneName),
-                                 qresultBA$ID_Mapping_Type),]
-    colnames(qresultBA) <- c("ID_Mapping_Type", "GeneName", "Ensembl_IDs",
-                             "CHEMBL_CMP_ID", "Molregno", "PubChem_ID",
-                             "DrugBank_ID", "Drug_Name", "Activity_ID",
-                             "CHEMBL_Assay_ID", "UniProt_ID", "Target_Desc",
-                             "Organism", "Standard_Value", "Standard_Units",
-                             "Standard_Flag", "Standard_Type")
+    qresultBA <- rbind(
+        cbind(
+            ID_Mapping_Type = rep("IDM", nrow(qresultBAIDM)),
+            qresultBAIDM
+        ),
+        cbind(
+            ID_Mapping_Type = rep(
+                "SSNN_noIDM",
+                nrow(qresultBASSNN)
+            ),
+            qresultBASSNN
+        )
+    )
+    qresultBA <- qresultBA[order(
+        gsub("Query_", "", qresultBA$GeneName),
+        qresultBA$ID_Mapping_Type
+    ), ]
+    colnames(qresultBA) <- c(
+        "ID_Mapping_Type", "GeneName", "Ensembl_IDs",
+        "CHEMBL_CMP_ID", "Molregno", "PubChem_ID",
+        "DrugBank_ID", "Drug_Name", "Activity_ID",
+        "CHEMBL_Assay_ID", "UniProt_ID", "Target_Desc",
+        "Organism", "Standard_Value", "Standard_Units",
+        "Standard_Flag", "Standard_Type"
+    )
     rownames(qresultBA) <- NULL
 
     ## (3.1) Export annotation and bioassay results in list
-    drug_target_list <- list(Annotation=qresult, Bioassay=qresultBA)
+    drug_target_list <- list(Annotation = qresult, Bioassay = qresultBA)
     return(drug_target_list)
 }
 ## Usage:
