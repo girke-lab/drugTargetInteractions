@@ -32,7 +32,13 @@ processDrugage(drugagefile=file.path(config$resultsPath,"drugage_id_mapping.xls"
 
 \examples{
 
+	tryCatch({
 		config = genConfig(chemblDbPath= 
 									system.file("extdata", "chembl_sample.db", package="drugTargetInteractions"))
 		processDrugage("druage_id_mapping.xls",TRUE,config)
+	},
+	error=function(e){
+			message("Failed to run processDrugage(), please try again later")
+		}
+	)
 }
