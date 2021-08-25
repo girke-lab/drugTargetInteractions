@@ -882,7 +882,6 @@ processDrugage <- function(drugagefile = file.path(
 ########################################################
 ## Integration with Therapeutic Target Database (TTD) ##
 ########################################################
-## Query performed for Nik Schork
 ## ID crossmatching table
 transformTTD <- function(ttdfile = file.path(config$downloadPath, "TTD_IDs.txt"),
                          redownloadTTD = TRUE, config = genConfig()) {
@@ -1204,7 +1203,10 @@ runDrugTarget_Annot_Bioassay <- function(res_list, up_col_id = "ID",
         function(x) as.character(unique(x)),
         simplify = FALSE
     )
-    geneids <- vapply(names(ensids), function(x) ens_gene_id[ensids[[x]]], character(1))
+    # geneids <- vapply(names(ensids), function(x) ens_gene_id[ensids[[x]]], character(1)) # Replaced by ThG on 25-Aug-21 with lapply
+    geneids <- lapply(names(ensids), function(x) ens_gene_id[ensids[[x]]]) # Added by ThG on 25-Aug-21
+    names(geneids) <- names(ensids) # Added by ThG on 25-Aug-21
+    geneids <- vapply(names(geneids), function(x) paste(geneids[[x]], collapse = ", "), character(1)) # Added by ThG on 25-Aug-21
     geneids <- unlist(geneids[nchar(names(geneids)) > 0])
 
     ensids <- vapply(names(ensids), function(x) paste(ensids[[x]], collapse = ", "), character(1))
