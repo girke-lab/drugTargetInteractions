@@ -656,6 +656,7 @@ drugTargetAnnot <- function(queryBy = list(molType = NULL, idType = NULL, ids = 
         resultDF[as.numeric(index_df$rowids), ]
     )
     rownames(resultDF) <- NULL
+    resultDF <- resultDF[, colnames(resultDF)!="last_active"] # Added by ThG on 25-Aug-21 to remove undesirable column in >ChEMBL29
     return(resultDF)
 }
 
