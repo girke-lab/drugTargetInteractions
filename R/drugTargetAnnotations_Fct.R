@@ -656,7 +656,7 @@ drugTargetAnnot <- function(queryBy = list(molType = NULL, idType = NULL, ids = 
         resultDF[as.numeric(index_df$rowids), ]
     )
     rownames(resultDF) <- NULL
-    resultDF <- resultDF[, colnames(resultDF)!="last_active"] # Added by ThG on 25-Aug-21 to remove undesirable column in >ChEMBL29
+    resultDF <- resultDF[, colnames(resultDF)!="last_active"] # Added by ThG on 25-Aug-21 to remove undesirable column in >= ChEMBL29
     return(resultDF)
 }
 
@@ -1091,6 +1091,7 @@ drugTargetBioactivity <- function(queryBy = list(
         as.character(activityassays$molregno),
         -c(2, 4)
     ], activityassays[, -1])
+    resultDF <- resultDF[, colnames(resultDF)!="last_active"] # Added by ThG on 25-Aug-21 to remove undesirable column in >= ChEMBL29
     dbDisconnect(mydb)
     rownames(resultDF) <- NULL
     return(resultDF)
