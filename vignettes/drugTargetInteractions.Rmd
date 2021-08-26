@@ -92,7 +92,7 @@ vignette uses a slimmed down toy version of this database that is small enough
 to be included in this package for demonstrating the usage of its functions.
 For real drug-target analysis work, it is important that users download and
 uncompress a recent version of the ChEMBL SQLite database from
-[here](ftp://ftp.ebi.ac.uk/pub/databases/chembl/ChEMBLdb/), and then replace
+[here](https://chembl.gitbook.io/chembl-interface-documentation/downloads), and then replace
 the path assigned to `chembldb` below with the path to the full version of the
 ChEMBL database they have downloaded to their system. Since the SQLite database
 from ChEMBL can be used by this package as is, creating a copy of the ChEMBL
