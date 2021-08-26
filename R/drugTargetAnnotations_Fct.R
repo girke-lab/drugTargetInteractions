@@ -374,6 +374,12 @@ getParalogs <- function(queryBy) {
         ID_up_sp = as.character(IDMresult$uniprotswissprot),
         ID_up_sp_tr = as.character(IDMresult$uniprotsptrembl)
     )
+    ## Added by ThG on 25-Aug-21 maintain queries with not matches 
+    missing <- queryBy$ids[!queryBy$ids %in% unique(as.character(IDMresult$QueryID))]
+    if(length(missing)>0) {
+        missDF <- data.frame(QueryID=missing, ENSEMBL=missing, GENES="", ID_up_sp="", ID_up_sp_tr="")
+        IDMresult <- rbind(IDMresult, missDF)
+    }
 
     ## Paralog (Sequence Similarity Nearest Neighbors - SSNN) result table
     ## To list available paralog annotation fields, run:
@@ -438,6 +444,12 @@ getParalogs <- function(queryBy) {
     index <- vapply(up_sp, length, integer(1))
     up_sp[index == 0] <- ""
     index[index == 0] <- 1
+    ## Added by ThG on 25-Aug-21 to account for missing entries index 
+    missing <- unique(as.character(resultDF$ENSEMBL))[!unique(as.character(resultDF$ENSEMBL)) %in% names(index)]
+    if(length(missing)>0) {
+        index <- c(index, setNames(rep(1, length(missing)), missing))
+        up_sp <- c(up_sp, setNames(rep("", length(missing)), missing))
+    }
     index <- index[as.character(resultDF$ENSEMBL)]
     up_sp <- up_sp[names(index)]
     resultDF <- cbind(resultDF[rep(seq_along(resultDF$ENSEMBL), index), ],
@@ -452,6 +464,12 @@ getParalogs <- function(queryBy) {
     index <- vapply(up_sp_tr, length, integer(1))
     up_sp_tr[index == 0] <- ""
     index[index == 0] <- 1
+    ## Added by ThG on 25-Aug-21 to account for missing entries index 
+    missing <- unique(as.character(resultDF$ENSEMBL))[!unique(as.character(resultDF$ENSEMBL)) %in% names(index)]
+    if(length(missing)>0) {
+        index <- c(index, setNames(rep(1, length(missing)), missing))
+        up_sp_tr <- c(up_sp_tr, setNames(rep("", length(missing)), missing))
+    }
     index <- index[as.character(resultDF$ENSEMBL)]
     up_sp_tr <- up_sp_tr[names(index)]
     resultDF <- cbind(resultDF[rep(seq_along(resultDF$ENSEMBL), index), ],
