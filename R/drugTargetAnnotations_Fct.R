@@ -1312,6 +1312,7 @@ runDrugTarget_Annot_Bioassay <- function(res_list, up_col_id = "ID",
         gsub("Query_", "", qresult$GeneName),
         qresult$ID_Mapping_Type
     ), ]
+    qresult <- qresult[, colnames(qresultIDM)!="last_active"] # Added by ThG on 25-Aug-21 to remove undesirable column in >ChEMBL29
     colnames(qresult) <- c(
         "ID_Mapping_Type", "GeneName", "Ensembl_IDs",
         "UniProt_QueryIDs", "CHEMBL_CMP_ID", "Molregno",
