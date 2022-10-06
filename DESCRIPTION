@@ -1,8 +1,8 @@
 Package: drugTargetInteractions
 Type: Package
 Title: Drug-Target Interactions
-Version: 1.5.0
-Date: 2021-08-25
+Version: 1.5.1
+Date: 2022-10-6
 Authors@R: person("Thomas", "Girke", email="thomas.girke@ucr.edu", role=c("cre", "aut"))
 Description: Provides utilities for identifying drug-target interactions for sets of small molecule or gene/protein identifiers. The required drug-target interaction information is obained from a local SQLite instance of the ChEMBL database. ChEMBL has been chosen for this purpose, because it provides one of the most comprehensive and best annotatated knowledge resources for drug-target information available in the public domain.
 Depends: methods, R (>= 4.1)
