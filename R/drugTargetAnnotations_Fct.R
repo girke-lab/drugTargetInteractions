@@ -191,7 +191,7 @@ downloadChemblDb <- function(version, rerun = TRUE, config = genConfig()) {
 getUniprotIDs <- function(taxId = 9606, kt = "ENSEMBL", keys,
                           seq_cluster = "UNIREF90",
                           chunksize = 20) {
-    requireNamespace(UniProt.ws)
+    requireNamespace("UniProt.ws")
     up <- UniProt.ws(taxId) # Attach organism, here human
 
     ## Validity checks
