@@ -252,8 +252,8 @@ For this the Ensembl gene IDs are translated into UniProt IDs using both the IDM
 and SSNN approaches. 
 
 ```{r getUniprotIDs, eval=FALSE, message=FALSE}
-keys <- c("ENSG00000120088", "ENSG00000135441", "ENSG00000120071")
-res_list90 <- getUniprotIDs(taxId=9606, kt="ENSEMBL", keys=keys, seq_cluster="UNIREF90") 
+keys <- c("ENSG00000145700", "ENSG00000135441", "ENSG00000120071")
+res_list90 <- getUniprotIDs(taxId=9606, kt="ENSEMBL", keys=keys, seq_cluster="UNIREF90")
 ```
 ```{r getUniprotIDs4, eval=TRUE, message=FALSE}
 id_list <- sapply(names(res_list90), function(x) unique(na.omit(res_list90[[x]]$ID)))
@@ -482,7 +482,7 @@ be exported to separate tabular files as follows.
 ```{r export_annotation_bioassay, eval=FALSE, message=FALSE}
 write.table(drug_target_list$Annotation, "DrugTargetAnnotation.xls", row.names=FALSE, quote=FALSE, na="", sep="\t")
 write.table(drug_target_list$Bioassay, "DrugTargetBioassay.xls", row.names=FALSE, quote=FALSE, na="", sep="\t")
-write.table(statDF, "statDF.xls", row.names=FALSE, quote=FALSE, na="", sep="\t")
+write.table(statsDF, "statsDF.xls", row.names=FALSE, quote=FALSE, na="", sep="\t")
 ```
 
 # Session Info
