@@ -11,6 +11,10 @@ importFrom(ensembldb,genes,proteins)
 import( utils)
 import(BiocFileCache)
 
+importFrom(httr2, request, req_headers, req_user_agent, req_timeout,
+    req_url_query, req_retry, req_perform, resp_body_json, resp_status,
+    req_method, req_body_json)
+
 
 export( "genConfig",
     "cmpIdMapping",
@@ -25,6 +29,10 @@ export( "genConfig",
     "getUniprotIDs",
     "runDrugTarget_Annot_Bioassay",
     "transformTTD",
-    "processDrugage"
+    "processDrugage",
 
+    "getChemblMolecule",
+    "getChemblTarget",
+    "getChemblBioactivities",
+    "getChemblDrugTarget"
 )

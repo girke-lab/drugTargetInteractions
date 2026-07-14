@@ -123,7 +123,8 @@ downloadUniChem <- function(rerun = TRUE, config = genConfig()) {
     }
     invisible(NULL)
 }
-downloadChemblDb <- function(version, rerun = TRUE, config = genConfig()) {
+downloadChemblDb <- function(version = .chemblLatestVersion(), rerun = TRUE,
+                             config = genConfig()) {
     url <- paste("https://ftp.ebi.ac.uk/pub/databases/chembl/ChEMBLdb/latest/",
         "chembl_", version, "_sqlite.tar.gz",
         sep = ""
