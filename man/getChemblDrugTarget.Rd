@@ -6,7 +6,8 @@
 \usage{
 getChemblDrugTarget(
   queryBy = list(molType = NULL, idType = NULL, ids = NULL),
-  verbose = FALSE
+  verbose = FALSE,
+  chunkSize = 200L
 )
 }
 \arguments{
@@ -18,9 +19,21 @@ UniProt accession(s) in \code{ids}. \code{molType = "cmp"} with
 \code{idType = "chembl_id"} queries drug -> target by ChEMBL molecule
 ID(s) in \code{ids}. Other \code{idType} values (\code{molregno},
 \code{PubChem_ID}, \code{DrugBank_ID}) are not yet supported over
-REST.}
+REST. \code{ids} can be arbitrarily large: internally the query is
+chunked (see \code{chunkSize}) and each chunk paginated, so a query of
+e.g. 2000 UniProt accessions or ChEMBL IDs works the same as one.}
 
-\item{verbose}{logical(1); if TRUE, message progress per query ID.}
+\item{verbose}{logical(1); if TRUE, message progress per batch.}
+
+\item{chunkSize}{integer(1) max IDs sent per HTTP request via a
+\code{<field>__in=id1,id2,...} filter. ChEMBL's REST server caps the
+request-line length at ~4KB, which limits a single filter to roughly
+250-400 IDs depending on ID length (\code{httr2} percent-encodes the
+separating commas, eating into that budget) — 200 leaves comfortable
+margin for both short legacy IDs (e.g. \code{"CHEMBL25"}) and longer
+modern ones (e.g. \code{"CHEMBL5291677"}). Requests are also
+client-side throttled (see \code{\link{.dtiApiGET}}) to be a polite
+API citizen; ChEMBL does not publish a hard rate limit.}
 }
 \value{
 A \code{data.frame} with columns \code{QueryIDs},

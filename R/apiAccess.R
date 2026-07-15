@@ -55,9 +55,14 @@
 
 #' Perform a GET against a REST endpoint with retry + polite throttling
 #'
-#' Wraps httr2 with a bounded exponential back-off, an explicit timeout,
-#' a descriptive User-Agent, and JSON parsing. On any failure it returns
+#' Wraps httr2 with a client-side rate limit (a token-bucket throttle,
+#' scoped per-host so different APIs don't share a budget), a bounded
+#' exponential back-off on transient failures, an explicit timeout, a
+#' descriptive User-Agent, and JSON parsing. On any failure it returns
 #' NULL (so callers can degrade gracefully) unless `hardStop = TRUE`.
+#' The throttle is a courtesy cap, not a guarantee: none of these APIs
+#' publish a hard rate limit, so 429s are still handled gracefully via
+#' the retry back-off above.
 #'
 #' @param url character(1) fully-qualified URL.
 #' @param query named list of query parameters (optional).
@@ -76,6 +81,9 @@
         req <- httr2::req_timeout(req, timeout)
         if (!is.null(query))
             req <- httr2::req_url_query(req, !!!query)
+        ## Client-side courtesy throttle: at most 5 requests/second per
+        ## host (realm defaults to the request's hostname).
+        req <- httr2::req_throttle(req, rate = 5, fill_time_s = 1)
         ## Retry on transient conditions; respect Retry-After if present.
         req <- httr2::req_retry(
             req, max_tries = maxTries,
@@ -90,6 +98,64 @@
         NULL
     })
     out
+}
+
+#' Split a vector into chunks of at most `size` elements
+#' @keywords internal
+.dtiChunk <- function(x, size) {
+    if (length(x) == 0L) return(list())
+    split(x, ceiling(seq_along(x) / size))
+}
+
+#' Batched + paginated GET against a ChEMBL-style list resource
+#'
+#' Many ChEMBL REST list resources (`target`, `mechanism`,
+#' `drug_indication`, `molecule`, ...) accept a `<field>__in=id1,id2,...`
+#' filter. A single request's URL is capped by the server at a request-
+#' line length of ~4KB, which in practice limits a single `__in` filter
+#' to roughly 250-400 IDs depending on ID length (`httr2` percent-encodes
+#' the separating commas, which eats into that budget) — so for larger ID
+#' sets this chunks `ids` into batches of `chunkSize`, and paginates each
+#' batch via `offset`/`page_meta$total_count` until it is exhausted.
+#'
+#' @param url character(1) resource URL, e.g. `.../mechanism.json`.
+#' @param filterField character(1) filter query param, e.g.
+#'   `"target_chembl_id__in"`.
+#' @param ids character vector of IDs to filter on (deduplicated
+#'   internally; order does not matter, this only fetches records).
+#' @param resultsField character(1) name of the list field in the JSON
+#'   response holding the records, e.g. `"mechanisms"`.
+#' @param chunkSize integer(1) max IDs per `__in` filter / request.
+#' @param extraQuery named list of additional fixed query parameters.
+#' @param verbose logical(1); if TRUE, message progress per batch.
+#' @return a flat list of record lists (unparsed JSON records), pooled
+#'   across all chunks/pages.
+#' @keywords internal
+.dtiBatchGET <- function(url, filterField, ids, resultsField, chunkSize = 200L,
+                         extraQuery = list(), verbose = FALSE) {
+    ids <- unique(stats::na.omit(ids))
+    if (length(ids) == 0L) return(list())
+    allRecs <- list()
+    for (chunk in .dtiChunk(ids, chunkSize)) {
+        offset <- 0L
+        repeat {
+            q <- extraQuery
+            q[[filterField]] <- paste(chunk, collapse = ",")
+            q$limit <- 1000L
+            q$offset <- offset
+            if (verbose)
+                message("ChEMBL batch GET ", basename(url), " ", filterField,
+                        " n=", length(chunk), " offset=", offset)
+            res <- .dtiApiGET(url, query = q)
+            recs <- res[[resultsField]] %||% list()
+            if (length(recs) == 0L) break
+            allRecs <- c(allRecs, recs)
+            offset <- offset + length(recs)
+            total <- res$page_meta$total_count %||% offset
+            if (offset >= total) break
+        }
+    }
+    allRecs
 }
 
 ## NULL-coalescing helper. No roxygen doc block: a leading `%` in \name
@@ -112,13 +178,17 @@
 #'
 #' @param chemblIds character vector of ChEMBL molecule IDs
 #'   (e.g. \code{"CHEMBL25"}).
-#' @param verbose logical(1); if TRUE, message progress.
-#' @return A \code{data.frame} with one row per input ID and columns:
-#'   \code{chembl_id}, \code{pref_name}, \code{molecule_type},
-#'   \code{max_phase}, \code{first_approval}, \code{canonical_smiles},
-#'   \code{standard_inchi_key}, \code{mw_freebase}, \code{alogp},
-#'   \code{hba}, \code{hbd}, \code{psa}, \code{rtb}, \code{qed_weighted}.
-#'   IDs that fail to resolve yield a row of \code{NA}s.
+#' @param verbose logical(1); if TRUE, message progress per batch.
+#' @param chunkSize integer(1) max IDs looked up per HTTP request
+#'   (see \code{\link{getChemblDrugTarget}} for why this is capped around
+#'   200-400 rather than sent in one request). Large \code{chemblIds}
+#'   vectors are chunked and paginated automatically.
+#' @return A \code{data.frame} with one row per input ID (duplicates and
+#'   input order preserved) and columns: \code{chembl_id}, \code{pref_name},
+#'   \code{molecule_type}, \code{max_phase}, \code{first_approval},
+#'   \code{canonical_smiles}, \code{standard_inchi_key}, \code{mw_freebase},
+#'   \code{alogp}, \code{hba}, \code{hbd}, \code{psa}, \code{rtb},
+#'   \code{qed_weighted}. IDs that fail to resolve yield a row of \code{NA}s.
 #' @examples
 #' \donttest{
 #'   ## Requires internet access to www.ebi.ac.uk
@@ -126,9 +196,9 @@
 #'   df[, c("chembl_id", "pref_name", "max_phase")]
 #' }
 #' @seealso \code{\link{getChemblDrugTarget}}, \code{\link{downloadChemblDb}}
-#' @importFrom httr2 request req_headers req_user_agent req_timeout req_url_query req_retry req_perform resp_body_json resp_status req_method req_body_json
+#' @importFrom httr2 request req_headers req_user_agent req_timeout req_url_query req_retry req_throttle req_perform resp_body_json resp_status req_method req_body_json
 #' @export
-getChemblMolecule <- function(chemblIds, verbose = FALSE) {
+getChemblMolecule <- function(chemblIds, verbose = FALSE, chunkSize = 200L) {
     stopifnot(is.character(chemblIds), length(chemblIds) >= 1L)
     base <- .dtiEndpoints()$chembl
     flat <- function(rec) {
@@ -152,17 +222,18 @@ getChemblMolecule <- function(chemblIds, verbose = FALSE) {
             qed_weighted       = as.numeric(mp$qed_weighted %||% NA),
             stringsAsFactors   = FALSE)
     }
+    recs <- .dtiBatchGET(paste0(base, "/molecule.json"), "molecule_chembl_id__in",
+                         chemblIds, "molecules", chunkSize = chunkSize,
+                         verbose = verbose)
+    found <- lapply(recs, flat)
+    foundDF <- if (length(found)) do.call(rbind, found) else flat(list(molecule_chembl_id = "x"))[0, ]
+    rownames(foundDF) <- foundDF$chembl_id
     rows <- lapply(chemblIds, function(id) {
-        if (verbose) message("ChEMBL molecule: ", id)
-        url <- paste0(base, "/molecule/", utils::URLencode(id), ".json")
-        rec <- .dtiApiGET(url)
-        r <- flat(rec)
-        if (is.null(r)) {
-            r <- flat(list(molecule_chembl_id = id))  # NA row, keep the id
-        }
-        r
+        if (id %in% rownames(foundDF)) foundDF[id, ] else flat(list(molecule_chembl_id = id))
     })
-    do.call(rbind, rows)
+    out <- do.call(rbind, rows)
+    rownames(out) <- NULL
+    out
 }
 
 #' Search ChEMBL for a target by gene symbol or name
@@ -327,8 +398,19 @@ getChemblBioactivities <- function(targetChemblId, standardType = NA,
 #'   \code{idType = "chembl_id"} queries drug -> target by ChEMBL molecule
 #'   ID(s) in \code{ids}. Other \code{idType} values (\code{molregno},
 #'   \code{PubChem_ID}, \code{DrugBank_ID}) are not yet supported over
-#'   REST.
-#' @param verbose logical(1); if TRUE, message progress per query ID.
+#'   REST. \code{ids} can be arbitrarily large: internally the query is
+#'   chunked (see \code{chunkSize}) and each chunk paginated, so a query of
+#'   e.g. 2000 UniProt accessions or ChEMBL IDs works the same as one.
+#' @param verbose logical(1); if TRUE, message progress per batch.
+#' @param chunkSize integer(1) max IDs sent per HTTP request via a
+#'   \code{<field>__in=id1,id2,...} filter. ChEMBL's REST server caps the
+#'   request-line length at ~4KB, which limits a single filter to roughly
+#'   250-400 IDs depending on ID length (\code{httr2} percent-encodes the
+#'   separating commas, eating into that budget) — 200 leaves comfortable
+#'   margin for both short legacy IDs (e.g. \code{"CHEMBL25"}) and longer
+#'   modern ones (e.g. \code{"CHEMBL5291677"}). Requests are also
+#'   client-side throttled (see \code{\link{.dtiApiGET}}) to be a polite
+#'   API citizen; ChEMBL does not publish a hard rate limit.
 #' @return A \code{data.frame} with columns \code{QueryIDs},
 #'   \code{chembl_id}, \code{Drug_Name}, \code{MOA}, \code{Action_Type},
 #'   \code{Max_Phase}, \code{First_Approval}, \code{ChEMBL_TID},
@@ -349,7 +431,7 @@ getChemblBioactivities <- function(targetChemblId, standardType = NA,
 #' @export
 getChemblDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
                                                ids = NULL),
-                                verbose = FALSE) {
+                                verbose = FALSE, chunkSize = 200L) {
     if (!identical(names(queryBy), c("molType", "idType", "ids"))) {
         stop(
             "All three list components in 'queryBy' (named: 'molType',",
@@ -390,16 +472,22 @@ getChemblDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
     ## entry point). One accession can map to several ChEMBL targets
     ## (single-protein plus any protein-family/complex targets it belongs
     ## to), mirroring drugTargetAnnot()'s unfiltered target_components join.
+    ## Batched: a returned (possibly multi-component) target is exploded
+    ## against every query accession it actually contains, so batching
+    ## several accessions into one request reproduces the same per-
+    ## accession row set as querying them one at a time.
     .resolveTargetsByAccession <- function(accessions) {
-        rows <- lapply(accessions, function(acc) {
-            if (verbose) message("ChEMBL target lookup: ", acc)
-            res <- .dtiApiGET(paste0(base, "/target.json"),
-                              query = list(target_components__accession = acc,
-                                          limit = 1000L))
-            tgts <- res$targets %||% list()
-            if (length(tgts) == 0L) return(NULL)
-            do.call(rbind, lapply(tgts, function(t) {
-                comps <- t$target_components %||% list()
+        accessions <- unique(accessions)
+        recs <- .dtiBatchGET(paste0(base, "/target.json"),
+                             "target_components__accession__in", accessions,
+                             "targets", chunkSize = chunkSize, verbose = verbose)
+        rows <- lapply(recs, function(t) {
+            comps <- t$target_components %||% list()
+            compAcc <- vapply(comps, function(c) c$accession %||% NA_character_,
+                              character(1))
+            matched <- intersect(compAcc, accessions)
+            if (length(matched) == 0L) return(NULL)
+            do.call(rbind, lapply(matched, function(acc) {
                 comp <- Filter(function(c) identical(c$accession %||% NA, acc),
                                comps)
                 comp <- if (length(comp)) comp[[1]] else list()
@@ -425,17 +513,13 @@ getChemblDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
     ## Resolve ChEMBL_TID -> UniProt accession(s)/Organism/Desc (drug ->
     ## target direction, after mechanism lookup has produced target IDs).
     .resolveTargetsById <- function(targetChemblIds) {
-        targetChemblIds <- unique(stats::na.omit(targetChemblIds))
         empty <- data.frame(ChEMBL_TID = character(0), UniProt_ID = character(0),
             Organism = character(0), Desc = character(0), stringsAsFactors = FALSE)
-        if (length(targetChemblIds) == 0L) return(empty)
-        res <- .dtiApiGET(paste0(base, "/target.json"),
-                          query = list(target_chembl_id__in =
-                                      paste(targetChemblIds, collapse = ","),
-                                      limit = 1000L))
-        tgts <- res$targets %||% list()
-        if (length(tgts) == 0L) return(empty)
-        rows <- lapply(tgts, function(t) {
+        recs <- .dtiBatchGET(paste0(base, "/target.json"), "target_chembl_id__in",
+                             targetChemblIds, "targets", chunkSize = chunkSize,
+                             verbose = verbose)
+        if (length(recs) == 0L) return(empty)
+        rows <- lapply(recs, function(t) {
             comps <- t$target_components %||% list()
             if (length(comps) == 0L) {
                 return(data.frame(
@@ -460,14 +544,12 @@ getChemblDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
         moleculeChemblIds <- unique(stats::na.omit(moleculeChemblIds))
         out <- stats::setNames(rep(NA_character_, length(moleculeChemblIds)),
                         moleculeChemblIds)
-        if (length(moleculeChemblIds) == 0L) return(out)
-        res <- .dtiApiGET(paste0(base, "/drug_indication.json"),
-                          query = list(molecule_chembl_id__in =
-                                      paste(moleculeChemblIds, collapse = ","),
-                                      limit = 1000L))
-        inds <- res$drug_indications %||% list()
-        if (length(inds) == 0L) return(out)
-        df <- do.call(rbind, lapply(inds, function(i) data.frame(
+        recs <- .dtiBatchGET(paste0(base, "/drug_indication.json"),
+                             "molecule_chembl_id__in", moleculeChemblIds,
+                             "drug_indications", chunkSize = chunkSize,
+                             verbose = verbose)
+        if (length(recs) == 0L) return(out)
+        df <- do.call(rbind, lapply(recs, function(i) data.frame(
             molecule_chembl_id = i$molecule_chembl_id %||% NA_character_,
             mesh = if (!is.null(i$mesh_id) && !is.null(i$mesh_heading))
                 paste0(i$mesh_id, ": ", i$mesh_heading) else NA_character_,
@@ -478,33 +560,22 @@ getChemblDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
         out
     }
 
-    ## drug_mechanism equivalent, paginated, keyed by either
-    ## target_chembl_id or molecule_chembl_id depending on query direction.
+    ## drug_mechanism equivalent. Batched via <field>__in; the returned
+    ## records already carry target_chembl_id/molecule_chembl_id, which
+    ## doubles as the join/query key, so no separate per-ID query tag is
+    ## needed the way a one-request-per-ID loop would require.
     .mechanismsFor <- function(param, ids) {
-        rows <- lapply(ids, function(id) {
-            if (verbose) message("ChEMBL mechanism lookup (", param, "): ", id)
-            acc <- list(); offset <- 0L
-            repeat {
-                q <- stats::setNames(list(id, 1000L, offset), c(param, "limit", "offset"))
-                res <- .dtiApiGET(paste0(base, "/mechanism.json"), query = q)
-                mex <- res$mechanisms %||% list()
-                if (length(mex) == 0L) break
-                acc <- c(acc, mex)
-                offset <- offset + length(mex)
-                total <- res$page_meta$total_count %||% offset
-                if (offset >= total) break
-            }
-            if (length(acc) == 0L) return(NULL)
-            do.call(rbind, lapply(acc, function(m) data.frame(
-                queryId          = id,
-                chembl_id        = m$molecule_chembl_id %||% NA_character_,
-                ChEMBL_TID       = m$target_chembl_id   %||% NA_character_,
-                MOA              = m$mechanism_of_action %||% NA_character_,
-                Action_Type      = m$action_type        %||% NA_character_,
-                Max_Phase        = as.numeric(m$max_phase %||% NA),
-                stringsAsFactors = FALSE)))
-        })
-        do.call(rbind, rows)
+        recs <- .dtiBatchGET(paste0(base, "/mechanism.json"), paste0(param, "__in"),
+                             ids, "mechanisms", chunkSize = chunkSize,
+                             verbose = verbose)
+        if (length(recs) == 0L) return(NULL)
+        do.call(rbind, lapply(recs, function(m) data.frame(
+            chembl_id        = m$molecule_chembl_id %||% NA_character_,
+            ChEMBL_TID       = m$target_chembl_id   %||% NA_character_,
+            MOA              = m$mechanism_of_action %||% NA_character_,
+            Action_Type      = m$action_type        %||% NA_character_,
+            Max_Phase        = as.numeric(m$max_phase %||% NA),
+            stringsAsFactors = FALSE)))
     }
 
     if (isTarget) {
@@ -512,17 +583,16 @@ getChemblDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
         if (nrow(tgtByAcc) == 0L) return(emptyDF)
         mech <- .mechanismsFor("target_chembl_id", unique(tgtByAcc$ChEMBL_TID))
         if (is.null(mech) || nrow(mech) == 0L) return(emptyDF)
-        mech$queryId <- NULL
         out <- merge(tgtByAcc, mech, by = "ChEMBL_TID")
     } else {
         mech <- .mechanismsFor("molecule_chembl_id", queryBy$ids)
         if (is.null(mech) || nrow(mech) == 0L) return(emptyDF)
-        names(mech)[names(mech) == "queryId"] <- "QueryIDs"
+        mech$QueryIDs <- mech$chembl_id
         tgtById <- .resolveTargetsById(unique(mech$ChEMBL_TID))
         out <- merge(mech, tgtById, by = "ChEMBL_TID", all.x = TRUE)
     }
 
-    drugNames <- getChemblMolecule(unique(out$chembl_id))
+    drugNames <- getChemblMolecule(unique(out$chembl_id), chunkSize = chunkSize)
     out <- merge(out, drugNames[, c("chembl_id", "pref_name", "first_approval")],
                 by = "chembl_id", all.x = TRUE)
     mesh <- .meshFor(unique(out$chembl_id))

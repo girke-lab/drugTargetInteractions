@@ -4,21 +4,26 @@
 \alias{getChemblMolecule}
 \title{Retrieve molecule records from the ChEMBL REST API}
 \usage{
-getChemblMolecule(chemblIds, verbose = FALSE)
+getChemblMolecule(chemblIds, verbose = FALSE, chunkSize = 200L)
 }
 \arguments{
 \item{chemblIds}{character vector of ChEMBL molecule IDs
 (e.g. \code{"CHEMBL25"}).}
 
-\item{verbose}{logical(1); if TRUE, message progress.}
+\item{verbose}{logical(1); if TRUE, message progress per batch.}
+
+\item{chunkSize}{integer(1) max IDs looked up per HTTP request
+(see \code{\link{getChemblDrugTarget}} for why this is capped around
+200-400 rather than sent in one request). Large \code{chemblIds}
+vectors are chunked and paginated automatically.}
 }
 \value{
-A \code{data.frame} with one row per input ID and columns:
-  \code{chembl_id}, \code{pref_name}, \code{molecule_type},
-  \code{max_phase}, \code{first_approval}, \code{canonical_smiles},
-  \code{standard_inchi_key}, \code{mw_freebase}, \code{alogp},
-  \code{hba}, \code{hbd}, \code{psa}, \code{rtb}, \code{qed_weighted}.
-  IDs that fail to resolve yield a row of \code{NA}s.
+A \code{data.frame} with one row per input ID (duplicates and
+  input order preserved) and columns: \code{chembl_id}, \code{pref_name},
+  \code{molecule_type}, \code{max_phase}, \code{first_approval},
+  \code{canonical_smiles}, \code{standard_inchi_key}, \code{mw_freebase},
+  \code{alogp}, \code{hba}, \code{hbd}, \code{psa}, \code{rtb},
+  \code{qed_weighted}. IDs that fail to resolve yield a row of \code{NA}s.
 }
 \description{
 Queries the public ChEMBL REST endpoint for one or more molecules by

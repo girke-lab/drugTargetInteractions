@@ -21,8 +21,13 @@
 parsed JSON (list) or NULL on failure.
 }
 \description{
-Wraps httr2 with a bounded exponential back-off, an explicit timeout,
-a descriptive User-Agent, and JSON parsing. On any failure it returns
+Wraps httr2 with a client-side rate limit (a token-bucket throttle,
+scoped per-host so different APIs don't share a budget), a bounded
+exponential back-off on transient failures, an explicit timeout, a
+descriptive User-Agent, and JSON parsing. On any failure it returns
 NULL (so callers can degrade gracefully) unless `hardStop = TRUE`.
+The throttle is a courtesy cap, not a guarantee: none of these APIs
+publish a hard rate limit, so 429s are still handled gracefully via
+the retry back-off above.
 }
 \keyword{internal}
