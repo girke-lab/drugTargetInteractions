@@ -13,7 +13,8 @@ import(BiocFileCache)
 
 importFrom(httr2, request, req_headers, req_user_agent, req_timeout,
     req_url_query, req_retry, req_throttle, req_perform, resp_body_json,
-    resp_status, req_method, req_body_json)
+    resp_status, req_method, req_body_json, req_body_form, resp_link_url,
+    req_options)
 
 
 export( "genConfig",
@@ -52,5 +53,9 @@ export( "genConfig",
 
     "downloadTTD",
     "buildTtdDb",
-    "ttdTargetAnnot"
+    "ttdTargetAnnot",
+
+    "getUniprotMapping",
+    "getEnsemblParalogs",
+    "getEnsemblOrthologs"
 )

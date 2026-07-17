@@ -30,7 +30,9 @@
         opentargets = "https://api.platform.opentargets.org/api/v4/graphql",
         dgidb       = "https://dgidb.org/api/graphql",
         pubchem     = "https://pubchem.ncbi.nlm.nih.gov/rest/pug",
-        eutils      = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
+        eutils      = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils",
+        uniprot     = "https://rest.uniprot.org",
+        ensembl     = "https://rest.ensembl.org"
     )
 }
 
@@ -94,6 +96,45 @@
     }, error = function(e) {
         if (hardStop) stop(e)
         warning("drugTargetInteractions API GET failed for '", url, "': ",
+                conditionMessage(e), call. = FALSE)
+        NULL
+    })
+    out
+}
+
+#' Perform a form-encoded POST with retry + polite throttling
+#'
+#' Mirrors \code{\link{.dtiApiGET}} but posts \code{application/x-www-form-
+#' urlencoded} body fields instead of a query string - needed for APIs
+#' (e.g. UniProt's ID mapping job submission) that require POST rather
+#' than GET for the initial request.
+#'
+#' @param url character(1) fully-qualified URL.
+#' @param body named list of form fields.
+#' @param timeout numeric(1) per-request timeout in seconds.
+#' @param maxTries integer(1) total attempts including the first.
+#' @param hardStop logical(1) if TRUE, rethrow the error instead of NULL.
+#' @return parsed JSON (list) or NULL on failure.
+#' @keywords internal
+.dtiApiPOSTform <- function(url, body, timeout = 60L, maxTries = 3L,
+                            hardStop = FALSE) {
+    out <- tryCatch({
+        req <- httr2::request(url)
+        req <- httr2::req_headers(req, Accept = "application/json")
+        req <- httr2::req_user_agent(
+            req, "drugTargetInteractions R package (Bioconductor)")
+        req <- httr2::req_timeout(req, timeout)
+        req <- httr2::req_body_form(req, !!!body)
+        req <- httr2::req_throttle(req, rate = 5, fill_time_s = 1)
+        req <- httr2::req_retry(
+            req, max_tries = maxTries,
+            is_transient = function(resp)
+                httr2::resp_status(resp) %in% c(429L, 500L, 502L, 503L, 504L))
+        resp <- httr2::req_perform(req)
+        httr2::resp_body_json(resp, simplifyVector = FALSE)
+    }, error = function(e) {
+        if (hardStop) stop(e)
+        warning("drugTargetInteractions API POST failed for '", url, "': ",
                 conditionMessage(e), call. = FALSE)
         NULL
     })
