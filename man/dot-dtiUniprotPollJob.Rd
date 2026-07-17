@@ -12,4 +12,15 @@ live: a single-ID job is still "RUNNING" immediately after
 submission), so polling is always needed - there is no synchronous
 fast path.
 }
+\details{
+The status endpoint responds \code{303 See Other} once the job is
+done, with the redirect \code{Location} pointing at a results view
+and the literal \code{\{"jobStatus":"FINISHED"\}} body attached to
+the 303 response itself. httr2 follows redirects by default like
+most HTTP clients, so a plain GET here would silently land on the
+results page instead of the status payload - confirmed live to hang
+forever otherwise, since \code{jobStatus} is then never present to
+detect. Redirect-following is disabled explicitly for this request
+only (not changed package-wide in \code{\link{.dtiApiGET}}).
+}
 \keyword{internal}

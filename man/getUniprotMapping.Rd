@@ -48,7 +48,10 @@ A \code{data.frame} with columns \code{From} and \code{To}.
   IDs that don't map contribute no row (matching the underlying API's
   behavior - there is no per-ID failure signal to NA-pad against, only
   an aggregate list of unmapped IDs the API does not currently surface
-  in the paginated JSON results).
+  in the paginated JSON results). Note: \code{to = "Ensembl"} results
+  carry a version suffix (e.g. \code{"ENSG00000077782.24"}), unlike
+  the bare IDs returned elsewhere in this package - strip
+  \code{sub("\\\\..*$", "", x)} if a bare ID is needed.
 }
 \description{
 Direct replacement for \code{\link{getUniprotIDs}} (UniProt.ws), which

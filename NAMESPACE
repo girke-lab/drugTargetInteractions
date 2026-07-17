@@ -57,5 +57,9 @@ export( "genConfig",
 
     "getUniprotMapping",
     "getEnsemblParalogs",
-    "getEnsemblOrthologs"
+    "getEnsemblOrthologs",
+
+    "downloadUnichemTables",
+    "buildUnichemDb",
+    "getUnichemMapping"
 )
