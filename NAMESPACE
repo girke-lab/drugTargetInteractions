@@ -42,5 +42,11 @@ export( "genConfig",
 
     "getDgidbDrugs",
     "getDgidbTargets",
-    "getDgidbDrugTarget"
+    "getDgidbDrugTarget",
+
+    "getOpenTargetsIds",
+    "getOpenTargetsDrugIds",
+    "getOpenTargetsDrugs",
+    "getOpenTargetsTargets",
+    "getOpenTargetsDrugTarget"
 )

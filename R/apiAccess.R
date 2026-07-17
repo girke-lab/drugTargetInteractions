@@ -1405,3 +1405,596 @@ getDgidbDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
     rownames(out) <- NULL
     out
 }
+
+
+## ---------------------------------------------------------------------
+## Open Targets GraphQL access
+## ---------------------------------------------------------------------
+## Unlike DGIdb, Open Targets' schema is asymmetric: target -> drug goes
+## through Target.drugAndClinicalCandidates, drug -> target through
+## Drug.mechanismsOfAction.rows[].targets - two separate GraphQL shapes,
+## each needing its own ID-resolution step first (gene symbol -> Ensembl
+## ID via a `search` query restricted to entity "target"; drug name ->
+## ChEMBL ID via `search` restricted to entity "drug" - Open Targets drug
+## IDs *are* ChEMBL IDs). Confirmed live 2026-07-17 against a schema
+## introspection of the v4 API: Query.drug(chemblId)/Query.drugs(chemblIds)
+## are full siblings of Query.target/Query.targets, and
+## Drug.mechanismsOfAction.rows[].targets[] can list more than one target
+## per mechanism row (e.g. aspirin's "Cyclooxygenase inhibitor" mechanism
+## lists both PTGS1 and PTGS2).
+##
+## Only the proteome-scale/batched shape from the R_Py_code reference is
+## ported here (renamed to drop the "Batch" suffix, matching every other
+## source's convention of one vector-accepting accessor per direction
+## that chunks/aliases internally); the reference's separate single-item
+## functions (getOpenTargetsId(), a singular getOpenTargetsDrugs(),
+## getOpenTargetsDrugId(), a singular getOpenTargetsTargets()) were
+## parallel, non-DRY duplicate implementations of the exact same queries
+## for a length-1 input and are not needed once the batched shape handles
+## length 1 fine.
+##
+## getOpenTargetsDrugTarget()'s QueryIDs join uses the *stable resolved
+## ID* (ensembl_id / chembl_id), not the display name the way DGIdb's
+## wrapper does - Open Targets already returns those IDs verbatim in
+## every output row, and joining on an ID sidesteps DGIdb's
+## casing-normalization gotcha entirely. This costs one extra batched
+## resolution call inside the wrapper (symbols/names it already resolves
+## a second time internally) - a deliberate, modest tradeoff for keeping
+## getOpenTargetsDrugs()/getOpenTargetsTargets() unchanged in their
+## natural, self-contained shape rather than threading extra bookkeeping
+## through them for the wrapper's benefit alone.
+
+#' Resolve many gene symbols to Ensembl IDs in batched GraphQL requests
+#'
+#' Uses GraphQL field-aliasing to resolve up to \code{chunkSize} symbols
+#' per HTTP request, so resolving many genes takes a handful of requests
+#' rather than one per gene.
+#'
+#' @param symbols character vector of gene symbols (Ensembl gene IDs pass
+#'   through unresolved - checked via a plain \code{"^ENSG[0-9]+$"} regex).
+#' @param chunkSize integer(1) symbols per HTTP request (default 100).
+#' @param pause numeric(1) seconds to sleep between requests (politeness).
+#' @param verbose logical(1) progress messages.
+#' @return A named character vector (names = input symbols) of Ensembl
+#'   gene IDs; unresolved symbols are \code{NA}. Order matches the input.
+#' @examples
+#' \donttest{
+#'   getOpenTargetsIds(c("FGFR1", "KLB", "NOT_A_GENE"))
+#' }
+#' @seealso \code{\link{getOpenTargetsDrugs}}
+#' @export
+getOpenTargetsIds <- function(symbols, chunkSize = 100L, pause = 0.1,
+                              verbose = FALSE) {
+    stopifnot(is.character(symbols), length(symbols) >= 1L)
+    url <- .dtiEndpoints()$opentargets
+    uniq <- unique(symbols)
+    chunks <- .dtiChunk(uniq, chunkSize)
+    resolved <- character(0)
+    for (i in seq_along(chunks)) {
+        ch <- chunks[[i]]
+        if (verbose) message("getOpenTargetsIds chunk ", i, "/", length(chunks),
+                             " (", length(ch), " symbols)")
+        ## One aliased search per symbol; $qN variables keep it injection-safe.
+        varDefs <- paste(sprintf("$q%d: String!", seq_along(ch)), collapse = ", ")
+        aliases <- paste(sprintf(
+            "a%d: search(queryString: $q%d, entityNames: [\"target\"], page: {index: 0, size: 3}) { hits { id object { ... on Target { approvedSymbol } } } }",
+            seq_along(ch), seq_along(ch)), collapse = "\n")
+        query <- sprintf("query resolveIds(%s) {\n%s\n}", varDefs, aliases)
+        vars <- stats::setNames(as.list(ch), sprintf("q%d", seq_along(ch)))
+        data <- .dtiGraphQL(url, query, variables = vars)
+        for (j in seq_along(ch)) {
+            hits <- data[[sprintf("a%d", j)]]$hits %||% list()
+            id <- NA_character_
+            if (length(hits) > 0L) {
+                exact <- Filter(function(h) {
+                    s <- h$object$approvedSymbol %||% NA_character_
+                    !is.na(s) && toupper(s) == toupper(ch[j])
+                }, hits)
+                pick <- if (length(exact) > 0L) exact[[1]] else hits[[1]]
+                id <- pick$id %||% NA_character_
+            }
+            resolved[ch[j]] <- id
+        }
+        if (pause > 0 && i < length(chunks)) Sys.sleep(pause)
+    }
+    resolved[symbols]  # re-expand to input order/length
+}
+
+#' Column order shared by the drug accessor
+#' @keywords internal
+.dtiDrugCols <- c("ensembl_id", "approved_symbol", "drug_id", "drug_name",
+                  "drug_type", "max_clinical_stage", "mechanism_of_action",
+                  "action_type", "disease_id", "disease_name")
+
+#' Empty drug data.frame with the canonical columns
+#' @keywords internal
+.dtiEmptyDrugs <- function() {
+    as.data.frame(stats::setNames(
+        replicate(length(.dtiDrugCols), character(0), simplify = FALSE),
+        .dtiDrugCols), stringsAsFactors = FALSE)
+}
+
+#' The reusable GraphQL selection for one target's drugs (no outer braces)
+#' @keywords internal
+.dtiDrugSelection <- function() {
+    "approvedSymbol
+     drugAndClinicalCandidates {
+       count
+       rows {
+         maxClinicalStage
+         drug {
+           id name drugType maximumClinicalStage
+           mechanismsOfAction { rows { mechanismOfAction actionType } }
+         }
+         diseases { disease { id name } }
+       }
+     }"
+}
+
+#' Parse one target object into a tidy data.frame, applying the requested
+#' row expansion.
+#'
+#' @param tgt list; the GraphQL \code{target} object (may be NULL).
+#' @param ensg character(1); the Ensembl ID this object was queried with.
+#' @param expand character(1); one of "mechanism", "disease", "drug".
+#' @return data.frame with columns \code{.dtiDrugCols}; empty if no rows.
+#' @keywords internal
+.dtiParseTargetDrugs <- function(tgt, ensg, expand) {
+    tgt  <- tgt %||% list()
+    rows <- tgt$drugAndClinicalCandidates$rows %||% list()
+    if (length(rows) == 0L) return(.dtiEmptyDrugs())
+    sym  <- tgt$approvedSymbol %||% NA_character_
+    collapse <- function(x) paste(unique(stats::na.omit(x)), collapse = "; ")
+    perRow <- lapply(rows, function(r) {
+        drug <- r$drug %||% list()
+        moaRows <- drug$mechanismsOfAction$rows %||% list()
+        moa <- if (length(moaRows) == 0L)
+            data.frame(mechanism_of_action = NA_character_,
+                       action_type = NA_character_, stringsAsFactors = FALSE)
+        else do.call(rbind, lapply(moaRows, function(m) data.frame(
+            mechanism_of_action = m$mechanismOfAction %||% NA_character_,
+            action_type         = m$actionType        %||% NA_character_,
+            stringsAsFactors = FALSE)))
+        moa <- unique(moa)
+        dis <- r$diseases %||% list()
+        dz <- if (length(dis) == 0L)
+            data.frame(disease_id = NA_character_,
+                       disease_name = NA_character_, stringsAsFactors = FALSE)
+        else do.call(rbind, lapply(dis, function(d) data.frame(
+            disease_id   = d$disease$id   %||% NA_character_,
+            disease_name = d$disease$name %||% NA_character_,
+            stringsAsFactors = FALSE)))
+        dz <- unique(dz)
+        base <- data.frame(
+            ensembl_id      = ensg,
+            approved_symbol = sym,
+            drug_id         = drug$id %||% NA_character_,
+            drug_name       = drug$name %||% NA_character_,
+            drug_type       = drug$drugType %||% NA_character_,
+            max_clinical_stage = r$maxClinicalStage %||%
+                                 (drug$maximumClinicalStage %||% NA_character_),
+            stringsAsFactors = FALSE)
+        if (expand == "mechanism") {
+            out <- merge(base, moa, by = NULL)
+            out$disease_id   <- collapse(dz$disease_id)
+            out$disease_name <- collapse(dz$disease_name)
+        } else if (expand == "disease") {
+            out <- merge(base, dz, by = NULL)
+            out$mechanism_of_action <- collapse(moa$mechanism_of_action)
+            out$action_type         <- collapse(moa$action_type)
+        } else {  # drug
+            out <- base
+            out$mechanism_of_action <- collapse(moa$mechanism_of_action)
+            out$action_type         <- collapse(moa$action_type)
+            out$disease_id          <- collapse(dz$disease_id)
+            out$disease_name        <- collapse(dz$disease_name)
+        }
+        out[, .dtiDrugCols]
+    })
+    df <- do.call(rbind, perRow)
+    rownames(df) <- NULL
+    df
+}
+
+#' Retrieve known drugs / clinical candidates for one or more targets from
+#' Open Targets (target -> drug)
+#'
+#' Accepts many genes (symbols and/or Ensembl IDs), resolves symbols in
+#' bulk via \code{\link{getOpenTargetsIds}}, then pulls
+#' \code{drugAndClinicalCandidates} for up to \code{chunkSize} targets per
+#' HTTP request using GraphQL aliasing. One input target can expand into
+#' several output rows (a drug may act on the target via more than one
+#' mechanism and may be developed against more than one disease); the
+#' cartesian expansion is controlled by \code{expand}. Note that
+#' agonist / undrugged-direct targets (e.g. FGF21, NLRP3, TFEB, ADIPOR)
+#' legitimately return zero rows.
+#'
+#' The Open Targets GraphQL schema evolves between platform releases;
+#' this function targets the v4 schema in which rows are of type
+#' \code{ClinicalTargetFromTarget} (fields \code{maxClinicalStage},
+#' \code{drug}, \code{diseases}) and mechanism data lives under
+#' \code{drug.mechanismsOfAction.rows}. If Open Targets changes these
+#' names, update \code{\link{.dtiDrugSelection}}.
+#'
+#' @param genes character vector of gene symbols and/or Ensembl gene IDs.
+#' @param expand character(1); \code{"mechanism"} (default) emits one row
+#'   per drug x mechanism-of-action and collapses diseases into a single
+#'   semicolon-delimited string; \code{"disease"} emits one row per
+#'   drug x disease and collapses mechanisms; \code{"drug"} emits one row
+#'   per drug with both mechanisms and diseases collapsed.
+#' @param chunkSize integer(1) targets per HTTP request (default 25; kept
+#'   modest so per-request payloads and server load stay reasonable).
+#' @param pause numeric(1) seconds to sleep between requests.
+#' @param verbose logical(1) progress messages.
+#' @return A \code{data.frame} with columns \code{ensembl_id},
+#'   \code{approved_symbol}, \code{drug_id} (ChEMBL), \code{drug_name},
+#'   \code{drug_type}, \code{max_clinical_stage}, \code{mechanism_of_action},
+#'   \code{action_type}, \code{disease_id}, \code{disease_name}. Genes with
+#'   no known drugs simply contribute no rows. Empty \code{data.frame} if
+#'   nothing / offline.
+#' @examples
+#' \donttest{
+#'   drugs <- getOpenTargetsDrugs(c("FGFR1", "KLB"))
+#'   head(drugs[, c("drug_name", "mechanism_of_action", "max_clinical_stage")])
+#' }
+#' @seealso \code{\link{getOpenTargetsIds}}, \code{\link{getOpenTargetsTargets}},
+#'   \code{\link{getOpenTargetsDrugTarget}}
+#' @export
+getOpenTargetsDrugs <- function(genes, expand = c("mechanism", "disease", "drug"),
+                                chunkSize = 25L, pause = 0.1, verbose = FALSE) {
+    expand <- match.arg(expand)
+    stopifnot(is.character(genes), length(genes) >= 1L)
+    url <- .dtiEndpoints()$opentargets
+
+    ## Resolve any symbols to Ensembl IDs (Ensembl IDs pass through).
+    isEnsg <- grepl("^ENSG[0-9]+$", genes)
+    ensg <- genes
+    if (any(!isEnsg)) {
+        mapped <- getOpenTargetsIds(genes[!isEnsg], chunkSize = 100L,
+                                    pause = pause, verbose = verbose)
+        ensg[!isEnsg] <- mapped
+    }
+    keep <- !is.na(ensg) & nzchar(ensg)
+    ensg <- unique(ensg[keep])
+    if (length(ensg) == 0L) return(.dtiEmptyDrugs())
+
+    acc <- vector("list", length(ensg)); k <- 0L
+    chunks <- .dtiChunk(ensg, chunkSize)
+    for (i in seq_along(chunks)) {
+        ch <- chunks[[i]]
+        if (verbose) message("getOpenTargetsDrugs chunk ", i, "/", length(chunks),
+                             " (", length(ch), " targets)")
+        varDefs <- paste(sprintf("$e%d: String!", seq_along(ch)), collapse = ", ")
+        aliases <- paste(sprintf("t%d: target(ensemblId: $e%d) { %s }",
+                                 seq_along(ch), seq_along(ch),
+                                 .dtiDrugSelection()), collapse = "\n")
+        query <- sprintf("query drugsBatch(%s) {\n%s\n}", varDefs, aliases)
+        vars <- stats::setNames(as.list(ch), sprintf("e%d", seq_along(ch)))
+        data <- .dtiGraphQL(url, query, variables = vars)
+        if (!is.null(data)) for (j in seq_along(ch)) {
+            df <- .dtiParseTargetDrugs(data[[sprintf("t%d", j)]], ch[j], expand)
+            if (nrow(df) > 0L) { k <- k + 1L; acc[[k]] <- df }
+        }
+        if (pause > 0 && i < length(chunks)) Sys.sleep(pause)
+    }
+    if (k == 0L) return(.dtiEmptyDrugs())
+    out <- do.call(rbind, acc[seq_len(k)])
+    rownames(out) <- NULL
+    out
+}
+
+#' Resolve many drug names to ChEMBL IDs in batched GraphQL requests
+#'
+#' Vectorised, batched the same way \code{\link{getOpenTargetsIds}}
+#' batches target-symbol resolution. Open Targets drug IDs *are* ChEMBL
+#' IDs.
+#'
+#' @param names character vector of drug names (ChEMBL IDs pass through
+#'   unresolved - checked via a plain \code{"^CHEMBL[0-9]+$"} regex).
+#' @param chunkSize integer(1) names per HTTP request (default 100).
+#' @param pause numeric(1) seconds to sleep between requests (politeness).
+#' @param verbose logical(1) progress messages.
+#' @return A named character vector (names = input drug names) of ChEMBL
+#'   IDs; unresolved names are \code{NA}. Order matches the input.
+#' @examples
+#' \donttest{
+#'   getOpenTargetsDrugIds(c("aspirin", "imatinib", "NOT_A_DRUG"))
+#' }
+#' @seealso \code{\link{getOpenTargetsTargets}}
+#' @export
+getOpenTargetsDrugIds <- function(names, chunkSize = 100L, pause = 0.1,
+                                  verbose = FALSE) {
+    stopifnot(is.character(names), length(names) >= 1L)
+    url <- .dtiEndpoints()$opentargets
+    uniq <- unique(names)
+    chunks <- .dtiChunk(uniq, chunkSize)
+    resolved <- character(0)
+    for (i in seq_along(chunks)) {
+        ch <- chunks[[i]]
+        if (verbose) message("getOpenTargetsDrugIds chunk ", i, "/", length(chunks),
+                             " (", length(ch), " names)")
+        varDefs <- paste(sprintf("$q%d: String!", seq_along(ch)), collapse = ", ")
+        aliases <- paste(sprintf(
+            "a%d: search(queryString: $q%d, entityNames: [\"drug\"], page: {index: 0, size: 3}) { hits { id name } }",
+            seq_along(ch), seq_along(ch)), collapse = "\n")
+        query <- sprintf("query resolveDrugIds(%s) {\n%s\n}", varDefs, aliases)
+        vars <- stats::setNames(as.list(ch), sprintf("q%d", seq_along(ch)))
+        data <- .dtiGraphQL(url, query, variables = vars)
+        for (j in seq_along(ch)) {
+            hits <- data[[sprintf("a%d", j)]]$hits %||% list()
+            id <- NA_character_
+            if (length(hits) > 0L) {
+                exact <- Filter(function(h) {
+                    nm <- h$name %||% NA_character_
+                    !is.na(nm) && toupper(nm) == toupper(ch[j])
+                }, hits)
+                pick <- if (length(exact) > 0L) exact[[1]] else hits[[1]]
+                id <- pick$id %||% NA_character_
+            }
+            resolved[ch[j]] <- id
+        }
+        if (pause > 0 && i < length(chunks)) Sys.sleep(pause)
+    }
+    resolved[names]  # re-expand to input order/length
+}
+
+#' Column order shared by the target accessor
+#' @keywords internal
+.dtiTargetCols <- c("chembl_id", "drug_name", "drug_type", "max_clinical_stage",
+                    "mechanism_of_action", "action_type", "moa_target_name",
+                    "target_id", "approved_symbol")
+
+#' Empty target data.frame with the canonical columns
+#' @keywords internal
+.dtiEmptyTargets <- function() {
+    as.data.frame(stats::setNames(
+        replicate(length(.dtiTargetCols), character(0), simplify = FALSE),
+        .dtiTargetCols), stringsAsFactors = FALSE)
+}
+
+#' The reusable GraphQL selection for one drug's targets (no outer braces)
+#' @keywords internal
+.dtiTargetSelection <- function() {
+    "id name drugType maximumClinicalStage
+     mechanismsOfAction {
+       rows {
+         mechanismOfAction actionType targetName
+         targets { id approvedSymbol }
+       }
+     }"
+}
+
+#' Parse one drug object into a tidy data.frame, applying the requested
+#' row expansion.
+#'
+#' @param drg list; the GraphQL \code{drug} object (may be NULL).
+#' @param chemblId character(1); the ChEMBL ID this object was queried with.
+#' @param expand character(1); one of "target", "mechanism".
+#' @return data.frame with columns \code{.dtiTargetCols}; empty if no rows.
+#' @keywords internal
+.dtiParseDrugTargets <- function(drg, chemblId, expand) {
+    drg  <- drg %||% list()
+    rows <- drg$mechanismsOfAction$rows %||% list()
+    if (length(rows) == 0L) return(.dtiEmptyTargets())
+    nm    <- drg$name %||% NA_character_
+    dtype <- drg$drugType %||% NA_character_
+    mcs   <- drg$maximumClinicalStage %||% NA_character_
+    collapse <- function(x) paste(unique(stats::na.omit(x)), collapse = "; ")
+    perRow <- lapply(rows, function(r) {
+        tgts <- r$targets %||% list()
+        tg <- if (length(tgts) == 0L)
+            data.frame(target_id = NA_character_,
+                       approved_symbol = NA_character_, stringsAsFactors = FALSE)
+        else do.call(rbind, lapply(tgts, function(t) data.frame(
+            target_id       = t$id %||% NA_character_,
+            approved_symbol = t$approvedSymbol %||% NA_character_,
+            stringsAsFactors = FALSE)))
+        tg <- unique(tg)
+        base <- data.frame(
+            chembl_id           = chemblId,
+            drug_name            = nm,
+            drug_type            = dtype,
+            max_clinical_stage   = mcs,
+            mechanism_of_action  = r$mechanismOfAction %||% NA_character_,
+            action_type          = r$actionType        %||% NA_character_,
+            moa_target_name      = r$targetName        %||% NA_character_,
+            stringsAsFactors = FALSE)
+        if (expand == "target") {
+            out <- merge(base, tg, by = NULL)
+        } else {  # mechanism
+            out <- base
+            out$target_id       <- collapse(tg$target_id)
+            out$approved_symbol <- collapse(tg$approved_symbol)
+        }
+        out[, .dtiTargetCols]
+    })
+    df <- do.call(rbind, perRow)
+    rownames(df) <- NULL
+    df
+}
+
+#' Retrieve targets for one or more drugs from Open Targets (drug -> target)
+#'
+#' Accepts many drugs (names and/or ChEMBL IDs), resolves names in bulk
+#' via \code{\link{getOpenTargetsDrugIds}}, then pulls
+#' \code{mechanismsOfAction} for up to \code{chunkSize} drugs per HTTP
+#' request using GraphQL aliasing. This is the drug -> target counterpart
+#' of \code{\link{getOpenTargetsDrugs}}. A single mechanism-of-action row
+#' can list more than one target (e.g. aspirin's "Cyclooxygenase
+#' inhibitor" mechanism lists both PTGS1 and PTGS2); the cartesian
+#' expansion is controlled by \code{expand}.
+#'
+#' @param drugs character vector of drug names and/or ChEMBL IDs.
+#' @param expand character(1); \code{"target"} (default) emits one row per
+#'   mechanism-of-action x target; \code{"mechanism"} emits one row per
+#'   mechanism-of-action and collapses targets into a single
+#'   semicolon-delimited string.
+#' @param chunkSize integer(1) drugs per HTTP request (default 25).
+#' @param pause numeric(1) seconds to sleep between requests.
+#' @param verbose logical(1) progress messages.
+#' @return A \code{data.frame} with columns \code{chembl_id},
+#'   \code{drug_name}, \code{drug_type}, \code{max_clinical_stage},
+#'   \code{mechanism_of_action}, \code{action_type}, \code{moa_target_name},
+#'   \code{target_id} (Ensembl), \code{approved_symbol}. Drugs with no
+#'   known targets simply contribute no rows. Empty \code{data.frame} if
+#'   nothing / offline.
+#' @examples
+#' \donttest{
+#'   tgts <- getOpenTargetsTargets("aspirin")
+#'   tgts[, c("approved_symbol", "mechanism_of_action")]
+#' }
+#' @seealso \code{\link{getOpenTargetsDrugIds}}, \code{\link{getOpenTargetsDrugs}},
+#'   \code{\link{getOpenTargetsDrugTarget}}
+#' @export
+getOpenTargetsTargets <- function(drugs, expand = c("target", "mechanism"),
+                                  chunkSize = 25L, pause = 0.1, verbose = FALSE) {
+    expand <- match.arg(expand)
+    stopifnot(is.character(drugs), length(drugs) >= 1L)
+    url <- .dtiEndpoints()$opentargets
+
+    ## Resolve any names to ChEMBL IDs (ChEMBL IDs pass through).
+    isChembl <- grepl("^CHEMBL[0-9]+$", drugs)
+    chemblId <- drugs
+    if (any(!isChembl)) {
+        mapped <- getOpenTargetsDrugIds(drugs[!isChembl], chunkSize = 100L,
+                                        pause = pause, verbose = verbose)
+        chemblId[!isChembl] <- mapped
+    }
+    keep <- !is.na(chemblId) & nzchar(chemblId)
+    chemblId <- unique(chemblId[keep])
+    if (length(chemblId) == 0L) return(.dtiEmptyTargets())
+
+    acc <- vector("list", length(chemblId)); k <- 0L
+    chunks <- .dtiChunk(chemblId, chunkSize)
+    for (i in seq_along(chunks)) {
+        ch <- chunks[[i]]
+        if (verbose) message("getOpenTargetsTargets chunk ", i, "/", length(chunks),
+                             " (", length(ch), " drugs)")
+        varDefs <- paste(sprintf("$c%d: String!", seq_along(ch)), collapse = ", ")
+        aliases <- paste(sprintf("d%d: drug(chemblId: $c%d) { %s }",
+                                 seq_along(ch), seq_along(ch),
+                                 .dtiTargetSelection()), collapse = "\n")
+        query <- sprintf("query targetsBatch(%s) {\n%s\n}", varDefs, aliases)
+        vars <- stats::setNames(as.list(ch), sprintf("c%d", seq_along(ch)))
+        data <- .dtiGraphQL(url, query, variables = vars)
+        if (!is.null(data)) for (j in seq_along(ch)) {
+            df <- .dtiParseDrugTargets(data[[sprintf("d%d", j)]], ch[j], expand)
+            if (nrow(df) > 0L) { k <- k + 1L; acc[[k]] <- df }
+        }
+        if (pause > 0 && i < length(chunks)) Sys.sleep(pause)
+    }
+    if (k == 0L) return(.dtiEmptyTargets())
+    out <- do.call(rbind, acc[seq_len(k)])
+    rownames(out) <- NULL
+    out
+}
+
+#' Query Open Targets drug/target data via the uniform queryBy interface
+#'
+#' Thin \code{queryBy}-dispatching wrapper over
+#' \code{\link{getOpenTargetsDrugs}} (target -> drug) and
+#' \code{\link{getOpenTargetsTargets}} (drug -> target), matching the
+#' \code{queryBy = list(molType, idType, ids)} interface used by
+#' \code{\link{drugTargetAnnot}}, \code{\link{getChemblDrugTarget}},
+#' \code{\link{getPubchemDrugTarget}} and \code{\link{getDgidbDrugTarget}}.
+#' Unlike \code{\link{getDgidbDrugTarget}} (which joins on a
+#' case-normalized display name), this joins the \code{QueryIDs} column on
+#' the stable resolved ID (Ensembl gene ID / ChEMBL ID) that Open Targets
+#' already returns verbatim in every output row, so no casing ambiguity
+#' arises; the tradeoff is one extra batched ID-resolution call inside the
+#' wrapper (see the file header note).
+#'
+#' @param queryBy named list with components \code{molType}, \code{idType}
+#'   and \code{ids}. \code{molType = "gene"} with \code{idType = "symbol"}
+#'   queries target -> drug (\code{ids} = gene symbols and/or Ensembl gene
+#'   IDs). \code{molType = "cmp"} with \code{idType = "name"} queries
+#'   drug -> target (\code{ids} = drug names and/or ChEMBL IDs). Matches
+#'   \code{\link{getPubchemDrugTarget}}/\code{\link{getDgidbDrugTarget}}'s
+#'   vocabulary for the same concepts.
+#' @param ... additional arguments passed through to
+#'   \code{\link{getOpenTargetsDrugs}} / \code{\link{getOpenTargetsTargets}}
+#'   (e.g. \code{expand}, \code{chunkSize}, \code{verbose}).
+#' @return A \code{data.frame} in the same column shape as
+#'   \code{\link{getOpenTargetsDrugs}} / \code{\link{getOpenTargetsTargets}},
+#'   plus a leading \code{QueryIDs} column echoing the original
+#'   \code{queryBy$ids} token each row resolved from. Query IDs that
+#'   returned no rows still appear as a single row with all other fields
+#'   \code{NA}.
+#' @examples
+#' \donttest{
+#'   ## target -> drug: FGFR1, KLB
+#'   getOpenTargetsDrugTarget(list(molType = "gene", idType = "symbol",
+#'                                 ids = c("FGFR1", "KLB")))
+#'   ## drug -> target: aspirin
+#'   getOpenTargetsDrugTarget(list(molType = "cmp", idType = "name",
+#'                                 ids = "aspirin"))
+#' }
+#' @seealso \code{\link{getOpenTargetsDrugs}}, \code{\link{getOpenTargetsTargets}},
+#'   \code{\link{getChemblDrugTarget}}, \code{\link{getPubchemDrugTarget}},
+#'   \code{\link{getDgidbDrugTarget}}
+#' @export
+getOpenTargetsDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
+                                                     ids = NULL), ...) {
+    if (!identical(names(queryBy), c("molType", "idType", "ids"))) {
+        stop(
+            "All three list components in 'queryBy' (named: 'molType',",
+            " 'idType' and 'ids') need to be present."
+        )
+    }
+    if (any(vapply(queryBy, length, integer(1)) == 0)) {
+        stop(
+            "All components in 'queryBy' list need to be populated with ",
+            "corresponding character vectors."
+        )
+    }
+
+    isGene <- identical(queryBy$molType, "gene") &&
+        identical(queryBy$idType, "symbol")
+    isCmp <- identical(queryBy$molType, "cmp") &&
+        identical(queryBy$idType, "name")
+    if (!isGene && !isCmp) {
+        stop(
+            "getOpenTargetsDrugTarget() currently supports only ",
+            "queryBy=list(molType=\"gene\", idType=\"symbol\", ids=...) ",
+            "or queryBy=list(molType=\"cmp\", idType=\"name\", ids=...). ",
+            "Other identifier types require translating to a gene symbol ",
+            "/ Ensembl ID or a drug name / ChEMBL ID first."
+        )
+    }
+
+    ids <- queryBy$ids
+    if (isGene) {
+        out <- getOpenTargetsDrugs(ids, ...)
+        resolved <- ids
+        isNative <- grepl("^ENSG[0-9]+$", ids)
+        if (any(!isNative))
+            resolved[!isNative] <- getOpenTargetsIds(ids[!isNative])
+        resolvedCol <- "ensembl_id"
+    } else {
+        out <- getOpenTargetsTargets(ids, ...)
+        resolved <- ids
+        isNative <- grepl("^CHEMBL[0-9]+$", ids)
+        if (any(!isNative))
+            resolved[!isNative] <- getOpenTargetsDrugIds(ids[!isNative])
+        resolvedCol <- "chembl_id"
+    }
+
+    ## Join on the stable resolved ID, not a display name (see file header
+    ## note) - `resolved` and `ids` are parallel/same-length, so the first
+    ## query token whose resolved ID matches a given output row wins if
+    ## more than one input token resolves to the same ID (a rare synonym
+    ## case, not fixed here - same tradeoff already accepted for the
+    ## ChEMBL/PubChem/DGIdb wrappers' analogous edge cases).
+    out$QueryIDs <- ids[match(out[[resolvedCol]], resolved)]
+
+    unmatched <- ids[is.na(resolved) | !(resolved %in% out[[resolvedCol]])]
+    if (length(unmatched)) {
+        extra <- out[rep(NA_integer_, length(unmatched)), , drop = FALSE]
+        extra$QueryIDs <- unmatched
+        out <- rbind(out, extra)
+    }
+    front <- c("QueryIDs", setdiff(names(out), "QueryIDs"))
+    out <- out[order(match(out$QueryIDs, ids)), front]
+    rownames(out) <- NULL
+    out
+}

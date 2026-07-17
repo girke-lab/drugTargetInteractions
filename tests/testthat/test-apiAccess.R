@@ -321,3 +321,129 @@ test_that(".dtiParseDgidbInteractions parses/collapses raw nodes, no network", {
     expect_identical(df$sources, "ChEMBL; DrugBank")
     expect_identical(.dtiParseDgidbInteractions(NULL), .dtiEmptyDgidb())
 })
+
+test_that("getOpenTargetsIds resolves gene symbols to Ensembl IDs", {
+    skip_if_offline_dti()
+    ids <- getOpenTargetsIds(c("FGFR1", "NOT_A_GENE"))
+    expect_identical(names(ids), c("FGFR1", "NOT_A_GENE"))
+    expect_identical(unname(ids["FGFR1"]), "ENSG00000077782")
+    expect_true(is.na(ids["NOT_A_GENE"]))
+})
+
+test_that("getOpenTargetsDrugIds resolves drug names to ChEMBL IDs, CHEMBL passes through", {
+    skip_if_offline_dti()
+    ids <- getOpenTargetsDrugIds(c("aspirin", "NOT_A_DRUG"))
+    expect_identical(unname(ids["aspirin"]), "CHEMBL25")
+    expect_true(is.na(ids["NOT_A_DRUG"]))
+})
+
+test_that("getOpenTargetsDrugs matches the validated FGFR1 row count exactly", {
+    skip_if_offline_dti()
+    df <- getOpenTargetsDrugs("FGFR1")
+    expect_s3_class(df, "data.frame")
+    expect_identical(names(df), c("ensembl_id", "approved_symbol", "drug_id",
+                                  "drug_name", "drug_type", "max_clinical_stage",
+                                  "mechanism_of_action", "action_type",
+                                  "disease_id", "disease_name"))
+    expect_equal(nrow(df), 94L)  # matches R_Py_code/apiAccess.R reference
+    expect_true(all(df$approved_symbol == "FGFR1"))
+})
+
+test_that("getOpenTargetsTargets resolves aspirin's COX1/COX2 targets", {
+    skip_if_offline_dti()
+    df <- getOpenTargetsTargets("aspirin")
+    expect_s3_class(df, "data.frame")
+    expect_true(setequal(df$approved_symbol, c("PTGS1", "PTGS2")))
+    expect_true(all(df$chembl_id == "CHEMBL25"))
+})
+
+test_that("getOpenTargetsDrugTarget target->drug matches getOpenTargetsDrugs and tags QueryIDs", {
+    skip_if_offline_dti()
+    df <- getOpenTargetsDrugTarget(list(molType = "gene", idType = "symbol",
+                                        ids = "FGFR1"))
+    expect_s3_class(df, "data.frame")
+    expect_identical(names(df)[1], "QueryIDs")
+    expect_true(all(df$QueryIDs == "FGFR1"))
+    plain <- getOpenTargetsDrugs("FGFR1")
+    expect_equal(nrow(df), nrow(plain))
+})
+
+test_that("getOpenTargetsDrugTarget drug->target matches getOpenTargetsTargets and tags QueryIDs", {
+    skip_if_offline_dti()
+    df <- getOpenTargetsDrugTarget(list(molType = "cmp", idType = "name",
+                                        ids = "aspirin"))
+    expect_true(all(df$QueryIDs == "aspirin"))
+    expect_true(setequal(df$approved_symbol, c("PTGS1", "PTGS2")))
+    plain <- getOpenTargetsTargets("aspirin")
+    expect_equal(nrow(df), nrow(plain))
+})
+
+test_that("getOpenTargetsDrugTarget resolves native IDs (ENSG/CHEMBL) without re-resolving", {
+    skip_if_offline_dti()
+    df <- getOpenTargetsDrugTarget(list(molType = "gene", idType = "symbol",
+                                        ids = "ENSG00000077782"))
+    expect_true(all(df$QueryIDs == "ENSG00000077782"))
+    expect_true(all(df$ensembl_id == "ENSG00000077782"))
+})
+
+test_that("getOpenTargetsDrugTarget surfaces unmatched query IDs as NA rows (both directions)", {
+    skip_if_offline_dti()
+    genes <- getOpenTargetsDrugTarget(list(molType = "gene", idType = "symbol",
+                                           ids = c("FGFR1", "NOTAREALGENEXYZ")))
+    expect_true("NOTAREALGENEXYZ" %in% genes$QueryIDs)
+    naRow <- genes[genes$QueryIDs == "NOTAREALGENEXYZ", ]
+    expect_equal(nrow(naRow), 1L)
+    expect_true(is.na(naRow$drug_name))
+
+    drugs <- getOpenTargetsDrugTarget(list(molType = "cmp", idType = "name",
+                                           ids = c("aspirin", "NOTAREALDRUGXYZ")))
+    expect_true("NOTAREALDRUGXYZ" %in% drugs$QueryIDs)
+    naRow2 <- drugs[drugs$QueryIDs == "NOTAREALDRUGXYZ", ]
+    expect_equal(nrow(naRow2), 1L)
+    expect_true(is.na(naRow2$approved_symbol))
+})
+
+test_that("getOpenTargetsDrugTarget rejects unsupported idType / malformed queryBy", {
+    expect_error(
+        getOpenTargetsDrugTarget(list(molType = "gene", idType = "ensembl",
+                                      ids = "ENSG00000077782")),
+        "currently supports only")
+    expect_error(
+        getOpenTargetsDrugTarget(list(molType = "cmp", idType = "name",
+                                      ids = character(0))),
+        "need to be populated")
+})
+
+test_that(".dtiParseTargetDrugs/.dtiParseDrugTargets expand rows per `expand`, no network", {
+    tgt <- list(
+        approvedSymbol = "PTGS1",
+        drugAndClinicalCandidates = list(rows = list(list(
+            maxClinicalStage = 4,
+            drug = list(id = "CHEMBL25", name = "ASPIRIN", drugType = "Small molecule",
+                       mechanismsOfAction = list(rows = list(
+                           list(mechanismOfAction = "Cyclooxygenase inhibitor",
+                               actionType = "INHIBITOR")))),
+            diseases = list(list(disease = list(id = "EFO_1", name = "Pain")),
+                            list(disease = list(id = "EFO_2", name = "Fever")))
+        )))
+    )
+    byMech <- .dtiParseTargetDrugs(tgt, "ENSG00000095303", "mechanism")
+    expect_equal(nrow(byMech), 1L)
+    expect_identical(byMech$disease_name, "Pain; Fever")
+    byDisease <- .dtiParseTargetDrugs(tgt, "ENSG00000095303", "disease")
+    expect_equal(nrow(byDisease), 2L)
+    expect_identical(.dtiParseTargetDrugs(NULL, "x", "drug"), .dtiEmptyDrugs())
+
+    drg <- list(name = "ASPIRIN", drugType = "Small molecule", maximumClinicalStage = 4,
+               mechanismsOfAction = list(rows = list(list(
+                   mechanismOfAction = "Cyclooxygenase inhibitor", actionType = "INHIBITOR",
+                   targetName = "Prostaglandin G/H synthase",
+                   targets = list(list(id = "ENSG00000095303", approvedSymbol = "PTGS1"),
+                                 list(id = "ENSG00000073756", approvedSymbol = "PTGS2"))))))
+    byTarget <- .dtiParseDrugTargets(drg, "CHEMBL25", "target")
+    expect_equal(nrow(byTarget), 2L)
+    byMech2 <- .dtiParseDrugTargets(drg, "CHEMBL25", "mechanism")
+    expect_equal(nrow(byMech2), 1L)
+    expect_identical(byMech2$approved_symbol, "PTGS1; PTGS2")
+    expect_identical(.dtiParseDrugTargets(NULL, "x", "target"), .dtiEmptyTargets())
+})
