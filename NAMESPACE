@@ -38,5 +38,9 @@ export( "genConfig",
 
     "getPubchemDrugs",
     "getPubchemTargets",
-    "getPubchemDrugTarget"
+    "getPubchemDrugTarget",
+
+    "getDgidbDrugs",
+    "getDgidbTargets",
+    "getDgidbDrugTarget"
 )

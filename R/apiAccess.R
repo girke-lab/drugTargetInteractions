@@ -158,6 +158,58 @@
     allRecs
 }
 
+#' Perform a GraphQL POST with retry + polite throttling
+#'
+#' Shared by any GraphQL-backed source (DGIdb, and later Open Targets).
+#' Mirrors \code{\link{.dtiApiGET}}'s retry/throttle/timeout behavior but
+#' posts a \code{\{query, variables\}} JSON body instead of a query-string
+#' GET. On any transport failure or a GraphQL \code{errors} payload it
+#' warns and returns \code{NULL} (or the partial \code{data} field, for
+#' errors) so callers can degrade gracefully, unless \code{hardStop = TRUE}.
+#'
+#' @param url character(1) GraphQL endpoint URL.
+#' @param query character(1) GraphQL query/mutation document.
+#' @param variables named list of GraphQL variables.
+#' @param timeout numeric(1) per-request timeout in seconds.
+#' @param maxTries integer(1) total attempts including the first.
+#' @param hardStop logical(1) if TRUE, rethrow the error instead of NULL.
+#' @return parsed \code{data} element of the GraphQL response, or NULL.
+#' @keywords internal
+.dtiGraphQL <- function(url, query, variables = list(), timeout = 60L,
+                        maxTries = 3L, hardStop = FALSE) {
+    out <- tryCatch({
+        body <- list(query = query, variables = variables)
+        req <- httr2::request(url)
+        req <- httr2::req_headers(req, Accept = "application/json",
+                                  `Content-Type` = "application/json")
+        req <- httr2::req_user_agent(
+            req, "drugTargetInteractions R package (Bioconductor)")
+        req <- httr2::req_timeout(req, timeout)
+        req <- httr2::req_body_json(req, body)
+        req <- httr2::req_throttle(req, rate = 5, fill_time_s = 1)
+        req <- httr2::req_retry(
+            req, max_tries = maxTries,
+            is_transient = function(resp)
+                httr2::resp_status(resp) %in% c(429L, 500L, 502L, 503L, 504L))
+        resp <- httr2::req_perform(req)
+        parsed <- httr2::resp_body_json(resp, simplifyVector = FALSE)
+        if (!is.null(parsed$errors)) {
+            msgs <- vapply(parsed$errors, function(e) e$message %||% NA_character_,
+                          character(1))
+            warning("drugTargetInteractions GraphQL query to '", url,
+                    "' returned errors: ",
+                    paste(stats::na.omit(msgs), collapse = "; "), call. = FALSE)
+        }
+        parsed$data
+    }, error = function(e) {
+        if (hardStop) stop(e)
+        warning("drugTargetInteractions GraphQL POST failed for '", url, "': ",
+                conditionMessage(e), call. = FALSE)
+        NULL
+    })
+    out
+}
+
 ## NULL-coalescing helper. No roxygen doc block: a leading `%` in \name
 ## trips up Rd's checkRd (\name should not contain !, | or @).
 `%||%` <- function(a, b) if (is.null(a) || length(a) == 0L) b else a
@@ -1056,6 +1108,300 @@ getPubchemDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
     }
     front <- c("QueryIDs", setdiff(names(out), "QueryIDs"))
     out <- out[order(match(out$QueryIDs, ids)), front]
+    rownames(out) <- NULL
+    out
+}
+
+
+## ---------------------------------------------------------------------
+## DGIdb GraphQL access
+## ---------------------------------------------------------------------
+## Unlike ChEMBL/PubChem, DGIdb's schema is bidirectional by construction:
+## a single root query, interactions(geneNames: [...], drugNames: [...]),
+## returns Interaction nodes that each already carry BOTH endpoints'
+## identity (gene AND drug) plus interactionScore, evidenceScore,
+## interactionTypes and sources. So one shared query+parser covers both
+## target -> drug and drug -> target - no separate ID-resolution step is
+## needed the way ChEMBL/PubChem require (geneNames/drugNames match
+## case-insensitively on plain names directly; confirmed live against the
+## v5 API 2026-07-13, incl. an exact 227-row match for the project's 8
+## genes against the validated R_Py_code/dgidb_fetch.py reference).
+##
+## DGIdb normalizes matched names to its own canonical casing regardless
+## of query casing (confirmed live 2026-07-16: querying "fgfr1" returns
+## gene_name "FGFR1"; "Aspirin" returns drug_name "ASPIRIN") - so mapping
+## a result row back to the query token it came from (for
+## getDgidbDrugTarget()'s QueryIDs column) has to match
+## case-insensitively, unlike ChEMBL/PubChem where the query token is
+## always echoed back verbatim.
+##
+## The `sources` column (upstream sourceDbName per interaction, e.g.
+## "ChEMBL", "DrugBank", "TTD") is retained specifically because DGIdb is
+## an aggregator - individual rows carry their upstream source's license,
+## not one blanket DGIdb license (see the standalone
+## R_Py_code/license_registry.py table; not ported into the package).
+
+#' Column order for tidy DGIdb interaction rows
+#' @keywords internal
+.dtiDgidbCols <- c("gene_name", "drug_name", "drug_concept_id", "drug_approved",
+                   "interaction_types", "directionality", "interaction_score",
+                   "evidence_score", "sources", "db")
+
+#' Empty DGIdb data.frame with the canonical columns
+#' @keywords internal
+.dtiEmptyDgidb <- function() {
+    as.data.frame(stats::setNames(
+        replicate(length(.dtiDgidbCols), character(0), simplify = FALSE),
+        .dtiDgidbCols), stringsAsFactors = FALSE)
+}
+
+#' The reusable GraphQL selection for one Interaction node (no outer braces)
+#' @keywords internal
+.dtiDgidbSelection <- function() {
+    "drug { name conceptId approved }
+     gene { name }
+     interactionScore
+     evidenceScore
+     interactionTypes { type directionality }
+     sources { sourceDbName }"
+}
+
+#' Parse a list of Interaction nodes into a tidy data.frame
+#' @keywords internal
+.dtiParseDgidbInteractions <- function(nodes) {
+    nodes <- nodes %||% list()
+    if (length(nodes) == 0L) return(.dtiEmptyDgidb())
+    collapse <- function(x) paste(unique(stats::na.omit(x)), collapse = "; ")
+    rows <- lapply(nodes, function(n) {
+        drug   <- n$drug %||% list()
+        gene   <- n$gene %||% list()
+        itypes <- n$interactionTypes %||% list()
+        types  <- collapse(vapply(itypes, function(t) t$type %||% NA_character_,
+                                  character(1)))
+        dirs   <- collapse(vapply(itypes, function(t) t$directionality %||% NA_character_,
+                                  character(1)))
+        srcs   <- n$sources %||% list()
+        srcNames <- collapse(vapply(srcs, function(s) s$sourceDbName %||% NA_character_,
+                                    character(1)))
+        data.frame(
+            gene_name         = gene$name %||% NA_character_,
+            drug_name         = drug$name %||% NA_character_,
+            drug_concept_id   = drug$conceptId %||% NA_character_,
+            drug_approved     = as.logical(drug$approved %||% NA),
+            interaction_types = types,
+            directionality    = dirs,
+            interaction_score = as.numeric(n$interactionScore %||% NA),
+            evidence_score    = as.numeric(n$evidenceScore %||% NA),
+            sources           = srcNames,
+            db                = "DGIdb",
+            stringsAsFactors = FALSE)
+    })
+    df <- do.call(rbind, rows)
+    rownames(df) <- NULL
+    df
+}
+
+#' Paginated, chunked interactions() query, shared by both direction wrappers
+#'
+#' \code{names} is sent as a single GraphQL array variable per request (no
+#' URL-length constraint the way ChEMBL's REST \code{__in} filters have),
+#' but is still chunked defensively at \code{chunkSize} - consistent with
+#' the batching convention used for the other REST sources - since DGIdb
+#' publishes no documented cap on array size. Each chunk is paginated via
+#' its own cursor until exhausted.
+#'
+#' @param names character vector of gene symbols or drug names.
+#' @param by character(1) \code{"gene"} or \code{"drug"} - which
+#'   \code{interactions()} filter argument \code{names} populates.
+#' @param pageSize integer(1) rows per GraphQL page (cursor-paginated).
+#' @param maxRows integer(1) cap on total returned rows.
+#' @param chunkSize integer(1) max names sent per request.
+#' @param verbose logical(1); if TRUE, message progress per chunk/page.
+#' @return list of raw \code{Interaction} GraphQL nodes (unparsed).
+#' @keywords internal
+.dtiDgidbFetch <- function(names, by = c("gene", "drug"), pageSize = 500L,
+                           maxRows = 5000L, chunkSize = 300L, verbose = FALSE) {
+    by <- match.arg(by)
+    url <- .dtiEndpoints()$dgidb
+    argName <- if (by == "gene") "geneNames" else "drugNames"
+    query <- sprintf("
+      query($names: [String!], $after: String, $first: Int) {
+        interactions(%s: $names, after: $after, first: $first) {
+          pageInfo { hasNextPage endCursor }
+          nodes { %s }
+        }
+      }", argName, .dtiDgidbSelection())
+
+    acc <- list()
+    for (chunk in .dtiChunk(unique(names), chunkSize)) {
+        got <- 0L; after <- NULL
+        repeat {
+            vars <- list(names = as.list(chunk), first = pageSize, after = after)
+            if (verbose)
+                message("DGIdb ", argName, " chunk n=", length(chunk),
+                        " after=", after %||% "<start>")
+            data <- .dtiGraphQL(url, query, variables = vars)
+            conn <- data$interactions
+            nodes <- conn$nodes %||% list()
+            if (length(nodes) == 0L) break
+            acc <- c(acc, nodes)
+            got <- got + length(nodes)
+            hasNext <- isTRUE(conn$pageInfo$hasNextPage %||% FALSE)
+            after <- conn$pageInfo$endCursor %||% NULL
+            if (!hasNext || got >= maxRows || is.null(after)) break
+        }
+    }
+    acc
+}
+
+#' Retrieve DGIdb drug interactions for one or more genes
+#'
+#' Queries the DGIdb \code{interactions(geneNames: ...)} GraphQL field
+#' and returns a tidy \code{data.frame} of gene-drug interaction rows.
+#' This is the target -> drug direction; see \code{\link{getDgidbTargets}}
+#' for the reverse.
+#'
+#' @param genes character vector of HGNC gene symbols (case-insensitive;
+#'   unmatched symbols simply contribute no rows, no error).
+#' @param pageSize integer(1) rows per GraphQL page (default 500).
+#' @param maxRows integer(1) cap on total returned rows (default 5000).
+#' @param verbose logical(1); if TRUE, message progress per chunk/page.
+#' @return A \code{data.frame} with columns \code{gene_name},
+#'   \code{drug_name}, \code{drug_concept_id} (e.g.
+#'   \code{"chembl:CHEMBL1201585"}), \code{drug_approved},
+#'   \code{interaction_types}, \code{directionality},
+#'   \code{interaction_score}, \code{evidence_score}, \code{sources}
+#'   (upstream provenance), \code{db}. Empty if none / offline.
+#' @examples
+#' \donttest{
+#'   df <- getDgidbDrugs(c("FGFR1", "KLB"))
+#'   table(df$gene_name)
+#' }
+#' @seealso \code{\link{getDgidbTargets}}, \code{\link{getDgidbDrugTarget}}
+#' @export
+getDgidbDrugs <- function(genes, pageSize = 500L, maxRows = 5000L, verbose = FALSE) {
+    stopifnot(is.character(genes), length(genes) >= 1L)
+    nodes <- .dtiDgidbFetch(genes, by = "gene", pageSize = pageSize,
+                            maxRows = maxRows, verbose = verbose)
+    .dtiParseDgidbInteractions(nodes)
+}
+
+#' Retrieve DGIdb target interactions for one or more drugs
+#'
+#' Queries the DGIdb \code{interactions(drugNames: ...)} GraphQL field
+#' and returns a tidy \code{data.frame} of drug-gene interaction rows.
+#' This is the drug -> target direction; see \code{\link{getDgidbDrugs}}
+#' for the reverse. Same columns/shape as \code{\link{getDgidbDrugs}}
+#' since \code{Interaction} nodes always carry both endpoints.
+#'
+#' @param drugs character vector of drug names (case-insensitive;
+#'   unmatched names simply contribute no rows, no error).
+#' @param pageSize integer(1) rows per GraphQL page (default 500).
+#' @param maxRows integer(1) cap on total returned rows (default 5000).
+#' @param verbose logical(1); if TRUE, message progress per chunk/page.
+#' @return A \code{data.frame}; see \code{\link{getDgidbDrugs}} for columns.
+#' @examples
+#' \donttest{
+#'   df <- getDgidbTargets(c("imatinib", "aspirin"))
+#'   table(df$drug_name, useNA = "no")
+#' }
+#' @seealso \code{\link{getDgidbDrugs}}, \code{\link{getDgidbDrugTarget}}
+#' @export
+getDgidbTargets <- function(drugs, pageSize = 500L, maxRows = 5000L, verbose = FALSE) {
+    stopifnot(is.character(drugs), length(drugs) >= 1L)
+    nodes <- .dtiDgidbFetch(drugs, by = "drug", pageSize = pageSize,
+                            maxRows = maxRows, verbose = verbose)
+    .dtiParseDgidbInteractions(nodes)
+}
+
+#' Query DGIdb interaction data via the uniform queryBy interface
+#'
+#' Thin \code{queryBy}-dispatching wrapper over \code{\link{getDgidbDrugs}}
+#' (target -> drug) and \code{\link{getDgidbTargets}} (drug -> target),
+#' matching the \code{queryBy = list(molType, idType, ids)} interface used
+#' by \code{\link{drugTargetAnnot}}, \code{\link{getChemblDrugTarget}} and
+#' \code{\link{getPubchemDrugTarget}}. Since DGIdb normalizes matched names
+#' to its own canonical casing (see the file header note), the returned
+#' \code{QueryIDs} column is matched back to the original \code{queryBy$ids}
+#' token \emph{case-insensitively} rather than by verbatim string equality.
+#'
+#' @param queryBy named list with components \code{molType}, \code{idType}
+#'   and \code{ids}. \code{molType = "gene"} with \code{idType = "symbol"}
+#'   queries target -> drug (\code{ids} = gene symbols). \code{molType =
+#'   "cmp"} with \code{idType = "name"} queries drug -> target (\code{ids}
+#'   = drug names). Matches \code{\link{getPubchemDrugTarget}}'s
+#'   vocabulary for the same concepts.
+#' @param ... additional arguments passed through to
+#'   \code{\link{getDgidbDrugs}} / \code{\link{getDgidbTargets}} (e.g.
+#'   \code{pageSize}, \code{maxRows}, \code{verbose}).
+#' @return A \code{data.frame} in the same column shape as
+#'   \code{\link{getDgidbDrugs}} / \code{\link{getDgidbTargets}}, plus a
+#'   leading \code{QueryIDs} column echoing the original \code{queryBy$ids}
+#'   token each row case-insensitively matched to. Query IDs that returned
+#'   no rows still appear as a single row with all other fields \code{NA}.
+#' @examples
+#' \donttest{
+#'   ## target -> drug: FGFR1, KLB
+#'   getDgidbDrugTarget(list(molType = "gene", idType = "symbol",
+#'                           ids = c("FGFR1", "KLB")))
+#'   ## drug -> target: imatinib
+#'   getDgidbDrugTarget(list(molType = "cmp", idType = "name",
+#'                           ids = "imatinib"))
+#' }
+#' @seealso \code{\link{getDgidbDrugs}}, \code{\link{getDgidbTargets}},
+#'   \code{\link{getChemblDrugTarget}}, \code{\link{getPubchemDrugTarget}}
+#' @export
+getDgidbDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
+                                              ids = NULL), ...) {
+    if (!identical(names(queryBy), c("molType", "idType", "ids"))) {
+        stop(
+            "All three list components in 'queryBy' (named: 'molType',",
+            " 'idType' and 'ids') need to be present."
+        )
+    }
+    if (any(vapply(queryBy, length, integer(1)) == 0)) {
+        stop(
+            "All components in 'queryBy' list need to be populated with ",
+            "corresponding character vectors."
+        )
+    }
+
+    isGene <- identical(queryBy$molType, "gene") &&
+        identical(queryBy$idType, "symbol")
+    isCmp <- identical(queryBy$molType, "cmp") &&
+        identical(queryBy$idType, "name")
+    if (!isGene && !isCmp) {
+        stop(
+            "getDgidbDrugTarget() currently supports only ",
+            "queryBy=list(molType=\"gene\", idType=\"symbol\", ids=...) ",
+            "or queryBy=list(molType=\"cmp\", idType=\"name\", ids=...). ",
+            "Other identifier types require translating to a gene symbol ",
+            "or a drug name first."
+        )
+    }
+
+    ids <- queryBy$ids
+    if (isGene) {
+        out <- getDgidbDrugs(ids, ...)
+        resolvedCol <- "gene_name"
+    } else {
+        out <- getDgidbTargets(ids, ...)
+        resolvedCol <- "drug_name"
+    }
+
+    ## DGIdb returns canonically-cased names regardless of query casing
+    ## (see file header note), so map each row back to its query token
+    ## case-insensitively rather than by verbatim string equality.
+    out$QueryIDs <- ids[match(toupper(out[[resolvedCol]]), toupper(ids))]
+
+    unmatched <- ids[!(toupper(ids) %in% toupper(out$QueryIDs))]
+    if (length(unmatched)) {
+        extra <- out[rep(NA_integer_, length(unmatched)), , drop = FALSE]
+        extra$QueryIDs <- unmatched
+        out <- rbind(out, extra)
+    }
+    front <- c("QueryIDs", setdiff(names(out), "QueryIDs"))
+    out <- out[order(match(toupper(out$QueryIDs), toupper(ids))), front]
     rownames(out) <- NULL
     out
 }

@@ -223,3 +223,101 @@ test_that(".dtiPubchemFilterRows keeps only Active + numeric + potency rows, no 
     expect_equal(nrow(df), 1L)
     expect_identical(df$CID, "1")
 })
+
+test_that("getDgidbDrugs matches the validated 8-gene row count exactly", {
+    skip_if_offline_dti()
+    genes <- c("FGF21", "KLB", "FGFR1", "NLRP3", "IL1B", "TFEB", "ADIPOR1", "ADIPOR2")
+    df <- getDgidbDrugs(genes)
+    expect_s3_class(df, "data.frame")
+    expect_identical(names(df), c("gene_name", "drug_name", "drug_concept_id",
+                                  "drug_approved", "interaction_types",
+                                  "directionality", "interaction_score",
+                                  "evidence_score", "sources", "db"))
+    expect_equal(nrow(df), 227L)  # matches R_Py_code/dgidb_fetch.py reference
+    expect_true(all(df$db == "DGIdb"))
+})
+
+test_that("getDgidbTargets resolves imatinib/aspirin's known targets", {
+    skip_if_offline_dti()
+    df <- getDgidbTargets(c("imatinib", "aspirin"))
+    expect_s3_class(df, "data.frame")
+    expect_true(nrow(df) >= 1L)
+    expect_true(setequal(unique(df$drug_name), c("IMATINIB", "ASPIRIN")))
+    expect_true("ABL1" %in% df$gene_name[df$drug_name == "IMATINIB"])
+})
+
+test_that("DGIdb normalizes matched names to canonical casing regardless of query case", {
+    skip_if_offline_dti()
+    genes <- getDgidbDrugs("fgfr1")
+    expect_true(all(genes$gene_name == "FGFR1"))
+    drugs <- getDgidbTargets("Aspirin")
+    expect_true(all(drugs$drug_name == "ASPIRIN"))
+})
+
+test_that("getDgidbDrugTarget target->drug matches getDgidbDrugs and tags QueryIDs case-insensitively", {
+    skip_if_offline_dti()
+    df <- getDgidbDrugTarget(list(molType = "gene", idType = "symbol",
+                                  ids = "fgfr1"))
+    expect_s3_class(df, "data.frame")
+    expect_identical(names(df)[1], "QueryIDs")
+    expect_true(all(df$QueryIDs == "fgfr1"))  # echoes original query casing
+    expect_true(all(df$gene_name == "FGFR1"))  # canonical DGIdb casing
+    plain <- getDgidbDrugs("fgfr1")
+    expect_equal(nrow(df), nrow(plain))
+})
+
+test_that("getDgidbDrugTarget drug->target matches getDgidbTargets and tags QueryIDs case-insensitively", {
+    skip_if_offline_dti()
+    df <- getDgidbDrugTarget(list(molType = "cmp", idType = "name",
+                                  ids = "Aspirin"))
+    expect_true(all(df$QueryIDs == "Aspirin"))
+    expect_true(all(df$drug_name == "ASPIRIN"))
+    plain <- getDgidbTargets("Aspirin")
+    expect_equal(nrow(df), nrow(plain))
+})
+
+test_that("getDgidbDrugTarget surfaces unmatched query IDs as NA rows (both directions)", {
+    skip_if_offline_dti()
+    genes <- getDgidbDrugTarget(list(molType = "gene", idType = "symbol",
+                                     ids = c("KLB", "NOTAREALGENEXYZ")))
+    expect_true("NOTAREALGENEXYZ" %in% genes$QueryIDs)
+    naRow <- genes[genes$QueryIDs == "NOTAREALGENEXYZ", ]
+    expect_equal(nrow(naRow), 1L)
+    expect_true(is.na(naRow$drug_name))
+
+    drugs <- getDgidbDrugTarget(list(molType = "cmp", idType = "name",
+                                     ids = c("aspirin", "NOTAREALDRUGXYZ")))
+    expect_true("NOTAREALDRUGXYZ" %in% drugs$QueryIDs)
+    naRow2 <- drugs[drugs$QueryIDs == "NOTAREALDRUGXYZ", ]
+    expect_equal(nrow(naRow2), 1L)
+    expect_true(is.na(naRow2$gene_name))
+})
+
+test_that("getDgidbDrugTarget rejects unsupported idType / malformed queryBy", {
+    expect_error(
+        getDgidbDrugTarget(list(molType = "gene", idType = "GeneID",
+                                ids = "2260")),
+        "currently supports only")
+    expect_error(
+        getDgidbDrugTarget(list(molType = "cmp", idType = "name",
+                                ids = character(0))),
+        "need to be populated")
+})
+
+test_that(".dtiParseDgidbInteractions parses/collapses raw nodes, no network", {
+    nodes <- list(list(
+        drug = list(name = "ASPIRIN", conceptId = "chembl:CHEMBL25", approved = TRUE),
+        gene = list(name = "PTGS1"),
+        interactionScore = 1.5,
+        evidenceScore = 3.2,
+        interactionTypes = list(list(type = "inhibitor", directionality = "INHIBITORY")),
+        sources = list(list(sourceDbName = "ChEMBL"), list(sourceDbName = "DrugBank"))
+    ))
+    df <- .dtiParseDgidbInteractions(nodes)
+    expect_equal(nrow(df), 1L)
+    expect_identical(df$gene_name, "PTGS1")
+    expect_identical(df$drug_approved, TRUE)
+    expect_identical(df$interaction_types, "inhibitor")
+    expect_identical(df$sources, "ChEMBL; DrugBank")
+    expect_identical(.dtiParseDgidbInteractions(NULL), .dtiEmptyDgidb())
+})
