@@ -1,16 +1,15 @@
-# `drugTargetInteractions`
+## `drugTargetInteractions` Package
 
-The `drugTargetInteractions` package provides utilities for identifying
-drug-target interactions for sets of small molecule or gene/protein
-identifiers. The required drug-target interaction information is obained from 
-a local SQLite instance of the ChEMBL database. For details please see the
-the vignette of this package.
+<p align="right">
+  <a href="https://www.bioconductor.org/packages/devel/bioc/vignettes/drugTargetInteractions/inst/doc/drugTargetInteractions.html">
+    <img src="https://img.shields.io/badge/TUTORIAL-blue?style=for-the-badge&logo=gitbook&logoColor=white" alt="Tutorial Badge">
+  </a>
+</p>
 
-## Install
+This [Bioconductor package](https://www.bioconductor.org/packages/devel/bioc/html/drugTargetInteractions.html) provides utilities for identifying known drug-target 
+interactions for a sets of query drug and/or target protein (gene) identifiers. The 
+interaction information is obained from a series of drug/target databases. For 
+details please visit the [vignette](https://www.bioconductor.org/packages/devel/bioc/vignettes/drugTargetInteractions/inst/doc/drugTargetInteractions.html)
+of this package.
 
-See README of this repository [here](https://github.com/longevity-consortium/LC_Chemoinformatics).
 
-## Vignette for `drugTargetInteractions` package
-
-The vignette for the `drugTargetInteractions` package can be found in the 
-corresponding [subdirectory](https://github.com/longevity-consortium/LC_Chemoinformatics/tree/master/Rpackages/drugTargetInteractions/vignettes) of the package.
