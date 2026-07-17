@@ -48,5 +48,9 @@ export( "genConfig",
     "getOpenTargetsDrugIds",
     "getOpenTargetsDrugs",
     "getOpenTargetsTargets",
-    "getOpenTargetsDrugTarget"
+    "getOpenTargetsDrugTarget",
+
+    "downloadTTD",
+    "buildTtdDb",
+    "ttdTargetAnnot"
 )
