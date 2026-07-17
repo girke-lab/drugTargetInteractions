@@ -34,5 +34,9 @@ export( "genConfig",
     "getChemblMolecule",
     "getChemblTarget",
     "getChemblBioactivities",
-    "getChemblDrugTarget"
+    "getChemblDrugTarget",
+
+    "getPubchemDrugs",
+    "getPubchemTargets",
+    "getPubchemDrugTarget"
 )

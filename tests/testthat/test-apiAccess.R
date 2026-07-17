@@ -127,3 +127,99 @@ test_that("getChemblMolecule batches across chunks, preserves order/duplicates, 
     expect_true(is.na(df$pref_name[df$chembl_id == "NOTAREALID"][1]))
     expect_identical(df$pref_name[df$chembl_id == "CHEMBL25"], c("ASPIRIN", "ASPIRIN"))
 })
+
+test_that("getPubchemDrugs returns FGFR1 bioactivities incl. AZD4547", {
+    skip_if_offline_dti()
+    df <- getPubchemDrugs("FGFR1")
+    expect_s3_class(df, "data.frame")
+    expect_true(all(c("gene_symbol", "geneid", "target_accession", "cid",
+                      "drug_name", "canonical_smiles", "activity_name",
+                      "activity_value_uM", "assay_name", "db") %in% names(df)))
+    expect_true(nrow(df) >= 1L)
+    expect_true(all(df$gene_symbol == "FGFR1"))
+    expect_identical(unique(df$geneid), "2260")
+    expect_true(any(grepl("4547", df$drug_name)))  # AZD4547
+    expect_true(all(df$db == "PubChem"))
+})
+
+test_that("getPubchemTargets resolves aspirin's human targets, filtered by taxid", {
+    skip_if_offline_dti()
+    df <- getPubchemTargets("aspirin")
+    expect_s3_class(df, "data.frame")
+    expect_true(all(c("cid", "drug_name", "gene_symbol", "geneid", "taxid",
+                      "target_accession", "activity_name", "activity_value_uM",
+                      "assay_name", "db") %in% names(df)))
+    expect_true(nrow(df) >= 1L)
+    expect_true(all(df$cid == "2244"))
+    expect_true(all(df$taxid == 9606L))
+    expect_true(all(c("PTGS1", "PTGS2") %in% df$gene_symbol))  # COX1/COX2
+})
+
+test_that("getPubchemTargets(taxid = NULL) does not filter by species", {
+    skip_if_offline_dti()
+    all_sp <- getPubchemTargets("aspirin", taxid = NULL)
+    human  <- getPubchemTargets("aspirin", taxid = 9606L)
+    expect_true(nrow(all_sp) >= nrow(human))
+})
+
+test_that("getPubchemDrugTarget target->drug matches getPubchemDrugs and tags QueryIDs", {
+    skip_if_offline_dti()
+    df <- getPubchemDrugTarget(list(molType = "gene", idType = "symbol",
+                                    ids = "FGFR1"))
+    expect_s3_class(df, "data.frame")
+    expect_identical(names(df)[1], "QueryIDs")
+    expect_true(all(df$QueryIDs == "FGFR1"))
+    plain <- getPubchemDrugs("FGFR1")
+    expect_equal(nrow(df), nrow(plain))
+})
+
+test_that("getPubchemDrugTarget drug->target matches getPubchemTargets and tags QueryIDs", {
+    skip_if_offline_dti()
+    df <- getPubchemDrugTarget(list(molType = "cmp", idType = "name",
+                                    ids = "aspirin"))
+    expect_true(all(df$QueryIDs == "aspirin"))
+    plain <- getPubchemTargets("aspirin")
+    expect_equal(nrow(df), nrow(plain))
+    expect_true(all(c("PTGS1", "PTGS2") %in% df$gene_symbol))
+})
+
+test_that("getPubchemDrugTarget surfaces unmatched query IDs as NA rows (both directions)", {
+    skip_if_offline_dti()
+    genes <- getPubchemDrugTarget(list(molType = "gene", idType = "symbol",
+                                       ids = c("KLB", "NOTAREALGENEXYZ")))
+    expect_true("NOTAREALGENEXYZ" %in% genes$QueryIDs)
+    naRow <- genes[genes$QueryIDs == "NOTAREALGENEXYZ", ]
+    expect_equal(nrow(naRow), 1L)
+    expect_true(is.na(naRow$cid))
+
+    drugs <- getPubchemDrugTarget(list(molType = "cmp", idType = "name",
+                                       ids = c("aspirin", "NOTAREALDRUGXYZ")))
+    expect_true("NOTAREALDRUGXYZ" %in% drugs$QueryIDs)
+    naRow2 <- drugs[drugs$QueryIDs == "NOTAREALDRUGXYZ", ]
+    expect_equal(nrow(naRow2), 1L)
+    expect_true(is.na(naRow2$cid))
+})
+
+test_that("getPubchemDrugTarget rejects unsupported idType / malformed queryBy", {
+    expect_error(
+        getPubchemDrugTarget(list(molType = "cmp", idType = "PubChem_ID",
+                                  ids = "2244")),
+        "currently supports only")
+    expect_error(
+        getPubchemDrugTarget(list(molType = "cmp", idType = "name",
+                                  ids = character(0))),
+        "need to be populated")
+})
+
+test_that(".dtiPubchemFilterRows keeps only Active + numeric + potency rows, no network", {
+    cols <- list("Activity Outcome", "Activity Name", "Activity Value [uM]",
+                "CID", "Target Accession", "Target GeneID", "Assay Name")
+    rows <- list(
+        list(Cell = list("Active", "IC50", "0.5", "1", "P1", "1", "A1")),
+        list(Cell = list("Inactive", "IC50", "0.5", "2", "P1", "1", "A1")),
+        list(Cell = list("Active", "Solubility", "0.5", "3", "P1", "1", "A1")),
+        list(Cell = list("Active", "Ki", "not-a-number", "4", "P1", "1", "A1")))
+    df <- .dtiPubchemFilterRows(cols, rows)
+    expect_equal(nrow(df), 1L)
+    expect_identical(df$CID, "1")
+})

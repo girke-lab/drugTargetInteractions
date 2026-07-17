@@ -612,3 +612,450 @@ getChemblDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
     rownames(out) <- NULL
     out
 }
+
+
+## ---------------------------------------------------------------------
+## PubChem PUG-REST + NCBI E-utilities access
+## ---------------------------------------------------------------------
+## PubChem's bioactivity data lives in one large "concise" table per
+## query entity: gene-centric (/gene/geneid/<id>/concise/JSON) for
+## target -> drug, or compound-centric (/compound/cid/<cid>/assaysummary/
+## JSON) for drug -> target. Both share the same column shape (Activity
+## Outcome, Activity Name, "Activity Value [uM]", Target Accession,
+## Target GeneID, CID, Assay Name) and the same Active/numeric/potency
+## filtering logic, ported from the validated R_Py_code/pubchem_fetch.py
+## reference (gene-centric direction only).
+##
+## Two things PubChem itself doesn't resolve, confirmed live 2026-07-13:
+##  1. Gene-centric queries need a human NCBI GeneID up front - the
+##     PUG-REST /gene/symbol route is unreliable for this, so symbols are
+##     resolved via E-utilities esearch restricted to one taxon (mirrors
+##     the Python reference exactly).
+##  2. Compound-centric queries return GeneIDs for WHATEVER species each
+##     assay used - e.g. aspirin's classic COX1/COX2 potency assays are
+##     annotated against *Ovis aries* (sheep) GeneIDs, not human
+##     PTGS1/PTGS2. Those GeneIDs are resolved back to (symbol, taxid)
+##     via E-utilities esummary and filtered to `taxid` (default 9606 =
+##     human), matching the gene-centric side's scope.
+##
+## Unlike ChEMBL, PubChem's target and compound directions are genuinely
+## asymmetric (no shared `<field>__in=` filter covers both), so - as with
+## Open Targets - target->drug and drug->target stay separate functions
+## (getPubchemDrugs / getPubchemTargets) rather than one dispatcher, per
+## the drug_mechanism-style join ChEMBL supports. getPubchemDrugTarget()
+## below adds a thin queryBy-uniform wrapper over both for interface
+## consistency with getChemblDrugTarget() / drugTargetAnnot().
+
+.dtiPotencyEndpoints <- c("IC50", "Ki", "Kd", "EC50", "AC50", "Potency")
+
+#' Resolve a gene symbol to an NCBI GeneID via E-utilities esearch
+#'
+#' The PUG-REST \code{/gene/symbol/...} route is unreliable for this
+#' (per the validated Python reference); esearch restricted to one taxon
+#' is the robust path.
+#'
+#' @param symbol character(1) HGNC gene symbol.
+#' @param taxid integer(1) NCBI taxonomy ID (default 9606 = human).
+#' @return character(1) NCBI GeneID, or \code{NA} if unresolved.
+#' @keywords internal
+.dtiPubchemGeneId <- function(symbol, taxid = 9606L) {
+    url <- paste0(.dtiEndpoints()$eutils, "/esearch.fcgi")
+    res <- .dtiApiGET(url, query = list(
+        db = "gene", term = sprintf("%s[sym] AND %d[taxid]", symbol, taxid),
+        retmode = "json"))
+    ids <- res$esearchresult$idlist %||% list()
+    if (length(ids) == 0L) return(NA_character_)
+    as.character(ids[[1]])
+}
+
+#' Raw concise bioactivity table for one GeneID
+#' @keywords internal
+.dtiPubchemGeneConcise <- function(geneid) {
+    url <- paste0(.dtiEndpoints()$pubchem, "/gene/geneid/", geneid, "/concise/JSON")
+    res <- .dtiApiGET(url)
+    tbl <- res$Table %||% list()
+    list(cols = tbl$Columns$Column %||% list(), rows = tbl$Row %||% list())
+}
+
+#' Raw compound-centric assay-summary table for one or more CIDs (batched)
+#' @keywords internal
+.dtiPubchemAssaySummary <- function(cids, chunkSize = 50L) {
+    base <- .dtiEndpoints()$pubchem
+    cols <- NULL; allRows <- list()
+    for (ch in .dtiChunk(cids, chunkSize)) {
+        url <- paste0(base, "/compound/cid/", paste(ch, collapse = ","), "/assaysummary/JSON")
+        res <- .dtiApiGET(url)
+        tbl <- res$Table %||% list()
+        if (is.null(cols)) cols <- tbl$Columns$Column %||% list()
+        allRows <- c(allRows, tbl$Row %||% list())
+    }
+    list(cols = cols, rows = allRows)
+}
+
+#' Filter+tidy raw concise/assaysummary rows to Active, numeric, potency
+#'
+#' Shared by both directions - PubChem's gene-centric "concise" table and
+#' compound-centric "assaysummary" table use the same column names.
+#'
+#' @param cols list of raw column-name strings (PUG-REST \code{Columns}).
+#' @param rows list of raw row objects (PUG-REST \code{Row}, each with a
+#'   \code{Cell} list).
+#' @param keepActivities character vector of Activity Name values to
+#'   keep, or \code{NULL} to keep all.
+#' @return data.frame with columns \code{CID}, \code{TargetAccession},
+#'   \code{TargetGeneID}, \code{ActivityName}, \code{ActivityValueuM},
+#'   \code{AssayName}.
+#' @keywords internal
+.dtiPubchemFilterRows <- function(cols, rows, keepActivities = .dtiPotencyEndpoints) {
+    cols <- vapply(cols, function(x) x, character(1))
+    idx <- stats::setNames(seq_along(cols), cols)
+    get <- function(cell, name) {
+        i <- idx[name]
+        if (is.na(i) || i > length(cell)) return(NA_character_)
+        v <- cell[[i]]
+        if (is.null(v) || identical(v, "")) NA_character_ else as.character(v)
+    }
+    recs <- lapply(rows, function(rw) {
+        cell <- rw$Cell %||% list()
+        outcome <- get(cell, "Activity Outcome")
+        if (is.na(outcome) || tolower(outcome) != "active") return(NULL)
+        aname <- get(cell, "Activity Name")
+        if (!is.null(keepActivities) && (is.na(aname) || !(aname %in% keepActivities))) return(NULL)
+        val <- suppressWarnings(as.numeric(get(cell, "Activity Value [uM]")))
+        if (is.na(val)) return(NULL)
+        data.frame(
+            CID              = get(cell, "CID"),
+            TargetAccession  = get(cell, "Target Accession"),
+            TargetGeneID     = get(cell, "Target GeneID"),
+            ActivityName     = aname,
+            ActivityValueuM  = val,
+            AssayName        = get(cell, "Assay Name"),
+            stringsAsFactors = FALSE)
+    })
+    recs <- recs[!vapply(recs, is.null, logical(1))]
+    if (length(recs) == 0L) {
+        return(data.frame(CID = character(), TargetAccession = character(),
+                          TargetGeneID = character(), ActivityName = character(),
+                          ActivityValueuM = numeric(), AssayName = character(),
+                          stringsAsFactors = FALSE))
+    }
+    do.call(rbind, recs)
+}
+
+#' Keep the most potent (lowest activity value) row per CID, capped
+#' @keywords internal
+.dtiPubchemMostPotentPerCid <- function(df, maxCids = NULL) {
+    df <- df[order(df$ActivityValueuM), , drop = FALSE]
+    df <- df[!duplicated(df$CID), , drop = FALSE]
+    if (!is.null(maxCids) && nrow(df) > maxCids) df <- df[seq_len(maxCids), , drop = FALSE]
+    df
+}
+
+#' CID -> compound Title (drug/common name) + SMILES, batched
+#' @keywords internal
+.dtiPubchemCidProps <- function(cids, chunkSize = 100L) {
+    base <- .dtiEndpoints()$pubchem
+    cids <- unique(cids[!is.na(cids) & nzchar(cids)])
+    empty <- data.frame(CID = character(), Title = character(),
+                        SMILES = character(), stringsAsFactors = FALSE)
+    if (length(cids) == 0L) return(empty)
+    accum <- list()
+    for (ch in .dtiChunk(cids, chunkSize)) {
+        url <- paste0(base, "/compound/cid/", paste(ch, collapse = ","),
+                      "/property/Title,SMILES/JSON")
+        res <- .dtiApiGET(url)
+        props <- res$PropertyTable$Properties %||% list()
+        if (length(props) > 0L) accum <- c(accum, lapply(props, function(p) data.frame(
+            CID    = as.character(p$CID %||% NA_character_),
+            Title  = p$Title  %||% NA_character_,
+            SMILES = p$SMILES %||% NA_character_,
+            stringsAsFactors = FALSE)))
+    }
+    if (length(accum) == 0L) return(empty)
+    do.call(rbind, accum)
+}
+
+#' Resolve a drug/compound name to a PubChem CID
+#' @param name character(1) compound name, e.g. \code{"aspirin"}.
+#' @return character(1) CID, or \code{NA} if unresolved.
+#' @keywords internal
+.dtiPubchemNameToCid <- function(name) {
+    url <- paste0(.dtiEndpoints()$pubchem, "/compound/name/",
+                  utils::URLencode(name, reserved = TRUE), "/cids/JSON")
+    res <- .dtiApiGET(url)
+    ids <- res$IdentifierList$CID %||% list()
+    if (length(ids) == 0L) return(NA_character_)
+    as.character(ids[[1]])
+}
+
+#' GeneID -> (symbol, taxid) lookup via E-utilities esummary, batched
+#' @keywords internal
+.dtiPubchemGeneInfo <- function(geneids) {
+    empty <- data.frame(GeneID = character(), Symbol = character(),
+                        Taxid = integer(), stringsAsFactors = FALSE)
+    geneids <- unique(geneids[!is.na(geneids) & nzchar(geneids)])
+    if (length(geneids) == 0L) return(empty)
+    url <- paste0(.dtiEndpoints()$eutils, "/esummary.fcgi")
+    accum <- list()
+    for (ch in .dtiChunk(geneids, 200L)) {
+        res <- .dtiApiGET(url, query = list(db = "gene",
+                                            id = paste(ch, collapse = ","),
+                                            retmode = "json"))
+        result <- res$result %||% list()
+        uids <- result$uids %||% list()
+        for (u in uids) {
+            g <- result[[as.character(u)]]
+            accum[[length(accum) + 1L]] <- data.frame(
+                GeneID = as.character(u),
+                Symbol = g$name %||% NA_character_,
+                Taxid  = as.integer(g$organism$taxid %||% NA),
+                stringsAsFactors = FALSE)
+        }
+    }
+    if (length(accum) == 0L) return(empty)
+    do.call(rbind, accum)
+}
+
+#' Retrieve PubChem bioactivities for one or more genes (target -> drug)
+#'
+#' Ports the validated \code{R_Py_code/pubchem_fetch.py} reference:
+#' resolves each gene symbol to a human NCBI GeneID, pulls its concise
+#' bioactivity table, keeps Active + numeric + potency-endpoint rows,
+#' collapses to the most potent row per CID (capped at \code{maxCids}),
+#' and looks up each surviving CID's name and SMILES.
+#'
+#' @param genes character vector of HGNC gene symbols (or NCBI GeneIDs,
+#'   which pass through unresolved).
+#' @param taxid integer(1) NCBI taxonomy ID for symbol resolution
+#'   (default 9606 = human).
+#' @param keepActivities character vector of Activity Name values to
+#'   keep (default IC50/Ki/Kd/EC50/AC50/Potency); \code{NULL} keeps all.
+#' @param maxCids integer(1) cap on CIDs kept per gene (default 400).
+#' @param pause numeric(1) seconds between requests (NCBI: <=3 req/s
+#'   without an API key).
+#' @param verbose logical(1) progress messages.
+#' @return A \code{data.frame} with columns \code{gene_symbol},
+#'   \code{geneid}, \code{target_accession}, \code{cid}, \code{drug_name}
+#'   (~27% are patent references, not common names - inherent to PubChem
+#'   breadth), \code{canonical_smiles}, \code{activity_name},
+#'   \code{activity_value_uM}, \code{assay_name}, \code{db}. Empty if
+#'   none / offline.
+#' @examples
+#' \donttest{
+#'   df <- getPubchemDrugs(c("FGFR1", "KLB"))
+#'   table(df$gene_symbol)
+#' }
+#' @seealso \code{\link{getPubchemTargets}}, \code{\link{getPubchemDrugTarget}}
+#' @export
+getPubchemDrugs <- function(genes, taxid = 9606L,
+                            keepActivities = .dtiPotencyEndpoints,
+                            maxCids = 400L, pause = 0.34, verbose = FALSE) {
+    stopifnot(is.character(genes), length(genes) >= 1L)
+    rows <- vector("list", length(genes))
+    for (i in seq_along(genes)) {
+        g <- genes[i]
+        gid <- if (grepl("^[0-9]+$", g)) g else .dtiPubchemGeneId(g, taxid = taxid)
+        if (verbose) message("PubChem gene ", g, " -> GeneID ", gid)
+        if (!is.na(gid)) {
+            raw <- .dtiPubchemGeneConcise(gid)
+            df <- .dtiPubchemFilterRows(raw$cols, raw$rows, keepActivities)
+            if (nrow(df) > 0L) {
+                df <- .dtiPubchemMostPotentPerCid(df, maxCids)
+                props <- .dtiPubchemCidProps(df$CID)
+                df$drug_name         <- props$Title[match(df$CID, props$CID)]
+                df$canonical_smiles  <- props$SMILES[match(df$CID, props$CID)]
+                df$gene_symbol       <- g
+                df$geneid            <- gid
+                rows[[i]] <- df
+            }
+        }
+        Sys.sleep(pause)
+    }
+    rows <- rows[!vapply(rows, is.null, logical(1))]
+    if (length(rows) == 0L) {
+        return(as.data.frame(stats::setNames(replicate(10, character(0), simplify = FALSE),
+            c("gene_symbol", "geneid", "target_accession", "cid", "drug_name",
+              "canonical_smiles", "activity_name", "activity_value_uM",
+              "assay_name", "db")), stringsAsFactors = FALSE))
+    }
+    out <- do.call(rbind, rows)
+    out <- out[, c("gene_symbol", "geneid", "TargetAccession", "CID", "drug_name",
+                   "canonical_smiles", "ActivityName", "ActivityValueuM", "AssayName")]
+    colnames(out) <- c("gene_symbol", "geneid", "target_accession", "cid", "drug_name",
+                       "canonical_smiles", "activity_name", "activity_value_uM", "assay_name")
+    out$db <- "PubChem"
+    rownames(out) <- NULL
+    out
+}
+
+#' Retrieve PubChem bioactivities for one or more drugs (drug -> target)
+#'
+#' Drug -> target counterpart of \code{\link{getPubchemDrugs}}: resolves
+#' each drug name to a CID, pulls its compound-centric assay-summary
+#' table (batched), keeps Active + numeric + potency-endpoint rows,
+#' collapses to the most potent row per (CID, GeneID) pair, and resolves
+#' each target GeneID to a gene symbol - filtered to \code{taxid}
+#' (default human), since compound assay data spans whatever species
+#' each assay used (see file header note).
+#'
+#' @param drugs character vector of drug/compound names (or PubChem
+#'   CIDs, which pass through unresolved).
+#' @param taxid integer(1) or \code{NULL}; keep only targets from this
+#'   NCBI taxonomy ID (default 9606 = human), or all species if
+#'   \code{NULL}.
+#' @param keepActivities character vector of Activity Name values to
+#'   keep (default IC50/Ki/Kd/EC50/AC50/Potency); \code{NULL} keeps all.
+#' @param maxCidsPerBatch integer(1) CIDs per \code{assaysummary} HTTP
+#'   request (default 50).
+#' @param pause numeric(1) seconds between name-resolution requests.
+#' @param verbose logical(1) progress messages.
+#' @return A \code{data.frame} with columns \code{cid}, \code{drug_name},
+#'   \code{gene_symbol}, \code{geneid}, \code{taxid},
+#'   \code{target_accession}, \code{activity_name},
+#'   \code{activity_value_uM}, \code{assay_name}, \code{db}. Empty if
+#'   none / offline.
+#' @examples
+#' \donttest{
+#'   df <- getPubchemTargets("aspirin")
+#'   df[, c("drug_name", "gene_symbol", "activity_name", "activity_value_uM")]
+#' }
+#' @seealso \code{\link{getPubchemDrugs}}, \code{\link{getPubchemDrugTarget}}
+#' @export
+getPubchemTargets <- function(drugs, taxid = 9606L,
+                              keepActivities = .dtiPotencyEndpoints,
+                              maxCidsPerBatch = 50L, pause = 0.2, verbose = FALSE) {
+    stopifnot(is.character(drugs), length(drugs) >= 1L)
+    empty <- as.data.frame(stats::setNames(replicate(10, character(0), simplify = FALSE),
+        c("cid", "drug_name", "gene_symbol", "geneid", "taxid",
+          "target_accession", "activity_name", "activity_value_uM",
+          "assay_name", "db")), stringsAsFactors = FALSE)
+
+    cidFor <- character(length(drugs))
+    for (i in seq_along(drugs)) {
+        d <- drugs[i]
+        cidFor[i] <- if (grepl("^[0-9]+$", d)) d else .dtiPubchemNameToCid(d)
+        if (verbose) message("PubChem drug ", d, " -> CID ", cidFor[i])
+        Sys.sleep(pause)
+    }
+    names(cidFor) <- drugs
+    cids <- unique(stats::na.omit(cidFor))
+    if (length(cids) == 0L) return(empty)
+
+    raw <- .dtiPubchemAssaySummary(cids, chunkSize = maxCidsPerBatch)
+    df  <- .dtiPubchemFilterRows(raw$cols, raw$rows, keepActivities)
+    if (nrow(df) == 0L) return(empty)
+    df <- df[order(df$ActivityValueuM), , drop = FALSE]
+    df <- df[!duplicated(paste(df$CID, df$TargetGeneID)), , drop = FALSE]
+
+    genes <- .dtiPubchemGeneInfo(df$TargetGeneID)
+    df$gene_symbol <- genes$Symbol[match(df$TargetGeneID, genes$GeneID)]
+    df$taxid       <- genes$Taxid[match(df$TargetGeneID, genes$GeneID)]
+    if (!is.null(taxid)) df <- df[!is.na(df$taxid) & df$taxid == taxid, , drop = FALSE]
+    if (nrow(df) == 0L) return(empty)
+
+    drugNameFor <- stats::setNames(names(cidFor), cidFor)
+    df$drug_name <- unname(drugNameFor[df$CID])
+
+    out <- df[, c("CID", "drug_name", "gene_symbol", "TargetGeneID", "taxid",
+                 "TargetAccession", "ActivityName", "ActivityValueuM", "AssayName")]
+    colnames(out) <- c("cid", "drug_name", "gene_symbol", "geneid", "taxid",
+                       "target_accession", "activity_name", "activity_value_uM", "assay_name")
+    out$db <- "PubChem"
+    rownames(out) <- NULL
+    out
+}
+
+#' Query PubChem bioactivity data via the uniform queryBy interface
+#'
+#' Thin \code{queryBy}-dispatching wrapper over \code{\link{getPubchemDrugs}}
+#' (target -> drug) and \code{\link{getPubchemTargets}} (drug -> target),
+#' matching the \code{queryBy = list(molType, idType, ids)} interface used by
+#' \code{\link{drugTargetAnnot}} and \code{\link{getChemblDrugTarget}}, so a
+#' future cross-source ID-translation/meta layer can dispatch to any source
+#' function the same way. PubChem's two directions are genuinely asymmetric
+#' (no shared bulk filter covers both, unlike ChEMBL's
+#' \code{drug_mechanism} join), so this only adds a \code{QueryIDs} column
+#' and unmatched-ID NA-row padding on top of the two underlying functions -
+#' it does not change their query logic.
+#'
+#' @param queryBy named list with components \code{molType}, \code{idType}
+#'   and \code{ids}. \code{molType = "gene"} with \code{idType = "symbol"}
+#'   queries target -> drug; \code{ids} may be HGNC gene symbols or NCBI
+#'   GeneIDs (numeric strings pass through unresolved), matching
+#'   \code{\link{getPubchemDrugs}}. \code{molType = "cmp"} with
+#'   \code{idType = "name"} queries drug -> target; \code{ids} may be
+#'   compound names or PubChem CIDs (numeric strings pass through
+#'   unresolved), matching \code{\link{getPubchemTargets}}. Other identifier
+#'   types (UniProt accession, ChEMBL ID, PubChem CID as the *only* form,
+#'   DrugBank ID, ...) are not yet supported over this wrapper.
+#' @param ... additional arguments passed through to
+#'   \code{\link{getPubchemDrugs}} / \code{\link{getPubchemTargets}} (e.g.
+#'   \code{taxid}, \code{keepActivities}, \code{verbose}).
+#' @return A \code{data.frame} in the same column shape as
+#'   \code{\link{getPubchemDrugs}} / \code{\link{getPubchemTargets}}, plus a
+#'   leading \code{QueryIDs} column echoing the original \code{queryBy$ids}
+#'   token each row resolved from. Query IDs that returned no rows still
+#'   appear as a single row with all other fields \code{NA}, so callers can
+#'   always confirm which of their input IDs were resolved.
+#' @examples
+#' \donttest{
+#'   ## target -> drug: FGFR1, KLB
+#'   getPubchemDrugTarget(list(molType = "gene", idType = "symbol",
+#'                             ids = c("FGFR1", "KLB")))
+#'   ## drug -> target: aspirin
+#'   getPubchemDrugTarget(list(molType = "cmp", idType = "name",
+#'                             ids = "aspirin"))
+#' }
+#' @seealso \code{\link{getPubchemDrugs}}, \code{\link{getPubchemTargets}},
+#'   \code{\link{getChemblDrugTarget}}
+#' @export
+getPubchemDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
+                                                ids = NULL), ...) {
+    if (!identical(names(queryBy), c("molType", "idType", "ids"))) {
+        stop(
+            "All three list components in 'queryBy' (named: 'molType',",
+            " 'idType' and 'ids') need to be present."
+        )
+    }
+    if (any(vapply(queryBy, length, integer(1)) == 0)) {
+        stop(
+            "All components in 'queryBy' list need to be populated with ",
+            "corresponding character vectors."
+        )
+    }
+
+    isGene <- identical(queryBy$molType, "gene") &&
+        identical(queryBy$idType, "symbol")
+    isCmp <- identical(queryBy$molType, "cmp") &&
+        identical(queryBy$idType, "name")
+    if (!isGene && !isCmp) {
+        stop(
+            "getPubchemDrugTarget() currently supports only ",
+            "queryBy=list(molType=\"gene\", idType=\"symbol\", ids=...) ",
+            "or queryBy=list(molType=\"cmp\", idType=\"name\", ids=...). ",
+            "Other identifier types require translating to a gene symbol ",
+            "or a compound name/CID first."
+        )
+    }
+
+    ids <- queryBy$ids
+    if (isGene) {
+        out <- getPubchemDrugs(ids, ...)
+        queryCol <- "gene_symbol"
+    } else {
+        out <- getPubchemTargets(ids, ...)
+        queryCol <- "drug_name"
+    }
+    out$QueryIDs <- out[[queryCol]]
+
+    unmatched <- setdiff(ids, unique(out$QueryIDs))
+    if (length(unmatched)) {
+        extra <- out[rep(NA_integer_, length(unmatched)), , drop = FALSE]
+        extra$QueryIDs <- unmatched
+        out <- rbind(out, extra)
+    }
+    front <- c("QueryIDs", setdiff(names(out), "QueryIDs"))
+    out <- out[order(match(out$QueryIDs, ids)), front]
+    rownames(out) <- NULL
+    out
+}
