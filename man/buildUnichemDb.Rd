@@ -15,8 +15,9 @@ buildUnichemDb(
 }
 \arguments{
 \item{rerun}{logical(1); passed to \code{\link{downloadUnichemTables}},
-and also controls whether an existing cached SQLite for today's
-build-date is reused (\code{FALSE}) or rebuilt (\code{TRUE}).}
+and also controls whether any existing cached SQLite (see
+\code{\link{.unichemLatestCachedDb}}) is reused (\code{FALSE}) or a
+fresh one is built (\code{TRUE}).}
 
 \item{config}{list as returned by \code{genConfig()}.}
 
@@ -50,8 +51,11 @@ name_long, description)} (a direct copy of \code{source.tsv.gz}, used
 by \code{\link{getUnichemMapping}} to resolve source-name arguments).
 The file is cached via BiocFileCache under a name that includes the
 build date (UniChem's bulk dumps carry no release-version string the
-way TTD's flat files do), so rebuilding on the same day is a no-op
-unless \code{rerun = TRUE}.
+way TTD's flat files do); \code{rerun = FALSE} reuses \emph{any}
+previously-built \code{unichem_*.db} regardless of which day it was
+built (see \code{\link{.unichemLatestCachedDb}} - an exact same-day
+match would otherwise silently miss yesterday's build and trigger an
+unwanted ~hour-long rebuild).
 }
 \details{
 This is a substantially heavier operation than the package's other

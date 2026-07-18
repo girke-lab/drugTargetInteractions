@@ -10,6 +10,19 @@
 ##    small hand-built fixture database - no skip_if_offline_dti() needed
 ##    anywhere in this file.
 
+test_that(".unichemLatestCachedDb finds the most recently added unichem_*.db regardless of its date suffix", {
+    bfc <- .getCache()
+    f1 <- tempfile(fileext = ".db"); file.create(f1)
+    f2 <- tempfile(fileext = ".db"); file.create(f2)
+    rid1 <- names(bfcadd(bfc, "unichem_TEST_OLD.db", f1, action = "copy"))
+    Sys.sleep(1.1)  ## ensure a distinct create_time from rid1
+    rid2 <- names(bfcadd(bfc, "unichem_TEST_NEW.db", f2, action = "copy"))
+    on.exit(bfcremove(bfc, c(rid1, rid2)), add = TRUE)
+
+    latest <- .unichemLatestCachedDb()
+    expect_identical(basename(latest), basename(bfcrpath(bfc, rids = rid2)))
+})
+
 .buildFixtureDb <- function() {
     dbPath <- tempfile(fileext = ".db")
     con <- dbConnect(SQLite(), dbPath)

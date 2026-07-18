@@ -93,6 +93,27 @@
     )
 }
 
+#' Path to the most recently built cached UniChem SQLite, if any
+#'
+#' \code{buildUnichemDb()}'s cache name includes the build date (UniChem's
+#' bulk dumps carry no release-version string the way TTD's/ChEMBL's do -
+#' see the file header), so an exact \code{.getCacheFile("unichem_<today>.db")}
+#' lookup only finds a database built \emph{today} - a database built
+#' yesterday (or any earlier day) would be silently missed and trigger an
+#' unwanted ~hour-long rebuild. This searches all cached \code{unichem_*.db}
+#' entries by \code{rname} prefix and returns the most recently created one
+#' regardless of date, matching the "did I already build one, ever" question
+#' \code{rerun = FALSE} callers actually mean to ask.
+#' @return character(1) local file path, or \code{NA_character_} if none cached.
+#' @keywords internal
+.unichemLatestCachedDb <- function() {
+    bfc <- .getCache()
+    hits <- bfcquery(bfc, "unichem_", field = "rname")
+    if (nrow(hits) == 0L) return(NA_character_)
+    hits <- hits[order(hits$create_time, decreasing = TRUE), ]
+    tryCatch(.getCacheFile(hits$rname[1]), error = function(e) NA_character_)
+}
+
 
 ## ---------------------------------------------------------------------
 ## Download raw UniChem table dumps (cached via the package's existing
@@ -285,8 +306,11 @@ downloadUnichemTables <- function(rerun = TRUE, config = genConfig()) {
 #' by \code{\link{getUnichemMapping}} to resolve source-name arguments).
 #' The file is cached via BiocFileCache under a name that includes the
 #' build date (UniChem's bulk dumps carry no release-version string the
-#' way TTD's flat files do), so rebuilding on the same day is a no-op
-#' unless \code{rerun = TRUE}.
+#' way TTD's flat files do); \code{rerun = FALSE} reuses \emph{any}
+#' previously-built \code{unichem_*.db} regardless of which day it was
+#' built (see \code{\link{.unichemLatestCachedDb}} - an exact same-day
+#' match would otherwise silently miss yesterday's build and trigger an
+#' unwanted ~hour-long rebuild).
 #'
 #' This is a substantially heavier operation than the package's other
 #' \code{build*Db()}/\code{download*Db()} functions - live-tested
@@ -296,8 +320,9 @@ downloadUnichemTables <- function(rerun = TRUE, config = genConfig()) {
 #' filtering shrinks it down.
 #'
 #' @param rerun logical(1); passed to \code{\link{downloadUnichemTables}},
-#'   and also controls whether an existing cached SQLite for today's
-#'   build-date is reused (\code{FALSE}) or rebuilt (\code{TRUE}).
+#'   and also controls whether any existing cached SQLite (see
+#'   \code{\link{.unichemLatestCachedDb}}) is reused (\code{FALSE}) or a
+#'   fresh one is built (\code{TRUE}).
 #' @param config list as returned by \code{genConfig()}.
 #' @param minSources integer(1) minimum distinct sources per UCI to keep
 #'   (default 2) - see \code{\link{.unichemFilterAndIndex}}.
@@ -325,8 +350,8 @@ buildUnichemDb <- function(rerun = TRUE, config = genConfig(), minSources = 2L,
     dbName <- paste0("unichem_", format(Sys.Date(), "%Y%m%d"), ".db")
 
     if (!rerun) {
-        existing <- tryCatch(.getCacheFile(dbName), error = function(e) NA_character_)
-        if (length(existing) > 0 && !is.na(existing)) return(existing)
+        existing <- .unichemLatestCachedDb()
+        if (!is.na(existing)) return(existing)
     }
 
     paths <- downloadUnichemTables(rerun = rerun, config = config)

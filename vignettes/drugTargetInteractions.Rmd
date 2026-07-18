@@ -1,7 +1,7 @@
 ---
-title: Drug-Target Interactions 
+title: Drug-Target Interactions
 author: "Authors: Kevin Horan, Yuzhu Duan, Austin Leong, Dan Evans, Jamison McCorrison, Nicholas Schork and Thomas Girke"
-date: "Last update: `r format(Sys.time(), '%d %B, %Y')`" 
+date: "Last update: `r format(Sys.time(), '%d %B, %Y')`"
 always_allow_html: yes
 output:
   BiocStyle::html_document:
@@ -38,17 +38,58 @@ knitr::opts_chunk$set(
     cache=as.logical(Sys.getenv("KNITR_CACHE", "TRUE")))
 ```
 
+```{r hidden_setup, echo=FALSE, message=FALSE, warning=FALSE}
+library(drugTargetInteractions)
+## Small helper: is a UniChem SQLite already built and cached locally?
+## Used throughout to skip live examples that would otherwise trigger
+## an ~hour-long build on a machine that has never run buildUnichemDb().
+.haveUnichemDb <- function() {
+    tryCatch({p <- buildUnichemDb(rerun = FALSE); !is.na(p) && file.exists(p)},
+             error = function(e) FALSE)
+}
+```
+
 # Introduction
 
 ## Overview
 
 The `drugTargetInteractions` package provides utilities for identifying
-drug-target interactions for sets of small molecule and/or gene/protein
-identifiers [@Wu2006-jm]. The required drug-target interaction information is
-obained from a downloaded SQLite instance of the [ChEMBL](https://www.ebi.ac.uk/chembl/) 
-database [@Gaulton2012-dv; @Bento2014-ry]. ChEMBL has been chosen for this purpose, 
-because it provides one of the most comprehensive and best annotatated knowledge resources
-for drug-target information available in the public domain.
+**drug-target interactions** starting from *either* a gene/protein identifier
+(target &rarr; drug) *or* a compound identifier (drug &rarr; target). It
+covers five independent drug-target data sources - [ChEMBL](https://www.ebi.ac.uk/chembl/)
+[@Gaulton2012-dv; @Bento2014-ry], [PubChem](https://pubchem.ncbi.nlm.nih.gov/),
+[DGIdb](https://dgidb.org/), [Open Targets](https://platform.opentargets.org/)
+and the [Therapeutic Target Database (TTD)](https://ttd.idrblab.cn/) - each
+queried through its own live REST/GraphQL API or, for TTD, a small local
+SQLite built from its public flat files. ChEMBL remains additionally
+available through a downloaded local SQLite instance for users who prefer
+that (see the [Supplement]).
+
+Because every source has its own native identifier vocabulary (a ChEMBL
+molecule ID is not a PubChem CID is not a DrugBank ID), the package also
+provides a **generic ID-translation layer**: live services for mapping
+protein/gene identifiers ([UniProt](https://www.uniprot.org/)'s REST ID
+Mapping API [@Wu2006-jm]) and finding paralogs/orthologs
+([Ensembl](https://www.ensembl.org/)'s homology REST API), plus a local
+SQLite built from [UniChem](https://www.ebi.ac.uk/unichem/)'s bulk compound
+cross-reference table for translating between compound ID types (ChEMBL,
+PubChem, DrugBank, ChEBI, and more). A dispatcher function,
+`queryDrugTargets()`, ties all of this together: give it an identifier of
+*any* recognised type and it resolves that identifier to whatever native ID
+each requested source needs, queries one or more sources, and returns the
+results.
+
+This vignette is organised as follows:
+
+- **[Quick Start]** - a five-minute tour of the essential commands.
+- **[Data Sources in Detail]** - one section per source, with both query
+  directions.
+- **[ID Translation Layer]** - the standalone translation functions.
+- **[Cross-Source Queries]** - `queryDrugTargets()` across one or many
+  sources at once, performance guidance, and combining results into a
+  single table.
+- **[Supplement]** - legacy/alternative functions kept for backward
+  compatibility.
 
 ## Install Package
 
@@ -60,7 +101,7 @@ if (!requireNamespace("BiocManager", quietly = TRUE))
 BiocManager::install("drugTargetInteractions")
 ```
 
-Alternatively, the package can be installed from GitHub as follows. 
+Alternatively, the package can be installed from GitHub as follows.
 
 ```{r pkg_install_github, eval=FALSE}
 devtools::install_github("girke-lab/drugTargetInteractions", build_vignettes=TRUE) # Installs from github
@@ -68,421 +109,474 @@ devtools::install_github("girke-lab/drugTargetInteractions", build_vignettes=TRU
 
 ## Load Package and Access Help
 
-To use `drugTargetInteractions`, the package needs to be loaded in a user's R session.
-
-```{r package load, eval=TRUE, warning=FALSE}
+```{r package_load, eval=TRUE, warning=FALSE}
 library("drugTargetInteractions") # Loads the package
 ```
-
-The following commands are useful to list the available help files and open the 
-the vignette of the package.
 
 ```{r documentation, eval=FALSE, warning=FALSE}
 library(help="drugTargetInteractions") # Lists package info
 vignette(topic="drugTargetInteractions", package="drugTargetInteractions") # Opens vignette
 ```
 
-# Working Environment
+# Quick Start
 
-## Required Files and Directories
+This section is meant to be read (and run) in about five minutes. It uses
+only sources that need no local database setup, so every chunk here works
+immediately after installing the package - no downloads beyond the live API
+calls themselves.
 
-The `drugTargetInteractions` package uses a downloaded SQLite instance of the
-[ChEMBL](https://www.ebi.ac.uk/chembl/) database. The following code in this
-vignette uses a slimmed down toy version of this database that is small enough
-to be included in this package for demonstrating the usage of its functions.
-For real drug-target analysis work, it is important that users download and
-uncompress a recent version of the ChEMBL SQLite database from
-[here](https://chembl.gitbook.io/chembl-interface-documentation/downloads), and then replace
-the path assigned to `chembldb` below with the path to the full version of the
-ChEMBL database they have downloaded to their system. Since the SQLite database
-from ChEMBL can be used by this package as is, creating a copy of the ChEMBL
-SQLite database on Bioconductor's
-[AnnotationHub](https://bioconductor.org/packages/release/bioc/html/AnnotationHub.html)
-is not necessary at this point. This way users can always use the latest or
-historical versions of ChEMBL without the need of maintaining a mirror instance. 
+## One Source, One Call
 
-The following `genConfig` function call creates a list containing the paths to
-input and output directories used by the sample code introduced in this
-vignette.  For real analyses, users want to customize these paths to match the
-environment on their system. Usually, this means all paths generated by the
-`system.file` function need to be changed, as those are specific to work with
-the test data of a package (_e.g._ toy ChEMBL SQLite instance).
+Every per-source function uses the same `queryBy = list(molType, idType,
+ids)` interface. Target &rarr; drug for the FGFR1 gene via ChEMBL:
 
-```{r dir_env, eval=TRUE}
-chembldb <- system.file("extdata", "chembl_sample.db", package="drugTargetInteractions")
-resultsPath <- system.file("extdata", "results", package="drugTargetInteractions")
-config <- genConfig(chemblDbPath=chembldb, resultsPath=resultsPath)
+```{r quickstart_chembl, eval=TRUE}
+getChemblDrugTarget(list(molType = "protein", idType = "Uniprot", ids = "P11362"))[
+    , c("QueryIDs", "Drug_Name", "Action_Type", "Max_Phase")]
 ```
 
-In addition, a lookup table is downloaded on the fly from UniChem (see [web
-page](https://www.ebi.ac.uk/unichem/ucquery/listSources) and corresponding [ftp
-site](ftp://ftp.ebi.ac.uk/pub/databases/chembl/UniChem/data/wholeSourceMapping/).
-This lookup table is used by `drugTargetInteractions` to translate compound
-identifiers across different drug databases. Currently, this includes three types of 
-compound identifiers: DrugBank, PubChem, and ChEBI. 
+The reverse direction (drug &rarr; target) uses the same function with
+`molType = "cmp"`:
 
-```{r data_setup, eval=TRUE}
-downloadUniChem(config=config)
-cmpIdMapping(config=config)
+```{r quickstart_chembl_reverse, eval=TRUE}
+getChemblDrugTarget(list(molType = "cmp", idType = "chembl_id", ids = "CHEMBL1421"))[  # dasatinib
+    , c("QueryIDs", "UniProt_ID", "Action_Type")]
 ```
 
-# Produce Results Quickly
+## Many Sources, One Call
 
-Users mainly interested in generating analysis results can skip the
-technical details in the following sections and continue with the section
-entitled [Workflow to Run Everything](#7_Workflow_to_Run_Everything).
+`queryDrugTargets()` accepts an identifier of essentially any type (not
+just each source's own native ID - see [ID Translation Layer]) and queries
+as many sources as you like in one call:
 
-# Retrieve UniProt IDs
-
-The following returns for a set of query IDs (_e.g._ ENSEMBL gene IDs) the
-corresponding UniProt IDs based on a stict ID matching as well as a more
-relaxed sequence similarity-based approach. The latter sequence similarity
-associations are obtained with the `getUniprotIDs` or the `getParalogs` functions
-using UniProt's UNIREF cluster or BioMart's paralog annotations, respectively.
-
-## UniProt's UNIREF Clusters
-
-The `UniProt.ws` package is used to to return for a set of query IDs
-(here Ensembl gene IDs) the corresponding UniProt IDs based on two independent
-approaches: ID mappings (IDMs) and sequence similarity nearest neighbors
-(SSNNs) using UNIREF clusters. The latter have been generated by UniProt with the MMSeqs2 
-and Linclust algorithms [@Steinegger2017-uq; @Steinegger2018-ub]. Additional details 
-on the UNIREF clusters are available [here](https://www.uniprot.org/help/uniref). The 
-organism, query ID type and sequence similarity level can be selected under the `taxId`, 
-`kt` and `seq_cluster` arguments, respectively. The `seq_cluster` argument can be
-assigned one of: `UNIREF100`, `UNIREF90` or `UNIREF50`. The result is a list
-with two `data.frames`. The first one is based on IDMs and the second one on
-SSNNs.
-
-```{r getUniprotIDs1, eval=FALSE, message=FALSE, warning=FALSE}
-keys <- c("ENSG00000145700", "ENSG00000135441", "ENSG00000120071")
-res_list90 <- getUniprotIDs(taxId=9606, kt="ENSEMBL", keys=keys, seq_cluster="UNIREF90") 
+```{r quickstart_meta, eval=TRUE}
+res <- queryDrugTargets(
+    list(molType = "gene", idType = "symbol", ids = "FGFR1"),
+    sources = c("chembl", "pubchem", "dgidb", "opentargets"))
+names(res)              # one data.frame per source that returned results
+sapply(res, nrow)
 ```
 
-```{r load_res_list90, echo = FALSE, results = 'asis'}
-res_list90 <- readRDS(system.file("extdata", "res_list90.rds", package="drugTargetInteractions"))
-```
-The following shows the first `data.frame` containing the ID mapping results.
+## One Table
 
-```{r getUniprotIDs2, eval=TRUE, message=FALSE}
-library(DT)
-datatable(res_list90[[1]], options = list(scrollX=TRUE, scrollY="600px", autoWidth = TRUE))
-```
-The following shows how to return the dimensions of the two `data.frames` and how to
-obtain the UniProt IDs as character vectors required for the downstream analysis steps.
+`res` above is a list - each source keeps its own native columns. To see
+one aligned table across sources, use `combineDrugTargets()`:
 
-```{r getUniprotIDs3, eval=TRUE}
-sapply(res_list90, dim, simplify=FALSE)
-sapply(names(res_list90), function(x) unique(na.omit(res_list90[[x]]$ID)))
+```{r quickstart_combine, eval=TRUE}
+combineDrugTargets(res)[1:6, ]
 ```
 
-## BioMart's Paralogs
+That is the essential workflow: pick an identifier, pick one or more
+sources, query, optionally combine. The rest of this vignette covers each
+piece in more detail.
 
-The following obtains via `biomaRt` for a set of query genes the corresponding 
-UniProt IDs as well as their paralogs. The query genes can be Gene Names or ENSEMBL
-Gene IDs from _H. sapiens_. The result is similar to IDMs and SSNNs from the
-`getUniprotIDs` function, but instead of UNIREF clusters, biomaRt's paralogs
-are used to obtain SSNNs. 
+# Data Sources in Detail
 
-```{r getParalogs1, eval=FALSE}
-queryBy <- list(molType="gene", idType="external_gene_name", ids=c("ANKRD31", "BLOC1S1", "KANSL1"))
-queryBy <- list(molType="gene", idType="ensembl_gene_id", ids=c("ENSG00000145700", "ENSG00000135441", "ENSG00000120071"))
-res_list <- getParalogs(queryBy)
+Each source below is queried through its own bidirectional function, using
+that source's *native* identifier types directly. `queryDrugTargets()`
+(see [Cross-Source Queries]) builds on top of these by resolving other
+identifier types first.
+
+## ChEMBL
+
+ChEMBL [@Gaulton2012-dv; @Bento2014-ry] is queried live through its REST
+API via `getChemblDrugTarget()`. Native identifiers: a **UniProt
+accession** for target &rarr; drug, a **ChEMBL molecule ID** for drug
+&rarr; target.
+
+```{r chembl_target2drug, eval=TRUE}
+chembl_t2d <- getChemblDrugTarget(
+    list(molType = "protein", idType = "Uniprot", ids = "P11362"))  # FGFR1
+head(chembl_t2d[, c("Drug_Name", "MOA", "Action_Type", "Max_Phase")])
 ```
 
-```{r getParalogs1_load, eval=TRUE,echo=FALSE}
-res_list <- readRDS(system.file("extdata", "paralogs1_res_list.rds", package="drugTargetInteractions"))
+```{r chembl_drug2target, eval=TRUE}
+chembl_d2t <- getChemblDrugTarget(
+    list(molType = "cmp", idType = "chembl_id", ids = "CHEMBL25"))  # aspirin
+chembl_d2t[, c("UniProt_ID", "Organism", "MOA")]
 ```
 
-The following shows the first `data.frame` containing the ID mapping results.
+Large ID batches are chunked automatically (see [Performance Considerations]).
+Standalone helpers are also available: `getChemblMolecule()` (compound
+properties), `getChemblTarget()` (search targets by gene/protein name), and
+`getChemblBioactivities()` (raw IC50/Ki/Kd/EC50 measurements for one
+target).
 
-```{r getParalogs2, eval=TRUE, message=FALSE}
-library(DT)
-datatable(res_list[[1]], options = list(scrollX = TRUE, scrollY="400px", autoWidth = TRUE))
-```
-The following shows how to return the dimensions of the two `data.frames` and how to
-obtain the UniProt IDs as character vectors required for the downstream analysis steps.
+## PubChem
 
-```{r getParalogs3, eval=TRUE}
-sapply(res_list, dim, simplify=FALSE)
-sapply(names(res_list), function(x) unique(na.omit(res_list[[x]]$ID_up_sp)))
-```
+PubChem's bioactivity data is queried through its PUG-REST API and NCBI
+E-utilities via `getPubchemDrugTarget()`. Native identifiers: a **gene
+symbol** (an NCBI GeneID also passes through unresolved) for target &rarr;
+drug, a **compound name** (a PubChem CID also passes through unresolved)
+for drug &rarr; target.
 
-# Query Drug-Target Annotations 
-
-The `drugTargetAnnot` function returns for a set of compound or gene/protein
-IDs the corresponding known drug-target annotation data available in ChEMBL. A
-related function called `getDrugTarget` is described in the subsequent
-subsection. This method generates very similar results, but uses internally pre-computed
-annotation summary tables which is less flexible than the usage of pure SQL statements. 
-
-## Using `drugTargetAnnot` 
-
-The `drugTargetAnnot` function queries the ChEMBL database with SQL statements without
-depending on pre-computed annotation tables. 
-
-### Query with Compound IDs
-
-```{r drugTargetQuery1cmp, eval=TRUE}
-queryBy <- list(molType="cmp", idType="chembl_id", ids=c("CHEMBL17", "CHEMBL19", "CHEMBL1201117", "CHEMBL25", "nomatch", "CHEMBL1742471"))
-qresult1 <- drugTargetAnnot(queryBy, config=config)
+```{r pubchem_target2drug, eval=TRUE}
+pubchem_t2d <- getPubchemDrugTarget(
+    list(molType = "gene", idType = "symbol", ids = "KLB"))
+head(pubchem_t2d[, c("drug_name", "activity_name", "activity_value_uM")])
 ```
 
-```{r cmp_query_result1, eval=TRUE, message=FALSE}
-library(DT)
-datatable(qresult1, options = list(scrollX = TRUE, scrollY="600px", autoWidth = TRUE))
+```{r pubchem_drug2target, eval=TRUE}
+pubchem_d2t <- getPubchemDrugTarget(
+    list(molType = "cmp", idType = "name", ids = "aspirin"))
+pubchem_d2t[, c("gene_symbol", "activity_name", "activity_value_uM")]
 ```
 
-### Query with Protein IDs
+PubChem is compound-centric and high-volume; results are capped per gene
+(`maxCids`, default 400) and filtered to Active, numeric, potency-endpoint
+measurements (IC50/Ki/Kd/EC50/AC50/Potency) by default. Because
+compound-centric assay data spans whatever species each assay used (e.g.
+aspirin's classic COX1/COX2 potency assays are annotated against *sheep*
+GeneIDs in PubChem), `getPubchemTargets()`/`getPubchemDrugTarget()` filter
+to human (`taxid = 9606`) by default - pass `taxid = NULL` for all species.
 
-```{r drugTargetQuery1protein, eval=TRUE}
-queryBy <- list(molType="protein", idType="UniProt_ID", ids=c("P43166", "P00915"))
-qresult2 <- drugTargetAnnot(queryBy, config=config)
+## DGIdb
+
+The Drug Gene Interaction Database is queried through its GraphQL API via
+`getDgidbDrugTarget()`. DGIdb's schema is bidirectional by construction - a
+single `interactions()` query returns nodes that already carry both a gene
+and a drug identity - so both directions use the same underlying query,
+just filtered by a different argument. Native identifiers: a **gene
+symbol** or a **drug name**, both matched case-insensitively.
+
+```{r dgidb_target2drug, eval=TRUE}
+dgidb_t2d <- getDgidbDrugTarget(
+    list(molType = "gene", idType = "symbol", ids = "FGFR1"))
+head(dgidb_t2d[, c("drug_name", "interaction_types", "sources")])
 ```
 
-```{r protein_query_result1, eval=TRUE, message=FALSE}
-library(DT)
-datatable(qresult2, options = list(scrollX = TRUE, scrollY="600px", autoWidth = TRUE))
+```{r dgidb_drug2target, eval=TRUE}
+dgidb_d2t <- getDgidbDrugTarget(
+    list(molType = "cmp", idType = "name", ids = "imatinib"))
+head(dgidb_d2t[, c("gene_name", "interaction_types", "interaction_score")])
 ```
 
-### Query with Gene IDs
+The `sources` column matters for reuse: DGIdb aggregates interactions from
+many upstream databases (ChEMBL, DrugBank, TTD, and others), each with its
+own license - a row's `sources` value tells you where that specific
+interaction actually came from.
 
-The following returns drug-target annotations for a set of query Ensembl gene IDs.
-For this the Ensembl gene IDs are translated into UniProt IDs using both the IDM 
-and SSNN approaches. 
+## Open Targets
 
-```{r getUniprotIDs, eval=FALSE, message=FALSE}
-keys <- c("ENSG00000145700", "ENSG00000135441", "ENSG00000120071")
-res_list90 <- getUniprotIDs(taxId=9606, kt="ENSEMBL", keys=keys, seq_cluster="UNIREF90")
-```
-```{r getUniprotIDs4, eval=TRUE, message=FALSE}
-id_list <- sapply(names(res_list90), function(x) unique(na.omit(res_list90[[x]]$ID)))
-```
+Open Targets is queried through its GraphQL API via
+`getOpenTargetsDrugTarget()`. Unlike DGIdb, its schema is asymmetric:
+target &rarr; drug goes through `Target.drugAndClinicalCandidates`, drug
+&rarr; target through `Drug.mechanismsOfAction`. Native identifiers: a
+**gene symbol** (an Ensembl gene ID also passes through unresolved) for
+target &rarr; drug, a **compound name** (a ChEMBL ID also passes through
+unresolved, since Open Targets drug IDs *are* ChEMBL IDs) for drug &rarr;
+target.
 
-Next, drug-target annotations are returned for the Uniprot IDs with the IDM or
-SSNN methods. The following example uses the UniProt IDs of the SSNN method.
-Note, to include the upstream Ensembl gene IDs in the final result table, the
-below Ensembl ID collapse step via a `tapply` is necessary since occasionally
-UniProt IDs are assigned to several Ensembl gene IDs (_e.g._ recent gene duplications).
-
-```{r drugTargetQuery2protein, eval=TRUE}
-queryBy <- list(molType="protein", idType="UniProt_ID", ids=id_list[[2]])
-qresultSSNN <- drugTargetAnnot( queryBy, config=config)
-ensidsSSNN <- tapply(res_list90[[2]]$ENSEMBL, res_list90[[2]]$ID, paste, collapse=", ") 
-qresultSSNN <- data.frame(Ensembl_IDs=ensidsSSNN[as.character(qresultSSNN$QueryIDs)], qresultSSNN)
+```{r opentargets_target2drug, eval=TRUE}
+ot_t2d <- getOpenTargetsDrugTarget(
+    list(molType = "gene", idType = "symbol", ids = "FGFR1"))
+head(ot_t2d[, c("drug_name", "mechanism_of_action", "max_clinical_stage")])
 ```
 
-```{r protein_query_result2, eval=TRUE, message=FALSE}
-library(DT)
-datatable(qresultSSNN, options = list(scrollX = TRUE, scrollY="600px", autoWidth = TRUE))
+```{r opentargets_drug2target, eval=TRUE}
+ot_d2t <- getOpenTargetsDrugTarget(
+    list(molType = "cmp", idType = "name", ids = "aspirin"))
+ot_d2t[, c("approved_symbol", "mechanism_of_action")]  # PTGS1/PTGS2 = COX1/COX2
 ```
 
-## Using `getDrugTarget` 
+Note that agonist targets or those without a drugged pocket (e.g. FGF21,
+NLRP3, TFEB, ADIPOR1/2 in this package's original test-gene set)
+legitimately return zero rows from Open Targets - that reflects the state
+of drug discovery for that target, not a query failure.
 
-The `getDrugTarget` function generates similar results as `drugTargetAnnot`,
-but depends on a pre-computed query table (here `drugTargetAnnot.xls`). 
+## TTD (Therapeutic Target Database)
 
-### Query with Compound IDs
+TTD has no live API. Its flat files are downloaded once and assembled into
+a small local SQLite via `buildTtdDb()`; `ttdTargetAnnot()` then queries
+that local database repeatedly. This mirrors ChEMBL's local-SQLite option
+(see the [Supplement]) - build once, query many times.
 
-```{r cmp_query2, eval=TRUE}
-id_mapping <- c(chembl="chembl_id", pubchem="PubChem_ID", uniprot="UniProt_ID", drugbank="DrugBank_ID")
-queryBy <- list(molType="cmp", idType="pubchem", ids=c("2244", "65869", "2244"))
-queryBy <- list(molType="protein", idType="uniprot", ids=c("P43166", "P00915", "P43166"))
-queryBy <- list(molType="cmp", idType="drugbank", ids=c("DB00945", "DB01202"))
-#qresult3 <- getDrugTarget(queryBy=queryBy, id_mapping=id_mapping, columns=c(1,5,8,16,17,39,46:53),config=config)
-qresult3 <- getDrugTarget(queryBy=queryBy, id_mapping=id_mapping, columns=c(1,5,8,16,17),config=config)
+```{r ttd_build, eval=TRUE}
+ttdDbPath <- buildTtdDb(rerun = FALSE)  # builds once, reuses the cached file afterward
 ```
 
-```{r cmp_query_result2, eval=TRUE, message=FALSE}
-library(DT)
-datatable(qresult3, options = list(scrollX = TRUE, scrollY="600px", autoWidth = TRUE))
+Native identifiers for `ttdTargetAnnot()`: for target &rarr; drug, a
+**gene symbol** (`idType = "symbol"`), a **UniProt mnemonic entry name**
+such as `"FGFR1_HUMAN"` (`idType = "uniprot"` - note this is *not* the
+UniProt accession `"P11362"` other sources use), or TTD's own
+**TargetID** (`idType = "ttd_target_id"`); for drug &rarr; target, a
+**drug name** or TTD's own **DrugID** (`idType = "ttd_drug_id"`).
+
+```{r ttd_target2drug, eval=TRUE}
+ttd_t2d <- ttdTargetAnnot(
+    list(molType = "protein", idType = "symbol", ids = "FGFR1"), ttdDbPath)
+head(ttd_t2d[, c("DrugName", "Highest_status", "MOA")])
 ```
 
-### Query with Protein IDs
-
-```{r protein_query2, eval=TRUE}
-queryBy <- list(molType="protein", idType="chembl", ids=c("CHEMBL25", "nomatch", "CHEMBL1742471"))
-#qresult4 <- getDrugTarget(queryBy=queryBy, id_mapping, columns=c(1,5,8,16,17,39,46:52),config=config) 
-qresult4 <- getDrugTarget(queryBy=queryBy, id_mapping=id_mapping, columns=c(1,5,8,16,17),config=config) 
+```{r ttd_drug2target, eval=TRUE}
+ttd_d2t <- ttdTargetAnnot(
+    list(molType = "cmp", idType = "name", ids = "Pemigatinib"), ttdDbPath)
+ttd_d2t[, c("GeneName", "Highest_status", "MOA")]
 ```
 
-```{r protein_query_result3, eval=TRUE, message=FALSE}
-library(DT)
-datatable(qresult4, options = list(scrollX = TRUE, scrollY="600px", autoWidth = TRUE))
+**Distribution note:** `buildTtdDb()` only ever downloads TTD's own files
+into your local cache and builds the SQLite there - the package itself
+ships no TTD data (TTD's license permits academic use but has no explicit
+redistribution grant).
+
+# ID Translation Layer
+
+Every source function above expects that source's *native* identifier
+type. The functions in this section translate between identifier types
+directly, and are also what `queryDrugTargets()` uses internally.
+
+## Protein/Gene IDs
+
+`getUniprotMapping()` maps identifiers via UniProt's REST ID Mapping
+service. `from`/`to` use UniProt's own database-name vocabulary (see
+[UniProt's ID Mapping help page](https://www.uniprot.org/help/id_mapping)
+for the full list) - a few of the most useful:
+
+```{r uniprot_mapping, eval=TRUE}
+getUniprotMapping(c("FGFR1", "KLB"), from = "Gene_Name", to = "UniProtKB-Swiss-Prot")
+getUniprotMapping("P11362", from = "UniProtKB_AC-ID", to = "Ensembl")
 ```
 
-# Query Bioassay Data
+`taxId` restricts matches to one organism (default `9606` = human) -
+important because a gene symbol can match entries from several species.
 
-The `drugTargetBioactivity` function returns for a set of compound or gene/protein IDs the
-corresponding bioassay data available in ChEMBL.
+## Paralogs and Orthologs
 
-## Query with Compound IDs
+`getEnsemblParalogs()`/`getEnsemblOrthologs()` query Ensembl's homology
+REST API. Their `type` classification (`ortholog_one2one`,
+`other_paralog`, etc.) comes from gene-tree reconciliation, not raw
+sequence-identity thresholding, so it is a more principled "best hit"
+signal than picking the highest `perc_id` alone - prefer
+`type == "ortholog_one2one"` when you need a single best cross-species
+match.
 
-Example query for compounds IDs.
-
-```{r bioassayQuery1cmp, eval=TRUE, warning=FALSE}
-queryBy <- list(molType="cmp", idType="DrugBank_ID", ids=c("DB00945", "DB00316", "DB01050"))
-qresultBAcmp <- drugTargetBioactivity(queryBy, config=config)
+```{r ensembl_paralogs, eval=TRUE}
+getEnsemblParalogs("NLRP3")[, c("homolog_id", "type", "perc_id")]
 ```
 
-```{r cmpBA_query_result, eval=TRUE, message=FALSE}
-library(DT)
-datatable(qresultBAcmp, options = list(scrollX = TRUE, scrollY="600px", autoWidth = TRUE))
+```{r ensembl_orthologs, eval=TRUE}
+getEnsemblOrthologs("NLRP3", targetSpecies = "mouse")[
+    , c("homolog_id", "homolog_species", "type", "perc_id")]
 ```
 
-## Query with Protein IDs
+Large gene families need the default query shape here - by design,
+`getEnsemblParalogs()`/`getEnsemblOrthologs()` already avoid a
+pathological slowdown found for such families (see
+`?.dot-dtiEnsemblHomologyFetch` for details); pass `condensed = TRUE` for
+an even faster existence-check-only path when you don't need
+`perc_id`/`perc_pos`.
 
-Example query for protein IDs. Note, the Ensembl gene to UniProt ID mappings are derived from 
-above and stored in the named character vector `ensidsSSNN`.
+## Compound IDs
 
-```{r bioassayQuery1protein, eval=TRUE, warning=FALSE}
-queryBy <- list(molType="protein", idType="uniprot", ids=id_list[[1]])                                                                                                             
-qresultBApep <- drugTargetBioactivity(queryBy, config=config)                                                                                       
-qresultBApep <- data.frame(Ensembl_IDs=ensidsSSNN[as.character(qresultBApep$UniProt_ID)], qresultBApep)
+`getUnichemMapping()` translates compound identifiers via a local SQLite
+built from UniChem's bulk compound cross-reference table
+(`buildUnichemDb()`). It is genuinely source-agnostic: `from`/`to` accept
+*any* source name present in the underlying data (not a fixed list
+hand-coded per database) - `"chembl"`, `"pubchem"`, `"drugbank"`,
+`"chebi"`, and dozens more.
+
+```{r unichem_build_note, eval=FALSE}
+## One-time setup (not run automatically in this vignette - takes on the
+## order of an hour and downloads ~1.5GB). Rerun = FALSE afterward always
+## reuses whatever was built, regardless of which day that was.
+unichemDbPath <- buildUnichemDb()
 ```
 
-```{r pepBA_query_result, eval=TRUE, message=FALSE}
-library(DT)
-datatable(qresultBApep, options = list(scrollX = TRUE, scrollY="600px", autoWidth = TRUE))
+```{r unichem_mapping, eval=.haveUnichemDb()}
+unichemDbPath <- buildUnichemDb(rerun = FALSE)
+getUnichemMapping("CHEMBL25", from = "chembl", to = "pubchem", unichemDbPath)   # aspirin -> CID
+getUnichemMapping("CHEMBL25", from = "chembl", to = "drugbank", unichemDbPath) # aspirin -> DrugBank ID
 ```
 
-# Workflow to Run Everything 
+Unlike UniProt's or Ensembl's REST APIs, UniChem's own live per-compound
+API does not support batch queries and was found to be intermittently
+unreliable for even single lookups - the local-SQLite approach exists
+specifically to avoid depending on it (see `?buildUnichemDb`). Because the
+build is a real, deliberate operation (not something to trigger silently),
+`buildUnichemDb(rerun = FALSE)` is always required explicitly before using
+`getUnichemMapping()` or `queryDrugTargets()` on structured compound IDs.
 
-This section explains how to run all of the above drug-target interaction
-analysis steps with a few convenience meta functions. Users mainly interested
-in generating analysis results quickly can focus on this section only.
+# Cross-Source Queries
 
-## ID mapping 
+## Querying One or All Sources
 
-The `getSymEnsUp` function returns for a query of gene or protein IDs a mapping
-table containing: ENSEMBL Gene IDs, Gene Names/Symbols, UniProt IDs and ENSEMBL
-Protein IDs. Internally, the function uses the `ensembldb` package. Its results
-are returned in a list where the first slot contains the ID mapping table, while
-the subsequent slots include the corresponding named character vectors: `ens_gene_id`,
-`up_ens_id`, and `up_gene_id`. Currently, the following query IDs are supported
-by `getSymEnsUp`: `GENE_NAME`, `ENSEMBL_GENE_ID` and `UNIPROT_ID`.
+`queryDrugTargets()` resolves `queryBy$ids` to whatever native identifier
+each requested `sources` entry needs, then dispatches. `queryBy$idType`
+uses the same canonical vocabulary as the translation layer above -
+`"symbol"`/`"uniprot"`/`"ensembl"` for genes, `"name"`/`"chembl_id"`/
+`"pubchem_id"`/`"drugbank_id"`/`"chebi_id"` for compounds - not each
+source's own native type.
 
-### Query with Gene Names 
-
-```{r gene_name, eval=TRUE, message=FALSE}
-gene_name <- c("CA7", "CFTR")
-idMap <- getSymEnsUp(EnsDb="EnsDb.Hsapiens.v86", ids=gene_name, idtype="GENE_NAME")
-ens_gene_id <- idMap$ens_gene_id
-ens_gene_id
+```{r meta_one_source, eval=TRUE}
+res_one <- queryDrugTargets(
+    list(molType = "gene", idType = "symbol", ids = "FGFR1"), sources = "chembl")
+names(res_one)
 ```
 
-### Query with ENSEBML Gene IDs
-
-```{r ens_gene_id, eval=TRUE, message=FALSE}
-ensembl_gene_id <- c("ENSG00000001626", "ENSG00000168748")
-idMap <- getSymEnsUp(EnsDb="EnsDb.Hsapiens.v86", ids=ensembl_gene_id, idtype="ENSEMBL_GENE_ID")
-ens_gene_id <- idMap$ens_gene_id
+```{r meta_ensembl_start, eval=TRUE}
+## Starting from an Ensembl gene ID instead of a symbol - resolved
+## automatically (via a UniProt accession as an intermediate hop, since
+## UniProt's mapping API requires one side of any call to be UniProtKB).
+res_ensembl <- queryDrugTargets(
+    list(molType = "gene", idType = "ensembl", ids = "ENSG00000077782"),
+    sources = c("chembl", "opentargets"))
+sapply(res_ensembl, nrow)
 ```
 
-### Query with UniProt IDs
-
-```{r ens_uniprot_id, eval=TRUE, message=FALSE}
-uniprot_id <- c("P43166", "P13569") 
-idMap <- getSymEnsUp(EnsDb="EnsDb.Hsapiens.v86", ids=uniprot_id, idtype="UNIPROT_ID")
-ens_gene_id <- idMap$ens_gene_id
+```{r meta_ttd, eval=TRUE}
+## TTD needs a local db path (see above); other sources ignore it.
+res_all_live <- queryDrugTargets(
+    list(molType = "gene", idType = "symbol", ids = "FGFR1"),
+    sources = c("chembl", "pubchem", "dgidb", "opentargets", "ttd"),
+    ttdDbPath = ttdDbPath)
+sapply(res_all_live, nrow)
 ```
 
-## Retrieve UniProt IDs 
+Starting from a *compound* identifier that needs the UniChem SQLite works
+the same way once one has been built:
 
-The perfect match and nearest neighbor UniProt IDs can be obtained from UniProt's
-UNIREF cluster or BioMart's paralog annotations.
-
-### UNIREF Cluster
-
-The corresponding IDM and SSNN UniProt IDs for the above ENSEMBL gene IDs are
-obtained with the `getUniprotIDs` function. This step is slow since the queries
-have to be performed with `chunksize=1` in order to reliably track the query ENSEMBL 
-gene ID information in the results. 
-
-```{r res_list_ens_gene_id_uniref, eval=FALSE, message=FALSE}
-res_list90 <- getUniprotIDs(taxId=9606, kt="ENSEMBL", keys=names(ens_gene_id), seq_cluster="UNIREF90", chunksize=1)
-sapply(res_list90, dim)
+```{r meta_drugbank_start, eval=.haveUnichemDb()}
+res_drugbank <- queryDrugTargets(
+    list(molType = "cmp", idType = "drugbank_id", ids = "DB00945"),  # aspirin
+    sources = "chembl", unichemDbPath = unichemDbPath)
+res_drugbank$chembl[, c("QueryIDs", "UniProt_ID", "Organism")]
 ```
 
-### BioMart Parlogs
+A source that a query resolved nothing for, or whose own call failed (e.g.
+a required local database path was not supplied), simply contributes no
+element to the result list rather than raising an error - set
+`verbose = TRUE` on any of the calls above to see why.
 
-Here the corresponding perfect match (IDM) and paralog (SSNN) UniProt IDs for
-the above ENSEMBL gene IDs are obtained with the `getParalogs` function. The
-latter is much faster than `getUniprotIDs`, and also covers wider evolutionary
-distances. Thus, it may be the preferred methods for many use cases.
+## Performance Considerations
 
-```{r res_list_ens_gene_id_paralog, eval=FALSE, message=FALSE}
-queryBy <- list(molType="gene", idType="ensembl_gene_id", ids=names(ens_gene_id))
-res_list <- getParalogs(queryBy)
+None of the five sources support unlimited-size ID batches in a single
+request, and the live APIs are courtesy-throttled client-side regardless.
+The defaults already reflect each source's real constraints (do not raise
+these without a specific reason):
+
+| Source | Constraint | Default batch size |
+|---|---|---|
+| ChEMBL | REST server request-line length (~4KB; `httr2` percent-encodes separators) | 200 IDs/request |
+| PubChem | Compound-property lookup batch | 100 CIDs/request; bioactivity summary 50 CIDs/request |
+| DGIdb | Courtesy chunking (no documented server limit found) | 300 names/request |
+| Open Targets | GraphQL aliasing payload size | 25 targets/request |
+| UniProt ID Mapping | Server-enforced job size cap | up to 100,000 IDs/job (asynchronous) |
+| UniChem | No batching in the live API at all - hence the local-SQLite design | n/a (local queries) |
+
+All five per-source functions and `queryDrugTargets()` chunk large `ids`
+vectors into these batch sizes automatically, so a query of, say, 2,000
+UniProt accessions works the same as one - it just takes proportionally
+longer and issues proportionally more requests. When testing or debugging
+with a deliberately small `chunkSize`, pick one relative to the *endpoint's
+fan-out*, not arbitrarily small: a tiny `chunkSize` against a low-fan-out
+endpoint (e.g. ChEMBL's `molecule` lookup, one record per ID) is a cheap
+way to exercise pagination, but the same tiny `chunkSize` against a
+high-fan-out join (e.g. ChEMBL's target/mechanism join, where a handful of
+UniProt accessions can expand into 100+ drug rows) multiplies into far
+more live requests than intended.
+
+## Combining Results
+
+`combineDrugTargets()` row-binds a small set of canonical columns
+(`query_id`, `gene_symbol`, `drug_name`, `action`, `source` by default)
+across whichever sources are present in a `queryDrugTargets()` result,
+mapping each source's own column names to this shared vocabulary:
+
+```{r combine_default, eval=TRUE}
+combined <- combineDrugTargets(res_all_live)
+table(combined$source)
+head(combined)
 ```
 
-```{r res_list_ens_gene_id_paralog_load , eval=TRUE,echo=FALSE}
-res_list <- readRDS(system.file("extdata", "paralogs2_res_list.rds", package="drugTargetInteractions"))
-```
-```{r res_list_ens_gene_id_paralog_part2, eval=TRUE}
-sapply(res_list, dim)
-```
+`query_id` reflects your *original* query token, not each source's own
+(possibly translated) `QueryIDs` - useful once a query starts from a
+non-native identifier, as in `res_ensembl` above:
 
-## Drug-Target Data
-
-Both drug-target annotation and bioassay data are obtained with a meta
-function called `runDrugTarget_Annot_Bioassay` that internally uses the main
-processing functions `drugTargetAnnot` and `drugTargetBioactivity`. It
-organizes the result in a list with the annotation and bioassay data
-(`data.frames`) in the first and second slot, respectively. Importantly, the
-results from the IDM and SSNN UniProt IDs are combined in a single table, where
-duplicated rows have been removed. To track in the result table, which method
-was used for obtaining UniProt IDs, an `IDM_Mapping_Type` column has been added.
-Note, the gene IDs in the SSNN rows have the string `Query_` prepended to
-indicate that they are not necessarily the genes encoding the SSNN UniProt
-proteins listed in the corresponding rows. Instead they are the genes encoding
-the query proteins used for searching for SSNNs.  
-
-```{r runDrugTarget_Annot_Bioassay, eval=TRUE, message=FALSE}
-drug_target_list <- runDrugTarget_Annot_Bioassay(res_list=res_list, up_col_id="ID_up_sp", ens_gene_id, config=config) 
-sapply(drug_target_list, dim)
+```{r combine_query_id, eval=TRUE}
+unique(combineDrugTargets(res_ensembl)$query_id)  # still "ENSG00000077782" for every source
 ```
 
-View content of annotation result slot:
+ChEMBL's REST output has no gene-symbol column at all (it is
+UniProt-accession-keyed), so `gene_symbol` is `NA` for ChEMBL rows by
+default. Pass `resolveGeneSymbol = TRUE` to fill it in via one extra
+`getUniprotMapping()` call:
 
-```{r runDrugTarget_Annot_Bioassay_result1, eval=TRUE, message=FALSE}
-datatable(drug_target_list$Annotation, options = list(scrollX = TRUE, scrollY="600px", autoWidth = TRUE))
+```{r combine_resolve_symbol, eval=TRUE}
+combineDrugTargets(res_all_live, resolveGeneSymbol = TRUE) |>
+    subset(source == "ChEMBL") |> head(3)
 ```
 
-View content of bioassay result slot (restricted to first 500 rows):
+**This is deliberately just column-name alignment and row append** - not
+deduplication and not cross-source identity resolution (the same compound
+or target appearing under different native IDs in different sources is
+not merged into one row). A more principled harmonized container - an S4
+class analysed but not yet built, so that different sources' rows for the
+literal same compound/target could be properly joined - is a separate,
+deferred phase. Every source's full original data remains available
+unchanged in the list `queryDrugTargets()` returned, regardless of what
+you pass to `combineDrugTargets()`.
 
-```{r runDrugTarget_Annot_Bioassay_result2, eval=TRUE, message=FALSE}
-datatable(drug_target_list$Bioassay[1:500,], options = list(scrollX = TRUE, scrollY="600px", autoWidth = TRUE))
+# Supplement
+
+The functions below predate, and are independent of, the sources and
+translation layer described above. They remain available as
+backward-compatible/alternative options but are not the default workflow
+recommended by this vignette.
+
+## Local ChEMBL SQLite Workflow
+
+Before ChEMBL's REST API was added, this package's ChEMBL support was
+exclusively through a downloaded local SQLite instance of the full ChEMBL
+database, queried via `drugTargetAnnot()` (and the related
+`getDrugTarget()`, which queries a pre-generated flat-file export rather
+than the SQLite directly). This remains useful for bulk, offline, or
+very-high-volume ChEMBL querying where the REST API's batch limits (see
+[Performance Considerations]) are impractical.
+
+```{r legacy_chembl_download, eval=FALSE}
+config <- genConfig(chemblDbPath = "chembldb.db")
+downloadChemblDb(rerun = TRUE, config = config)  # downloads the full ChEMBL SQLite (several GB)
+queryBy <- list(molType = "protein", idType = "UniProt_ID", ids = "P11362")
+drugTargetAnnot(queryBy, config = config)
 ```
 
-## Drug-Target Frequency 
+## UniProt.ws-Based ID Mapping
 
-The following generates a summary table containing drug-target frequency information.
+`getUniprotIDs()` predates `getUniprotMapping()` (see [ID Translation
+Layer]) and is based on the Bioconductor `r Biocpkg("UniProt.ws")`
+package rather than a direct REST call. It is kept for backward
+compatibility; `getUniprotMapping()` is the recommended path going
+forward.
 
-```{r DrugTargetSummary, eval=TRUE, message=FALSE}
-df <- drug_target_list$Annotation
-df[,"GeneName"] <- gsub("Query_", "", as.character(df$GeneName))
-stats <- tapply(df$CHEMBL_CMP_ID, as.factor(df$GeneName), function(x) unique(x))
-stats <- sapply(names(stats), function(x) stats[[x]][nchar(stats[[x]]) > 0])
-stats <- sapply(names(stats), function(x) stats[[x]][!is.na(stats[[x]])])
-statsDF <- data.frame(GeneNames=names(stats), Drugs=sapply(stats, paste, collapse=", "), N_Drugs=sapply(stats, length))
+```{r legacy_uniprot_ws, eval=FALSE}
+getUniprotIDs(taxId = 9606, kt = "ENSEMBL", keys = c("ENSG00000077782"))
 ```
 
-Print drug-target frequency table.
+## biomaRt-Based Paralogs
 
-```{r DrugTargetSummary2, eval=TRUE, message=FALSE}
-datatable(statsDF, options = list(scrollX = TRUE, scrollY="150px", autoWidth = TRUE))
+`getParalogs()` predates `getEnsemblParalogs()`/`getEnsemblOrthologs()`
+(see [ID Translation Layer]) and is based on `r CRANpkg("biomaRt")`'s
+BioMart interface rather than Ensembl's REST API directly. It returns
+within-human paralogs only (no cross-species orthologs). Kept for
+backward compatibility.
+
+```{r legacy_paralogs, eval=FALSE}
+queryBy <- list(molType = "gene", idType = "external_gene_name", ids = "FGFR1")
+getParalogs(queryBy)
 ```
 
-## Write Results to Tabular Files
+## Static UniChem Mirror
 
-Both the annotation and bioassay data of the `drug_target_list` object can
-be exported to separate tabular files as follows.
+`downloadUniChem()`/`cmpIdMapping()` predate `buildUnichemDb()`/
+`getUnichemMapping()` (see [ID Translation Layer]) and work from a small,
+static, pre-computed ChEMBL&harr;{DrugBank, PubChem, ChEBI} cross-reference
+snapshot hosted on a project S3 bucket, rather than UniChem's own current
+bulk data. Kept for backward compatibility and for the local-ChEMBL-SQLite
+workflow above, which uses it internally via `cmpIdMapping()`.
 
-```{r export_annotation_bioassay, eval=FALSE, message=FALSE}
-write.table(drug_target_list$Annotation, "DrugTargetAnnotation.xls", row.names=FALSE, quote=FALSE, na="", sep="\t")
-write.table(drug_target_list$Bioassay, "DrugTargetBioassay.xls", row.names=FALSE, quote=FALSE, na="", sep="\t")
-write.table(statsDF, "statsDF.xls", row.names=FALSE, quote=FALSE, na="", sep="\t")
+```{r legacy_unichem, eval=FALSE}
+downloadUniChem(rerun = TRUE)
+cmpIdMapping(outfile = "cmp_ids.rds", rerun = TRUE)
 ```
 
 # Session Info
@@ -492,4 +586,3 @@ sessionInfo()
 ```
 
 # References
-

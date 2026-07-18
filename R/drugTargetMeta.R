@@ -415,3 +415,158 @@ queryDrugTargets <- function(queryBy = list(molType = NULL, idType = NULL, ids =
     attr(out, "resolved") <- resolvedBySource
     out
 }
+
+
+## ---------------------------------------------------------------------
+## Combining results across sources (row/column append, not
+## harmonization - see the file header and PROGRESS.md's 2026-07-13
+## S4-vs-S7 analysis for the deferred, more principled version)
+## ---------------------------------------------------------------------
+
+#' Display name per source, used as a constant \code{source} column value
+#' @keywords internal
+.dtiCombineSourceLabel <- c(chembl = "ChEMBL", pubchem = "PubChem",
+                            dgidb = "DGIdb", opentargets = "OpenTargets",
+                            ttd = "TTD")
+
+#' Canonical combined column -> per-source column name.
+#'
+#' \code{NA} means that source has no equivalent column at all (not that
+#' the column exists but is empty) - currently only ChEMBL's
+#' \code{gene_symbol} (ChEMBL's REST output is UniProt-accession-keyed,
+#' \code{UniProt_ID}, with no gene symbol column). See
+#' \code{\link{combineDrugTargets}}'s \code{resolveGeneSymbol} argument
+#' for filling this in on request rather than always paying for it.
+#' \code{query_id} and \code{source} are handled separately in
+#' \code{\link{combineDrugTargets}} (query_id preferably from
+#' \code{queryDrugTargets()}'s \code{"resolved"} attribute so it reflects
+#' the user's *original* query token rather than each source's own,
+#' possibly-translated \code{QueryIDs}; source is always a constant, see
+#' \code{\link{.dtiCombineSourceLabel}}, not looked up per row).
+#' @keywords internal
+.dtiCombineColMap <- list(
+    gene_symbol = c(chembl = NA, pubchem = "gene_symbol", dgidb = "gene_name",
+                    opentargets = "approved_symbol", ttd = "GeneName"),
+    drug_name   = c(chembl = "Drug_Name", pubchem = "drug_name", dgidb = "drug_name",
+                    opentargets = "drug_name", ttd = "DrugName"),
+    action      = c(chembl = "Action_Type", pubchem = "activity_name",
+                    dgidb = "interaction_types", opentargets = "action_type",
+                    ttd = "MOA")
+)
+
+#' Combine \code{\link{queryDrugTargets}} results into one table
+#'
+#' Row-binds a small set of canonical columns across whichever sources
+#' are present in \code{results}, mapping each source's own column names
+#' to a shared vocabulary (see \code{\link{.dtiCombineColMap}}). This is
+#' deliberately just column-name alignment and row append - not
+#' deduplication, not cross-source identity resolution (the same
+#' compound or target appearing under different native IDs in different
+#' sources is not merged). A more principled harmonized container (an S4
+#' class, analysed but not yet built - see \code{PROGRESS.md}'s
+#' 2026-07-13 section) is a separate, deferred phase; this function is
+#' the "just append them" version to use in the meantime, and every
+#' source's full original data remains available unchanged in
+#' \code{results} itself.
+#'
+#' \code{action} is a best-effort common label, not a perfectly aligned
+#' concept: ChEMBL's \code{Action_Type} and Open Targets'
+#' \code{action_type} are categorical mechanism labels (e.g.
+#' \code{"INHIBITOR"}); TTD's \code{MOA} and DGIdb's
+#' \code{interaction_types} are similar; PubChem's \code{activity_name}
+#' is a bioactivity *assay endpoint type* (e.g. \code{"IC50"}, not a
+#' mechanism label at all - PubChem has no mechanism-of-action concept).
+#'
+#' @param results a named list as returned by \code{\link{queryDrugTargets}}
+#'   (or any similarly-shaped named list of per-source data.frames -
+#'   \code{query_id} falls back to each source's own \code{QueryIDs}
+#'   column when \code{results} has no \code{"resolved"} attribute).
+#' @param columns character vector of canonical columns to include, any
+#'   of \code{"query_id"}, \code{"gene_symbol"}, \code{"drug_name"},
+#'   \code{"action"}, \code{"source"} (default: all five).
+#' @param resolveGeneSymbol logical(1); if \code{TRUE}, fill ChEMBL's
+#'   otherwise-\code{NA} \code{gene_symbol} by resolving its
+#'   \code{UniProt_ID} column via \code{\link{getUniprotMapping}} (one
+#'   extra network round trip - default \code{FALSE} so
+#'   \code{combineDrugTargets()} is network-free by default when
+#'   \code{results} already has everything it needs). Only has an effect
+#'   when \code{"gene_symbol"} is also in \code{columns}.
+#' @param taxId integer(1) passed to \code{\link{getUniprotMapping}} when
+#'   \code{resolveGeneSymbol = TRUE} (default 9606L = human).
+#' @return A single \code{data.frame} with columns \code{columns}, one
+#'   row per row of every source in \code{results}.
+#' @examples
+#' \donttest{
+#'   res <- queryDrugTargets(list(molType = "gene", idType = "symbol", ids = "FGFR1"),
+#'                           sources = c("chembl", "pubchem", "dgidb", "opentargets"))
+#'   combineDrugTargets(res)
+#'   combineDrugTargets(res, resolveGeneSymbol = TRUE)  ## fills ChEMBL's gene_symbol too
+#' }
+#' @seealso \code{\link{queryDrugTargets}}
+#' @export
+combineDrugTargets <- function(results,
+                               columns = c("query_id", "gene_symbol", "drug_name",
+                                          "action", "source"),
+                               resolveGeneSymbol = FALSE, taxId = 9606L) {
+    columns <- match.arg(columns, c("query_id", "gene_symbol", "drug_name",
+                                    "action", "source"), several.ok = TRUE)
+    if (length(results) == 0L)
+        return(as.data.frame(stats::setNames(
+            replicate(length(columns), character(0), simplify = FALSE), columns)))
+
+    unsupported <- setdiff(names(results), names(.dtiCombineSourceLabel))
+    if (length(unsupported))
+        stop("combineDrugTargets() does not recognise source(s): ",
+             paste(unsupported, collapse = ", "), ". 'results' must be named ",
+             "using the same source keys queryDrugTargets() uses: ",
+             paste(names(.dtiCombineSourceLabel), collapse = ", "), ".")
+
+    resolvedAttr <- attr(results, "resolved")
+    needCols <- union(columns, if (isTRUE(resolveGeneSymbol)) "gene_symbol" else character(0))
+
+    rows <- lapply(names(results), function(src) {
+        df <- results[[src]]
+        out <- data.frame(row.names = seq_len(nrow(df)))
+        out$.source <- .dtiCombineSourceLabel[[src]]  ## always tracked internally
+        if ("query_id" %in% needCols) {
+            out$query_id <- if (!is.null(resolvedAttr[[src]])) {
+                orig <- names(resolvedAttr[[src]])
+                names(orig) <- unname(resolvedAttr[[src]])
+                unname(orig[df$QueryIDs])
+            } else {
+                df$QueryIDs
+            }
+        }
+        for (col in intersect(needCols, names(.dtiCombineColMap))) {
+            srcCol <- .dtiCombineColMap[[col]][[src]]
+            if (!is.na(srcCol) && !srcCol %in% names(df))
+                stop("combineDrugTargets(): expected column '", srcCol, "' not found ",
+                     "in results$", src, " - is this really a ", src, " result from ",
+                     "queryDrugTargets()?")
+            out[[col]] <- if (is.na(srcCol)) NA_character_ else as.character(df[[srcCol]])
+        }
+        out
+    })
+    out <- do.call(rbind, rows)
+    rownames(out) <- NULL
+
+    if (isTRUE(resolveGeneSymbol) && "chembl" %in% names(results)) {
+        ## rows for a given source were rbound in results$chembl's own row
+        ## order, so the ChEMBL block's positions line up 1:1 with
+        ## results$chembl$UniProt_ID - no id-matching needed, just a
+        ## direct positional assignment (length-safe, unlike an is.na()
+        ## mask which could silently misalign if some other column
+        ## already happened to be NA for a non-ChEMBL reason).
+        chemblIdx <- which(out$.source == "ChEMBL")
+        if (length(chemblIdx) > 0L) {
+            upIds <- results$chembl$UniProt_ID
+            resolved <- .resolveGeneIds(stats::na.omit(unique(upIds)),
+                                        idType = "uniprot", to = "symbol", taxId = taxId)
+            out$gene_symbol[chemblIdx] <- unname(resolved[upIds])
+        }
+    }
+
+    if ("source" %in% columns) out$source <- out$.source
+    out$.source <- NULL
+    out[, columns, drop = FALSE]
+}

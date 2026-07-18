@@ -188,3 +188,101 @@ test_that("queryDrugTargets returns an empty list when nothing resolves for the 
                             sources = "chembl")
     expect_length(res, 0L)
 })
+
+## --- combineDrugTargets() --------------------------------------------------
+
+## Synthetic queryDrugTargets()-shaped fixture, network-free: real column
+## names for every source, tiny data. Mimics starting from an Ensembl ID
+## that got resolved differently per source (uniprot for chembl, symbol
+## for the rest) - exercises the "resolved" attribute's original-query-id
+## backfill, not just a same-string passthrough.
+.combineFixture <- function() {
+    res <- list(
+        chembl = data.frame(
+            QueryIDs = "P11362", chembl_id = "CHEMBL1421", Drug_Name = "DASATINIB",
+            MOA = "Tyrosine-protein kinase ABL inhibitor", Action_Type = "INHIBITOR",
+            Max_Phase = 4, First_Approval = 2006, ChEMBL_TID = "CHEMBL1862",
+            UniProt_ID = "P11362", Desc = "d", Organism = "Homo sapiens",
+            Mesh_Indication = NA, stringsAsFactors = FALSE),
+        pubchem = data.frame(
+            QueryIDs = "FGFR1", gene_symbol = "FGFR1", geneid = "2260",
+            target_accession = "P11362", cid = "51039095", drug_name = "AZD4547",
+            canonical_smiles = "x", activity_name = "IC50", activity_value_uM = 0.0002,
+            assay_name = "a", db = "PubChem", stringsAsFactors = FALSE),
+        dgidb = data.frame(
+            QueryIDs = "FGFR1", gene_name = "FGFR1", drug_name = "SUNITINIB",
+            drug_concept_id = "chembl:CHEMBL535", drug_approved = TRUE,
+            interaction_types = "inhibitor", directionality = "INHIBITORY",
+            interaction_score = 1.2, evidence_score = 3.4, sources = "ChEMBL",
+            db = "DGIdb", stringsAsFactors = FALSE),
+        opentargets = data.frame(
+            QueryIDs = "FGFR1", ensembl_id = "ENSG00000077782", approved_symbol = "FGFR1",
+            drug_id = "CHEMBL1201733", drug_name = "PAZOPANIB", drug_type = "Small molecule",
+            max_clinical_stage = 4, mechanism_of_action = "FGFR inhibitor",
+            action_type = "INHIBITOR", disease_id = NA, disease_name = NA,
+            stringsAsFactors = FALSE),
+        ttd = data.frame(
+            QueryIDs = "FGFR1", TargetID = "T47101", GeneName = "FGFR1",
+            Uniprot = "FGFR1_HUMAN", TargetType = "Successful", DrugID = "D00ABO",
+            DrugName = "KW-2449", Smiles = "x", Highest_status = "Phase 1", MOA = "Inhibitor",
+            stringsAsFactors = FALSE)
+    )
+    attr(res, "resolved") <- list(
+        chembl = c(ENSG00000077782 = "P11362"),
+        pubchem = c(ENSG00000077782 = "FGFR1"),
+        dgidb = c(ENSG00000077782 = "FGFR1"),
+        opentargets = c(ENSG00000077782 = "FGFR1"),
+        ttd = c(ENSG00000077782 = "FGFR1")
+    )
+    res
+}
+
+test_that("combineDrugTargets maps every source's columns correctly and backfills the original query_id", {
+    combined <- combineDrugTargets(.combineFixture())
+    expect_equal(nrow(combined), 5L)
+    expect_identical(unique(combined$query_id), "ENSG00000077782")  ## not each source's own resolved id
+    expect_identical(combined$gene_symbol[combined$source == "ChEMBL"], NA_character_)
+    expect_identical(combined$gene_symbol[combined$source == "PubChem"], "FGFR1")
+    expect_identical(combined$drug_name[combined$source == "ChEMBL"], "DASATINIB")
+    expect_identical(combined$drug_name[combined$source == "TTD"], "KW-2449")
+    expect_identical(combined$action[combined$source == "DGIdb"], "inhibitor")
+    expect_setequal(combined$source, c("ChEMBL", "PubChem", "DGIdb", "OpenTargets", "TTD"))
+})
+
+test_that("combineDrugTargets falls back to each source's own QueryIDs when there is no 'resolved' attribute", {
+    fixture <- .combineFixture()
+    attr(fixture, "resolved") <- NULL
+    combined <- combineDrugTargets(fixture)
+    expect_identical(combined$query_id[combined$source == "ChEMBL"], "P11362")
+    expect_identical(combined$query_id[combined$source == "PubChem"], "FGFR1")
+})
+
+test_that("combineDrugTargets respects a custom columns subset", {
+    combined <- combineDrugTargets(.combineFixture(), columns = c("drug_name", "source"))
+    expect_identical(names(combined), c("drug_name", "source"))
+})
+
+test_that("combineDrugTargets(resolveGeneSymbol=TRUE) fills ChEMBL's gene_symbol without touching other sources", {
+    skip_if_offline_dti()
+    combined <- combineDrugTargets(.combineFixture(), resolveGeneSymbol = TRUE)
+    expect_identical(combined$gene_symbol[combined$source == "ChEMBL"], "FGFR1")
+    expect_identical(combined$gene_symbol[combined$source == "PubChem"], "FGFR1")
+})
+
+test_that("combineDrugTargets returns an empty, correctly-columned data.frame for an empty results list", {
+    empty <- combineDrugTargets(list())
+    expect_equal(nrow(empty), 0L)
+    expect_identical(names(empty), c("query_id", "gene_symbol", "drug_name", "action", "source"))
+})
+
+test_that("combineDrugTargets errors clearly on an unrecognised source name", {
+    fixture <- .combineFixture()
+    names(fixture)[1] <- "notarealsource"
+    expect_error(combineDrugTargets(fixture), "does not recognise source")
+})
+
+test_that("combineDrugTargets errors clearly when an expected column is missing from a source's data", {
+    fixture <- .combineFixture()
+    fixture$chembl$Drug_Name <- NULL
+    expect_error(combineDrugTargets(fixture), "expected column 'Drug_Name' not found")
+})
