@@ -220,7 +220,17 @@ downloadTTD <- function(rerun = TRUE, config = genConfig()) {
 #'
 #' @param rerun logical(1); passed to \code{\link{downloadTTD}}, and
 #'   also controls whether an existing cached SQLite for the current
-#'   version is reused (\code{FALSE}) or rebuilt (\code{TRUE}).
+#'   version is reused (\code{FALSE}, the default here) or rebuilt
+#'   (\code{TRUE}). Deliberately defaults to \code{FALSE}, unlike most
+#'   other \code{download*()}/\code{build*()} functions in this package
+#'   (which default to \code{rerun = TRUE}): TTD publishes a new release
+#'   only rarely, and a bare \code{buildTtdDb()} call is routine in
+#'   examples, tests, and vignette chunks - defaulting to \code{TRUE}
+#'   there meant every such run silently rebuilt and re-cached the
+#'   database from scratch, accumulating redundant copies over time
+#'   with no benefit (found and cleaned up in practice - see
+#'   \code{PROGRESS.md}). Pass \code{rerun = TRUE} explicitly to force
+#'   a fresh check for a new TTD release.
 #' @param config list as returned by \code{genConfig()}.
 #' @return character(1) local file path to the SQLite database.
 #' @examples
@@ -230,7 +240,7 @@ downloadTTD <- function(rerun = TRUE, config = genConfig()) {
 #' }
 #' @seealso \code{\link{downloadTTD}}, \code{\link{ttdTargetAnnot}}
 #' @export
-buildTtdDb <- function(rerun = TRUE, config = genConfig()) {
+buildTtdDb <- function(rerun = FALSE, config = genConfig()) {
     paths   <- downloadTTD(rerun = rerun, config = config)
     version <- .ttdVersion(paths$targets)
     if (is.na(version)) version <- format(Sys.Date(), "%Y%m%d")
