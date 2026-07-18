@@ -61,5 +61,7 @@ export( "genConfig",
 
     "downloadUnichemTables",
     "buildUnichemDb",
-    "getUnichemMapping"
+    "getUnichemMapping",
+
+    "queryDrugTargets"
 )
