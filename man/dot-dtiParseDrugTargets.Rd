@@ -5,7 +5,7 @@
 \title{Parse one drug object into a tidy data.frame, applying the requested
 row expansion.}
 \usage{
-.dtiParseDrugTargets(drg, chemblId, expand)
+.dtiParseDrugTargets(drg, chemblId, expand, wantAll = FALSE)
 }
 \arguments{
 \item{drg}{list; the GraphQL \code{drug} object (may be NULL).}
@@ -13,6 +13,9 @@ row expansion.}
 \item{chemblId}{character(1); the ChEMBL ID this object was queried with.}
 
 \item{expand}{character(1); one of "target", "mechanism".}
+
+\item{wantAll}{logical(1); also flatten the extra drug/target fields
+requested by \code{\link{.dtiTargetSelection}(wantAll = TRUE)}.}
 }
 \value{
 data.frame with columns \code{.dtiTargetCols}; empty if no rows.

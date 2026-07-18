@@ -10,7 +10,8 @@ getOpenTargetsDrugs(
   expand = c("mechanism", "disease", "drug"),
   chunkSize = 25L,
   pause = 0.1,
-  verbose = FALSE
+  verbose = FALSE,
+  fields = "core"
 )
 }
 \arguments{
@@ -28,6 +29,17 @@ modest so per-request payloads and server load stay reasonable).}
 \item{pause}{numeric(1) seconds to sleep between requests.}
 
 \item{verbose}{logical(1) progress messages.}
+
+\item{fields}{\code{"core"} (default), \code{"all"}, or a character
+vector of column names. \code{"core"} returns exactly the curated
+columns above (unchanged from previous versions). \code{"all"} also
+returns further fields Open Targets' GraphQL API exposes on the
+matched \code{Target}/\code{Drug} records, prefixed \code{target.}/
+\code{drug.} (e.g. \code{target.biotype}, \code{drug.description}) -
+requested in the same query (GraphQL only returns what's asked for),
+so \code{fields = "all"} costs a wider response, not an extra
+request. A character vector requests just those extra columns. See
+\code{\link{listDrugTargetFields}} to browse what's available.}
 }
 \value{
 A \code{data.frame} with columns \code{ensembl_id},

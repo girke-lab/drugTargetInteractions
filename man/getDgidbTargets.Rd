@@ -4,7 +4,13 @@
 \alias{getDgidbTargets}
 \title{Retrieve DGIdb target interactions for one or more drugs}
 \usage{
-getDgidbTargets(drugs, pageSize = 500L, maxRows = 5000L, verbose = FALSE)
+getDgidbTargets(
+  drugs,
+  pageSize = 500L,
+  maxRows = 5000L,
+  verbose = FALSE,
+  fields = "core"
+)
 }
 \arguments{
 \item{drugs}{character vector of drug names (case-insensitive;
@@ -15,6 +21,10 @@ unmatched names simply contribute no rows, no error).}
 \item{maxRows}{integer(1) cap on total returned rows (default 5000).}
 
 \item{verbose}{logical(1); if TRUE, message progress per chunk/page.}
+
+\item{fields}{\code{"core"}, \code{"all"}, or a character vector of
+column names, matching \code{\link{getDgidbDrugs}}'s \code{fields}
+argument.}
 }
 \value{
 A \code{data.frame}; see \code{\link{getDgidbDrugs}} for columns.

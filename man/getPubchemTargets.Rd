@@ -10,7 +10,8 @@ getPubchemTargets(
   keepActivities = .dtiPotencyEndpoints,
   maxCidsPerBatch = 50L,
   pause = 0.2,
-  verbose = FALSE
+  verbose = FALSE,
+  fields = "core"
 )
 }
 \arguments{
@@ -30,6 +31,11 @@ request (default 50).}
 \item{pause}{numeric(1) seconds between name-resolution requests.}
 
 \item{verbose}{logical(1) progress messages.}
+
+\item{fields}{\code{"core"} (default), \code{"all"}, or a character
+vector of column names, matching \code{\link{getPubchemDrugs}}'s
+\code{fields} argument (same \code{activity.*}-prefixed extra
+columns from the compound-centric \code{assaysummary} table).}
 }
 \value{
 A \code{data.frame} with columns \code{cid}, \code{drug_name},

@@ -10,7 +10,8 @@
   pageSize = 500L,
   maxRows = 5000L,
   chunkSize = 300L,
-  verbose = FALSE
+  verbose = FALSE,
+  wantAll = FALSE
 )
 }
 \arguments{
@@ -26,6 +27,9 @@
 \item{chunkSize}{integer(1) max names sent per request.}
 
 \item{verbose}{logical(1); if TRUE, message progress per chunk/page.}
+
+\item{wantAll}{logical(1); request \code{\link{.dtiDgidbSelection}(wantAll
+= TRUE)}'s wider field set instead of the curated default.}
 }
 \value{
 list of raw \code{Interaction} GraphQL nodes (unparsed).

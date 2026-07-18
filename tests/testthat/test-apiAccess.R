@@ -447,3 +447,112 @@ test_that(".dtiParseTargetDrugs/.dtiParseDrugTargets expand rows per `expand`, n
     expect_identical(byMech2$approved_symbol, "PTGS1; PTGS2")
     expect_identical(.dtiParseDrugTargets(NULL, "x", "target"), .dtiEmptyTargets())
 })
+
+## ------------------------------------------------------------------
+## fields = "core"/"all"/<character vector> shared infrastructure
+## ------------------------------------------------------------------
+
+test_that(".dtiSelectFields narrows to core/all/custom columns, no network", {
+    wide <- data.frame(QueryIDs = "Q1", chembl_id = "C1", Drug_Name = "ASPIRIN",
+                       extra.foo = "x", extra.bar = "y", stringsAsFactors = FALSE)
+    core <- c("QueryIDs", "chembl_id", "Drug_Name")
+
+    expect_identical(.dtiSelectFields(wide, "core", core), wide[, core])
+    expect_identical(.dtiSelectFields(wide, "all", core), wide)
+
+    sub <- .dtiSelectFields(wide, c("Drug_Name", "extra.foo"), core)
+    expect_identical(names(sub), c("QueryIDs", "Drug_Name", "extra.foo"))
+
+    expect_error(.dtiSelectFields(wide, "NOT_A_FIELD", core),
+                "Unknown field")
+})
+
+test_that(".dtiFlattenRecord flattens scalars, nested objects and arrays, no network", {
+    rec <- list(
+        pref_name = "ASPIRIN",
+        max_phase = 4,
+        molecule_properties = list(alogp = 1.2, hba = 3),
+        target_components = list(
+            list(accession = "P00519", component_type = "PROTEIN"),
+            list(accession = "P00520", component_type = "PROTEIN"))
+    )
+    flat <- .dtiFlattenRecord(rec, "molecule")
+    expect_identical(flat[["molecule.pref_name"]], "ASPIRIN")
+    expect_identical(flat[["molecule.max_phase"]], "4")
+    expect_identical(flat[["molecule.molecule_properties.alogp"]], "1.2")
+    expect_identical(flat[["molecule.target_components.accession"]],
+                     "P00519; P00520")
+    expect_identical(.dtiFlattenRecord(NULL, "x"), list())
+    expect_identical(.dtiFlattenRecord(list(), "x"), list())
+})
+
+test_that(".dtiFlattenGrouped collapses scalar fields across several records, no network", {
+    recs <- list(list(mesh_id = "D1", mesh_heading = "Pain"),
+                list(mesh_id = "D2", mesh_heading = "Fever"))
+    flat <- .dtiFlattenGrouped(recs, "indication")
+    expect_identical(flat[["indication.mesh_id"]], "D1; D2")
+    expect_identical(flat[["indication.mesh_heading"]], "Pain; Fever")
+    expect_identical(.dtiFlattenGrouped(list(), "x"), list())
+})
+
+test_that("listDrugTargetFields returns the documented static column list, no network", {
+    markers <- list(chembl = "QueryIDs", pubchem = "gene_symbol",
+                    dgidb = "gene_name", opentargets = "ensembl_id")
+    for (src in names(markers)) {
+        f <- listDrugTargetFields(src)
+        expect_type(f, "character")
+        expect_true(length(f) > 10L)
+        expect_true(markers[[src]] %in% f)
+    }
+    expect_error(listDrugTargetFields("not_a_source"))
+})
+
+## ------------------------------------------------------------------
+## fields = "all" on the live get*DrugTarget() source functions
+## ------------------------------------------------------------------
+
+test_that("getChemblDrugTarget(fields = 'all') adds source-prefixed columns", {
+    skip_if_offline_dti()
+    core <- getChemblDrugTarget(list(molType = "cmp", idType = "chembl_id",
+                                     ids = "CHEMBL1421"))
+    all  <- getChemblDrugTarget(list(molType = "cmp", idType = "chembl_id",
+                                     ids = "CHEMBL1421"), fields = "all")
+    expect_true(all(names(core) %in% names(all)))
+    expect_true(ncol(all) > ncol(core))
+    expect_true("molecule.molecule_type" %in% names(all))
+
+    sub <- getChemblDrugTarget(list(molType = "cmp", idType = "chembl_id",
+                                    ids = "CHEMBL1421"),
+                               fields = c("Drug_Name", "mechanism.mechanism_comment"))
+    expect_identical(names(sub), c("QueryIDs", "Drug_Name",
+                                   "mechanism.mechanism_comment"))
+})
+
+test_that("getPubchemDrugTarget(fields = 'all') adds activity.*-prefixed columns", {
+    skip_if_offline_dti()
+    core <- getPubchemDrugs("FGFR1", maxCids = 5L)
+    all  <- getPubchemDrugs("FGFR1", maxCids = 5L, fields = "all")
+    expect_true(all(names(core) %in% names(all)))
+    expect_true(ncol(all) > ncol(core))
+    expect_true(any(grepl("^activity\\.", names(all))))
+})
+
+test_that("getDgidbDrugTarget(fields = 'all') adds drug./gene./source.-prefixed columns", {
+    skip_if_offline_dti()
+    core <- getDgidbTargets("imatinib")
+    all  <- getDgidbTargets("imatinib", fields = "all")
+    expect_true(all(names(core) %in% names(all)))
+    expect_true(ncol(all) > ncol(core))
+    expect_true("drug.id" %in% names(all))
+    expect_true("source.citation" %in% names(all))
+})
+
+test_that("getOpenTargetsDrugTarget(fields = 'all') adds target./drug.-prefixed columns", {
+    skip_if_offline_dti()
+    core <- getOpenTargetsTargets("aspirin", expand = "target")
+    all  <- getOpenTargetsTargets("aspirin", expand = "target", fields = "all")
+    expect_true(all(names(core) %in% names(all)))
+    expect_true(ncol(all) > ncol(core))
+    expect_true("target.biotype" %in% names(all))
+    expect_true("drug.description" %in% names(all))
+})

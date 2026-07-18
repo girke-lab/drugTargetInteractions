@@ -257,6 +257,207 @@
 
 
 ## ---------------------------------------------------------------------
+## Field-selection infrastructure (shared across all four get*DrugTarget()
+## source functions)
+## ---------------------------------------------------------------------
+## Each source function builds one "wide" data.frame per query containing
+## every field it can cheaply obtain from the underlying API response,
+## then narrows it down via `fields`:
+##   "core"           - today's exact curated columns (default, unchanged
+##                       output, what combineDrugTargets()/queryDrugTargets()
+##                       expect)
+##   "all"            - the full wide data.frame
+##   character vector - QueryIDs plus the requested subset of wide columns
+## `.dtiSelectFields()` implements that narrowing; `.dtiFlattenRecord()`
+## turns one nested JSON record (ChEMBL's REST responses) into flat,
+## dot-prefixed scalar columns for the "all" case.
+
+#' Recursively flatten one parsed JSON record into dot-prefixed scalars
+#'
+#' Scalar fields become \code{<prefix>.<field>}. A nested named list (a
+#' single sub-object, e.g. ChEMBL's \code{molecule_properties}) is
+#' flattened recursively under \code{<prefix>.<field>}. A list of records
+#' (e.g. \code{target_components}, \code{mechanism_refs}) is not recursed
+#' into structurally; instead every scalar sub-field seen across all
+#' elements is collapsed into one semicolon-joined string per
+#' \code{<prefix>.<field>.<subfield>}, mirroring the collapsing idiom
+#' already used for \code{Mesh_Indication} elsewhere in this file (see
+#' \code{.meshFor()}).
+#'
+#' @param rec a parsed JSON record (named list), or \code{NULL}.
+#' @param prefix character(1) prepended to every flattened field name.
+#' @return a named list of scalar values, suitable for
+#'   \code{as.data.frame()}; empty list if \code{rec} is \code{NULL}/empty.
+#' @keywords internal
+.dtiFlattenRecord <- function(rec, prefix) {
+    rec <- rec %||% list()
+    if (length(rec) == 0L) return(list())
+    collapse <- function(x) paste(unique(stats::na.omit(x)), collapse = "; ")
+    isNamedList <- function(x) is.list(x) && !is.null(names(x)) && all(nzchar(names(x)))
+    ## Reduce an arbitrary (possibly further-nested) sub-field value to one
+    ## scalar string - array elements occasionally carry their own nested
+    ## list sub-fields (e.g. ChEMBL's target_component_synonyms inside
+    ## target_components), which a plain as.character() can't handle.
+    scalarize <- function(v) {
+        if (is.null(v) || length(v) == 0L) return(NA_character_)
+        if (is.list(v)) return(paste(unlist(v), collapse = ","))
+        if (length(v) == 1L) as.character(v) else paste(as.character(v), collapse = ",")
+    }
+    out <- list()
+    nms <- names(rec)
+    for (i in seq_along(rec)) {
+        nm <- nms[i]
+        if (is.null(nm) || !nzchar(nm)) next
+        val <- rec[[i]]
+        key <- paste0(prefix, ".", nm)
+        if (is.null(val) || length(val) == 0L) {
+            out[[key]] <- NA_character_
+        } else if (isNamedList(val)) {
+            out <- c(out, .dtiFlattenRecord(val, key))
+        } else if (is.list(val)) {
+            subNames <- unique(unlist(lapply(val, names)))
+            if (is.null(subNames)) {
+                out[[key]] <- collapse(vapply(val, scalarize, character(1)))
+            } else {
+                for (sn in subNames) {
+                    vals <- vapply(val, function(x) scalarize(x[[sn]]), character(1))
+                    out[[paste0(key, ".", sn)]] <- collapse(vals)
+                }
+            }
+        } else {
+            out[[key]] <- if (length(val) == 1L) as.character(val)
+                          else collapse(as.character(val))
+        }
+    }
+    out
+}
+
+#' Flatten several same-shaped records sharing one key into one row
+#'
+#' Unlike \code{\link{.dtiFlattenRecord}} (one JSON record -> one row),
+#' this is for the case where multiple separate API records share the
+#' same query key (e.g. several \code{drug_indication} rows for one
+#' ChEMBL molecule) and need to collapse into a single row the way
+#' \code{Mesh_Indication} already does: every scalar sub-field seen across
+#' \code{recs} is collapsed into one semicolon-joined string per
+#' \code{<prefix>.<field>}.
+#'
+#' @param recs list of parsed JSON records that all share the same key.
+#' @param prefix character(1) prepended to every flattened field name.
+#' @return a named list of scalar values, suitable for
+#'   \code{as.data.frame()}; empty list if \code{recs} is empty.
+#' @keywords internal
+.dtiFlattenGrouped <- function(recs, prefix) {
+    if (length(recs) == 0L) return(list())
+    collapse <- function(x) paste(unique(stats::na.omit(x)), collapse = "; ")
+    subNames <- unique(unlist(lapply(recs, names)))
+    out <- list()
+    for (sn in subNames) {
+        vals <- vapply(recs, function(r) {
+            v <- r[[sn]]
+            if (is.null(v) || length(v) == 0L || is.list(v)) NA_character_
+            else as.character(v)
+        }, character(1))
+        out[[paste0(prefix, ".", sn)]] <- collapse(vals)
+    }
+    out
+}
+
+#' rbind a list of data.frames that may not share the exact same columns
+#'
+#' Plain \code{rbind()} requires identical column sets, but two API
+#' records flattened via \code{\link{.dtiFlattenRecord}} /
+#' \code{\link{.dtiFlattenGrouped}} can differ (a field entirely absent
+#' from one record's JSON, rather than present-but-null, yields no column
+#' for that row; nested arrays with differing sub-fields across elements
+#' behave the same way). Missing columns are filled with \code{NA} before
+#' binding.
+#'
+#' @param dfList list of data.frames (or \code{NULL} entries, dropped).
+#' @return one combined data.frame, or \code{NULL} if \code{dfList} has no
+#'   non-NULL entries.
+#' @keywords internal
+.dtiRbindFill <- function(dfList) {
+    dfList <- Filter(Negate(is.null), dfList)
+    if (length(dfList) == 0L) return(NULL)
+    allNames <- unique(unlist(lapply(dfList, names)))
+    dfList <- lapply(dfList, function(d) {
+        missing <- setdiff(allNames, names(d))
+        for (m in missing) d[[m]] <- NA
+        d[, allNames, drop = FALSE]
+    })
+    do.call(rbind, dfList)
+}
+
+#' Narrow a "wide" (all-fields) data.frame down to the requested columns
+#'
+#' Shared by every get*DrugTarget() function's \code{fields} argument.
+#'
+#' @param wide data.frame with every available column already flattened
+#'   in, including \code{QueryIDs} and \code{coreCols}.
+#' @param fields \code{"core"}, \code{"all"}, or a character vector of
+#'   column names to keep (\code{QueryIDs} is always retained).
+#' @param coreCols character vector; the curated columns/order used when
+#'   \code{fields = "core"}.
+#' @return data.frame, a column subset of \code{wide}.
+#' @keywords internal
+.dtiSelectFields <- function(wide, fields, coreCols) {
+    if (identical(fields, "core")) return(wide[, coreCols, drop = FALSE])
+    if (identical(fields, "all")) return(wide)
+    stopifnot(is.character(fields))
+    unknown <- setdiff(fields, names(wide))
+    if (length(unknown)) {
+        stop("Unknown field(s) requested: ", paste(unknown, collapse = ", "),
+             ". See listDrugTargetFields() for available names.")
+    }
+    keep <- intersect(union("QueryIDs", fields), names(wide))
+    wide[, keep, drop = FALSE]
+}
+
+#' List the fields available from a drug-target source under \code{fields = "all"}
+#'
+#' A quick reference for what \code{getChemblDrugTarget()},
+#' \code{getPubchemDrugTarget()}, \code{getDgidbDrugTarget()} and
+#' \code{getOpenTargetsDrugTarget()} can return when called with
+#' \code{fields = "all"} (or requested individually via
+#' \code{fields = c(...)}). By default this returns a documented,
+#' best-effort list with no network call; pass \code{queryBy} to instead
+#' run a live single-query probe through the matching source function and
+#' report the columns it actually returned (slower, but exact for that
+#' query's shape - useful since some fields only appear for certain
+#' record types, e.g. protein-family ChEMBL targets vs single proteins).
+#'
+#' @param source character(1); one of \code{"chembl"}, \code{"pubchem"},
+#'   \code{"dgidb"}, \code{"opentargets"}.
+#' @param queryBy optional \code{queryBy} list (see
+#'   \code{\link{getChemblDrugTarget}}) to probe live instead of returning
+#'   the static documented list.
+#' @param ... additional arguments passed to the source function when
+#'   \code{queryBy} is supplied (e.g. \code{verbose}).
+#' @return character vector of column names.
+#' @examples
+#' listDrugTargetFields("chembl")
+#' @seealso \code{\link{getChemblDrugTarget}}, \code{\link{getPubchemDrugTarget}},
+#'   \code{\link{getDgidbDrugTarget}}, \code{\link{getOpenTargetsDrugTarget}}
+#' @export
+listDrugTargetFields <- function(source = c("chembl", "pubchem", "dgidb", "opentargets"),
+                                 queryBy = NULL, ...) {
+    source <- match.arg(source)
+    if (!is.null(queryBy)) {
+        fn <- switch(source, chembl = getChemblDrugTarget,
+                     pubchem = getPubchemDrugTarget, dgidb = getDgidbDrugTarget,
+                     opentargets = getOpenTargetsDrugTarget)
+        return(names(fn(queryBy, fields = "all", ...)))
+    }
+    switch(source,
+        chembl      = .dtiChemblAllCols,
+        pubchem     = .dtiPubchemAllCols,
+        dgidb       = .dtiDgidbAllCols,
+        opentargets = .dtiOpenTargetsAllCols)
+}
+
+
+## ---------------------------------------------------------------------
 ## ChEMBL REST access
 ## ---------------------------------------------------------------------
 
@@ -504,13 +705,27 @@ getChemblBioactivities <- function(targetChemblId, standardType = NA,
 #'   modern ones (e.g. \code{"CHEMBL5291677"}). Requests are also
 #'   client-side throttled (see \code{\link{.dtiApiGET}}) to be a polite
 #'   API citizen; ChEMBL does not publish a hard rate limit.
+#' @param fields \code{"core"} (default), \code{"all"}, or a character
+#'   vector of column names. \code{"core"} returns exactly the curated
+#'   columns listed under \code{Value} below (unchanged from previous
+#'   versions). \code{"all"} additionally returns every other field ChEMBL's
+#'   \code{target}/\code{mechanism}/\code{molecule}/\code{drug_indication}
+#'   REST resources provide for the matched records, source-prefixed (e.g.
+#'   \code{target.target_type}, \code{mechanism.mechanism_comment},
+#'   \code{molecule.molecule_properties.alogp}) - no extra API calls, these
+#'   are already fetched and simply no longer discarded. A character
+#'   vector requests just those extra fields (\code{QueryIDs} is always
+#'   included). See \code{\link{listDrugTargetFields}} to browse what's
+#'   available.
 #' @return A \code{data.frame} with columns \code{QueryIDs},
 #'   \code{chembl_id}, \code{Drug_Name}, \code{MOA}, \code{Action_Type},
 #'   \code{Max_Phase}, \code{First_Approval}, \code{ChEMBL_TID},
 #'   \code{UniProt_ID}, \code{Desc}, \code{Organism},
-#'   \code{Mesh_Indication}. Query IDs that return no rows still appear as
-#'   a single row with all other fields \code{NA}, so callers can always
-#'   confirm which of their input IDs were resolved.
+#'   \code{Mesh_Indication} (with \code{fields = "core"}, the default), plus
+#'   further source-prefixed columns when \code{fields} requests more. Query
+#'   IDs that return no rows still appear as a single row with all other
+#'   fields \code{NA}, so callers can always confirm which of their input
+#'   IDs were resolved.
 #' @examples
 #' \donttest{
 #'   ## target -> drug: FGFR1
@@ -519,12 +734,17 @@ getChemblBioactivities <- function(targetChemblId, standardType = NA,
 #'   ## drug -> target: dasatinib
 #'   getChemblDrugTarget(list(molType = "cmp", idType = "chembl_id",
 #'                            ids = "CHEMBL1421"))
+#'   ## every available field
+#'   getChemblDrugTarget(list(molType = "cmp", idType = "chembl_id",
+#'                            ids = "CHEMBL1421"), fields = "all")
 #' }
-#' @seealso \code{\link{drugTargetAnnot}}, \code{\link{getChemblMolecule}}
+#' @seealso \code{\link{drugTargetAnnot}}, \code{\link{getChemblMolecule}},
+#'   \code{\link{listDrugTargetFields}}
 #' @export
 getChemblDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
                                                ids = NULL),
-                                verbose = FALSE, chunkSize = 200L) {
+                                verbose = FALSE, chunkSize = 200L,
+                                fields = "core") {
     if (!identical(names(queryBy), c("molType", "idType", "ids"))) {
         stop(
             "All three list components in 'queryBy' (named: 'molType',",
@@ -539,6 +759,7 @@ getChemblDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
     }
 
     base <- .dtiEndpoints()$chembl
+    wantAll <- !identical(fields, "core")
     emptyCols <- c("QueryIDs", "chembl_id", "Drug_Name", "MOA", "Action_Type",
                   "Max_Phase", "First_Approval", "ChEMBL_TID", "UniProt_ID",
                   "Desc", "Organism", "Mesh_Indication")
@@ -580,21 +801,22 @@ getChemblDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
                               character(1))
             matched <- intersect(compAcc, accessions)
             if (length(matched) == 0L) return(NULL)
+            tFlat <- if (wantAll) .dtiFlattenRecord(t, "target") else list()
             do.call(rbind, lapply(matched, function(acc) {
                 comp <- Filter(function(c) identical(c$accession %||% NA, acc),
                                comps)
                 comp <- if (length(comp)) comp[[1]] else list()
-                data.frame(
+                do.call(data.frame, c(list(
                     QueryIDs         = acc,
                     ChEMBL_TID       = t$target_chembl_id %||% NA_character_,
                     Organism         = t$organism %||% NA_character_,
                     UniProt_ID       = acc,
                     Desc             = comp$component_description %||%
-                                       NA_character_,
-                    stringsAsFactors = FALSE)
+                                       NA_character_), tFlat,
+                    list(stringsAsFactors = FALSE)))
             }))
         })
-        out <- do.call(rbind, rows)
+        out <- .dtiRbindFill(rows)
         if (is.null(out)) {
             out <- data.frame(QueryIDs = character(0), ChEMBL_TID = character(0),
                 Organism = character(0), UniProt_ID = character(0),
@@ -614,25 +836,30 @@ getChemblDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
         if (length(recs) == 0L) return(empty)
         rows <- lapply(recs, function(t) {
             comps <- t$target_components %||% list()
+            tFlat <- if (wantAll) .dtiFlattenRecord(t, "target") else list()
             if (length(comps) == 0L) {
-                return(data.frame(
+                return(do.call(data.frame, c(list(
                     ChEMBL_TID = t$target_chembl_id %||% NA_character_,
                     UniProt_ID = NA_character_,
                     Organism = t$organism %||% NA_character_,
-                    Desc = NA_character_, stringsAsFactors = FALSE))
+                    Desc = NA_character_), tFlat, list(stringsAsFactors = FALSE))))
             }
-            do.call(rbind, lapply(comps, function(c) data.frame(
+            do.call(rbind, lapply(comps, function(c) do.call(data.frame, c(list(
                 ChEMBL_TID = t$target_chembl_id %||% NA_character_,
                 UniProt_ID = c$accession %||% NA_character_,
                 Organism   = t$organism %||% NA_character_,
-                Desc       = c$component_description %||% NA_character_,
-                stringsAsFactors = FALSE)))
+                Desc       = c$component_description %||% NA_character_),
+                tFlat, list(stringsAsFactors = FALSE)))))
         })
-        do.call(rbind, rows)
+        .dtiRbindFill(rows)
     }
 
     ## Mesh indication terms per molecule, collapsed the same way the local
-    ## SQL query's GROUP_CONCAT(mesh_id || ': ' || mesh_heading) does.
+    ## SQL query's GROUP_CONCAT(mesh_id || ': ' || mesh_heading) does. When
+    ## fields != "core", also returns a wide per-molecule frame with every
+    ## drug_indication field (collapsed across a molecule's indications via
+    ## .dtiFlattenGrouped(), since several indications can share one
+    ## molecule).
     .meshFor <- function(moleculeChemblIds) {
         moleculeChemblIds <- unique(stats::na.omit(moleculeChemblIds))
         out <- stats::setNames(rep(NA_character_, length(moleculeChemblIds)),
@@ -641,7 +868,7 @@ getChemblDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
                              "molecule_chembl_id__in", moleculeChemblIds,
                              "drug_indications", chunkSize = chunkSize,
                              verbose = verbose)
-        if (length(recs) == 0L) return(out)
+        if (length(recs) == 0L) return(list(mesh = out, wide = NULL))
         df <- do.call(rbind, lapply(recs, function(i) data.frame(
             molecule_chembl_id = i$molecule_chembl_id %||% NA_character_,
             mesh = if (!is.null(i$mesh_id) && !is.null(i$mesh_heading))
@@ -650,7 +877,17 @@ getChemblDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
         agg <- tapply(df$mesh, df$molecule_chembl_id,
                      function(x) paste(unique(stats::na.omit(x)), collapse = "; "))
         out[names(agg)] <- agg
-        out
+        wide <- NULL
+        if (wantAll) {
+            byMol <- split(recs, vapply(recs, function(i)
+                i$molecule_chembl_id %||% NA_character_, character(1)))
+            wide <- .dtiRbindFill(lapply(names(byMol), function(mid) {
+                do.call(data.frame, c(list(chembl_id = mid),
+                    .dtiFlattenGrouped(byMol[[mid]], "indication"),
+                    list(stringsAsFactors = FALSE)))
+            }))
+        }
+        list(mesh = out, wide = wide)
     }
 
     ## drug_mechanism equivalent. Batched via <field>__in; the returned
@@ -662,13 +899,16 @@ getChemblDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
                              ids, "mechanisms", chunkSize = chunkSize,
                              verbose = verbose)
         if (length(recs) == 0L) return(NULL)
-        do.call(rbind, lapply(recs, function(m) data.frame(
-            chembl_id        = m$molecule_chembl_id %||% NA_character_,
-            ChEMBL_TID       = m$target_chembl_id   %||% NA_character_,
-            MOA              = m$mechanism_of_action %||% NA_character_,
-            Action_Type      = m$action_type        %||% NA_character_,
-            Max_Phase        = as.numeric(m$max_phase %||% NA),
-            stringsAsFactors = FALSE)))
+        .dtiRbindFill(lapply(recs, function(m) {
+            mFlat <- if (wantAll) .dtiFlattenRecord(m, "mechanism") else list()
+            do.call(data.frame, c(list(
+                chembl_id        = m$molecule_chembl_id %||% NA_character_,
+                ChEMBL_TID       = m$target_chembl_id   %||% NA_character_,
+                MOA              = m$mechanism_of_action %||% NA_character_,
+                Action_Type      = m$action_type        %||% NA_character_,
+                Max_Phase        = as.numeric(m$max_phase %||% NA)), mFlat,
+                list(stringsAsFactors = FALSE)))
+        }))
     }
 
     if (isTarget) {
@@ -688,10 +928,24 @@ getChemblDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
     drugNames <- getChemblMolecule(unique(out$chembl_id), chunkSize = chunkSize)
     out <- merge(out, drugNames[, c("chembl_id", "pref_name", "first_approval")],
                 by = "chembl_id", all.x = TRUE)
-    mesh <- .meshFor(unique(out$chembl_id))
-    out$Mesh_Indication <- unname(mesh[out$chembl_id])
+    meshRes <- .meshFor(unique(out$chembl_id))
+    out$Mesh_Indication <- unname(meshRes$mesh[out$chembl_id])
     names(out)[names(out) == "pref_name"] <- "Drug_Name"
     names(out)[names(out) == "first_approval"] <- "First_Approval"
+
+    if (wantAll) {
+        if (!is.null(meshRes$wide))
+            out <- merge(out, meshRes$wide, by = "chembl_id", all.x = TRUE)
+        molRecs <- .dtiBatchGET(paste0(base, "/molecule.json"),
+                                "molecule_chembl_id__in", unique(out$chembl_id),
+                                "molecules", chunkSize = chunkSize, verbose = verbose)
+        if (length(molRecs) > 0L) {
+            molWide <- .dtiRbindFill(lapply(molRecs, function(rec) do.call(data.frame,
+                c(list(chembl_id = rec$molecule_chembl_id %||% NA_character_),
+                  .dtiFlattenRecord(rec, "molecule"), list(stringsAsFactors = FALSE)))))
+            out <- merge(out, molWide, by = "chembl_id", all.x = TRUE)
+        }
+    }
 
     ## Unmatched query IDs still surface as an all-NA row, rather than
     ## silently vanishing, mirroring drugTargetAnnot()'s QueryIDs handling.
@@ -701,10 +955,62 @@ getChemblDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
         extra$QueryIDs <- unmatched
         out <- rbind(out, extra)
     }
-    out <- out[order(match(out$QueryIDs, queryBy$ids)), emptyCols]
+    out <- out[order(match(out$QueryIDs, queryBy$ids)), , drop = FALSE]
     rownames(out) <- NULL
-    out
+    .dtiSelectFields(out, fields, emptyCols)
 }
+
+#' Documented, best-effort column list for \code{listDrugTargetFields("chembl")}
+#'
+#' The actual \code{fields = "all"} output of \code{\link{getChemblDrugTarget}}
+#' depends on exactly what ChEMBL's REST API returns for the matched
+#' records, so this is a reference list rather than a guarantee; pass
+#' \code{queryBy} to \code{\link{listDrugTargetFields}} for the exact
+#' columns of a given query.
+#' @keywords internal
+.dtiChemblAllCols <- c(
+    "QueryIDs", "chembl_id", "Drug_Name", "MOA", "Action_Type", "Max_Phase",
+    "First_Approval", "ChEMBL_TID", "UniProt_ID", "Desc", "Organism",
+    "Mesh_Indication",
+    "target.target_chembl_id", "target.pref_name", "target.organism",
+    "target.target_type", "target.tax_id", "target.species_group_flag",
+    "target.target_components.accession",
+    "target.target_components.component_description",
+    "target.target_components.component_type",
+    "target.target_components.relationship",
+    "target.cross_references.xref_id", "target.cross_references.xref_name",
+    "target.cross_references.xref_src",
+    "mechanism.molecule_chembl_id", "mechanism.target_chembl_id",
+    "mechanism.mechanism_of_action", "mechanism.action_type",
+    "mechanism.mechanism_comment", "mechanism.selectivity_comment",
+    "mechanism.binding_site_comment", "mechanism.direct_interaction",
+    "mechanism.disease_efficacy", "mechanism.max_phase",
+    "mechanism.record_id", "mechanism.site_id", "mechanism.variant_sequence",
+    "mechanism.mechanism_refs.ref_id", "mechanism.mechanism_refs.ref_type",
+    "mechanism.mechanism_refs.ref_url",
+    "molecule.pref_name", "molecule.molecule_type", "molecule.max_phase",
+    "molecule.first_approval", "molecule.first_in_class", "molecule.prodrug",
+    "molecule.oral", "molecule.parenteral", "molecule.topical",
+    "molecule.natural_product", "molecule.polymer_flag",
+    "molecule.black_box_warning", "molecule.availability_type",
+    "molecule.indication_class", "molecule.usan_stem", "molecule.usan_year",
+    "molecule.withdrawn_flag",
+    "molecule.molecule_structures.canonical_smiles",
+    "molecule.molecule_structures.standard_inchi",
+    "molecule.molecule_structures.standard_inchi_key",
+    "molecule.molecule_properties.full_mwt",
+    "molecule.molecule_properties.alogp",
+    "molecule.molecule_properties.hba", "molecule.molecule_properties.hbd",
+    "molecule.molecule_properties.psa", "molecule.molecule_properties.rtb",
+    "molecule.molecule_properties.qed_weighted",
+    "molecule.molecule_properties.aromatic_rings",
+    "molecule.molecule_properties.heavy_atoms",
+    "molecule.molecule_properties.num_ro5_violations",
+    "molecule.molecule_synonyms.molecule_synonym",
+    "molecule.molecule_synonyms.syn_type",
+    "indication.mesh_id", "indication.mesh_heading", "indication.efo_id",
+    "indication.efo_term", "indication.max_phase_for_ind"
+)
 
 
 ## ---------------------------------------------------------------------
@@ -795,11 +1101,19 @@ getChemblDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
 #'   \code{Cell} list).
 #' @param keepActivities character vector of Activity Name values to
 #'   keep, or \code{NULL} to keep all.
+#' @param keepAllCols logical(1); if \code{TRUE}, also attach every other
+#'   column present in the raw concise/assaysummary table (sanitized,
+#'   \code{activity.}-prefixed), not just the curated 6 - used by
+#'   \code{fields != "core"} in \code{\link{getPubchemDrugs}}/
+#'   \code{\link{getPubchemTargets}}. No extra API calls: the full table
+#'   is already fetched, this just stops discarding columns from it.
 #' @return data.frame with columns \code{CID}, \code{TargetAccession},
 #'   \code{TargetGeneID}, \code{ActivityName}, \code{ActivityValueuM},
-#'   \code{AssayName}.
+#'   \code{AssayName}, plus \code{activity.*} columns when
+#'   \code{keepAllCols = TRUE}.
 #' @keywords internal
-.dtiPubchemFilterRows <- function(cols, rows, keepActivities = .dtiPotencyEndpoints) {
+.dtiPubchemFilterRows <- function(cols, rows, keepActivities = .dtiPotencyEndpoints,
+                                  keepAllCols = FALSE) {
     cols <- vapply(cols, function(x) x, character(1))
     idx <- stats::setNames(seq_along(cols), cols)
     get <- function(cell, name) {
@@ -808,6 +1122,7 @@ getChemblDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
         v <- cell[[i]]
         if (is.null(v) || identical(v, "")) NA_character_ else as.character(v)
     }
+    sanitized <- make.unique(gsub("^_|_$", "", gsub("[^A-Za-z0-9]+", "_", cols)), sep = "_")
     recs <- lapply(rows, function(rw) {
         cell <- rw$Cell %||% list()
         outcome <- get(cell, "Activity Outcome")
@@ -816,14 +1131,22 @@ getChemblDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
         if (!is.null(keepActivities) && (is.na(aname) || !(aname %in% keepActivities))) return(NULL)
         val <- suppressWarnings(as.numeric(get(cell, "Activity Value [uM]")))
         if (is.na(val)) return(NULL)
-        data.frame(
+        base <- list(
             CID              = get(cell, "CID"),
             TargetAccession  = get(cell, "Target Accession"),
             TargetGeneID     = get(cell, "Target GeneID"),
             ActivityName     = aname,
             ActivityValueuM  = val,
-            AssayName        = get(cell, "Assay Name"),
-            stringsAsFactors = FALSE)
+            AssayName        = get(cell, "Assay Name"))
+        extra <- list()
+        if (keepAllCols) {
+            for (j in seq_along(cols)) {
+                v <- if (j <= length(cell)) cell[[j]] else NULL
+                extra[[paste0("activity.", sanitized[j])]] <-
+                    if (is.null(v) || identical(v, "")) NA_character_ else as.character(v)
+            }
+        }
+        do.call(data.frame, c(base, extra, list(stringsAsFactors = FALSE)))
     })
     recs <- recs[!vapply(recs, is.null, logical(1))]
     if (length(recs) == 0L) {
@@ -832,7 +1155,7 @@ getChemblDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
                           ActivityValueuM = numeric(), AssayName = character(),
                           stringsAsFactors = FALSE))
     }
-    do.call(rbind, recs)
+    .dtiRbindFill(recs)
 }
 
 #' Keep the most potent (lowest activity value) row per CID, capped
@@ -938,12 +1261,22 @@ getChemblDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
 #'   df <- getPubchemDrugs(c("FGFR1", "KLB"))
 #'   table(df$gene_symbol)
 #' }
+#' @param fields \code{"core"} (default), \code{"all"}, or a character
+#'   vector of column names. \code{"core"} returns exactly the curated
+#'   columns above (unchanged from previous versions). \code{"all"} also
+#'   returns every other column PubChem's \code{concise} bioactivity table
+#'   provides, prefixed \code{activity.} (e.g. \code{activity.PubMed_ID},
+#'   \code{activity.RNAi} - no extra API calls, already fetched). A
+#'   character vector requests just those extra columns. See
+#'   \code{\link{listDrugTargetFields}} to browse what's available.
 #' @seealso \code{\link{getPubchemTargets}}, \code{\link{getPubchemDrugTarget}}
 #' @export
 getPubchemDrugs <- function(genes, taxid = 9606L,
                             keepActivities = .dtiPotencyEndpoints,
-                            maxCids = 400L, pause = 0.34, verbose = FALSE) {
+                            maxCids = 400L, pause = 0.34, verbose = FALSE,
+                            fields = "core") {
     stopifnot(is.character(genes), length(genes) >= 1L)
+    wantAll <- !identical(fields, "core")
     rows <- vector("list", length(genes))
     for (i in seq_along(genes)) {
         g <- genes[i]
@@ -951,7 +1284,8 @@ getPubchemDrugs <- function(genes, taxid = 9606L,
         if (verbose) message("PubChem gene ", g, " -> GeneID ", gid)
         if (!is.na(gid)) {
             raw <- .dtiPubchemGeneConcise(gid)
-            df <- .dtiPubchemFilterRows(raw$cols, raw$rows, keepActivities)
+            df <- .dtiPubchemFilterRows(raw$cols, raw$rows, keepActivities,
+                                       keepAllCols = wantAll)
             if (nrow(df) > 0L) {
                 df <- .dtiPubchemMostPotentPerCid(df, maxCids)
                 props <- .dtiPubchemCidProps(df$CID)
@@ -966,19 +1300,20 @@ getPubchemDrugs <- function(genes, taxid = 9606L,
     }
     rows <- rows[!vapply(rows, is.null, logical(1))]
     if (length(rows) == 0L) {
-        return(as.data.frame(stats::setNames(replicate(10, character(0), simplify = FALSE),
-            c("gene_symbol", "geneid", "target_accession", "cid", "drug_name",
-              "canonical_smiles", "activity_name", "activity_value_uM",
-              "assay_name", "db")), stringsAsFactors = FALSE))
+        empty <- as.data.frame(stats::setNames(
+            replicate(length(.dtiPubchemDrugsCols), character(0), simplify = FALSE),
+            .dtiPubchemDrugsCols), stringsAsFactors = FALSE)
+        return(.dtiSelectFields(empty, fields, .dtiPubchemDrugsCols))
     }
-    out <- do.call(rbind, rows)
-    out <- out[, c("gene_symbol", "geneid", "TargetAccession", "CID", "drug_name",
-                   "canonical_smiles", "ActivityName", "ActivityValueuM", "AssayName")]
-    colnames(out) <- c("gene_symbol", "geneid", "target_accession", "cid", "drug_name",
-                       "canonical_smiles", "activity_name", "activity_value_uM", "assay_name")
+    out <- .dtiRbindFill(rows)
+    out$target_accession  <- out$TargetAccession
+    out$cid                <- out$CID
+    out$activity_name       <- out$ActivityName
+    out$activity_value_uM   <- out$ActivityValueuM
+    out$assay_name          <- out$AssayName
     out$db <- "PubChem"
     rownames(out) <- NULL
-    out
+    .dtiSelectFields(out, fields, .dtiPubchemDrugsCols)
 }
 
 #' Retrieve PubChem bioactivities for one or more drugs (drug -> target)
@@ -1012,16 +1347,21 @@ getPubchemDrugs <- function(genes, taxid = 9606L,
 #'   df <- getPubchemTargets("aspirin")
 #'   df[, c("drug_name", "gene_symbol", "activity_name", "activity_value_uM")]
 #' }
+#' @param fields \code{"core"} (default), \code{"all"}, or a character
+#'   vector of column names, matching \code{\link{getPubchemDrugs}}'s
+#'   \code{fields} argument (same \code{activity.*}-prefixed extra
+#'   columns from the compound-centric \code{assaysummary} table).
 #' @seealso \code{\link{getPubchemDrugs}}, \code{\link{getPubchemDrugTarget}}
 #' @export
 getPubchemTargets <- function(drugs, taxid = 9606L,
                               keepActivities = .dtiPotencyEndpoints,
-                              maxCidsPerBatch = 50L, pause = 0.2, verbose = FALSE) {
+                              maxCidsPerBatch = 50L, pause = 0.2, verbose = FALSE,
+                              fields = "core") {
     stopifnot(is.character(drugs), length(drugs) >= 1L)
-    empty <- as.data.frame(stats::setNames(replicate(10, character(0), simplify = FALSE),
-        c("cid", "drug_name", "gene_symbol", "geneid", "taxid",
-          "target_accession", "activity_name", "activity_value_uM",
-          "assay_name", "db")), stringsAsFactors = FALSE)
+    wantAll <- !identical(fields, "core")
+    empty <- as.data.frame(stats::setNames(
+        replicate(length(.dtiPubchemTargetsCols), character(0), simplify = FALSE),
+        .dtiPubchemTargetsCols), stringsAsFactors = FALSE)
 
     cidFor <- character(length(drugs))
     for (i in seq_along(drugs)) {
@@ -1032,11 +1372,11 @@ getPubchemTargets <- function(drugs, taxid = 9606L,
     }
     names(cidFor) <- drugs
     cids <- unique(stats::na.omit(cidFor))
-    if (length(cids) == 0L) return(empty)
+    if (length(cids) == 0L) return(.dtiSelectFields(empty, fields, .dtiPubchemTargetsCols))
 
     raw <- .dtiPubchemAssaySummary(cids, chunkSize = maxCidsPerBatch)
-    df  <- .dtiPubchemFilterRows(raw$cols, raw$rows, keepActivities)
-    if (nrow(df) == 0L) return(empty)
+    df  <- .dtiPubchemFilterRows(raw$cols, raw$rows, keepActivities, keepAllCols = wantAll)
+    if (nrow(df) == 0L) return(.dtiSelectFields(empty, fields, .dtiPubchemTargetsCols))
     df <- df[order(df$ActivityValueuM), , drop = FALSE]
     df <- df[!duplicated(paste(df$CID, df$TargetGeneID)), , drop = FALSE]
 
@@ -1044,19 +1384,50 @@ getPubchemTargets <- function(drugs, taxid = 9606L,
     df$gene_symbol <- genes$Symbol[match(df$TargetGeneID, genes$GeneID)]
     df$taxid       <- genes$Taxid[match(df$TargetGeneID, genes$GeneID)]
     if (!is.null(taxid)) df <- df[!is.na(df$taxid) & df$taxid == taxid, , drop = FALSE]
-    if (nrow(df) == 0L) return(empty)
+    if (nrow(df) == 0L) return(.dtiSelectFields(empty, fields, .dtiPubchemTargetsCols))
 
     drugNameFor <- stats::setNames(names(cidFor), cidFor)
     df$drug_name <- unname(drugNameFor[df$CID])
 
-    out <- df[, c("CID", "drug_name", "gene_symbol", "TargetGeneID", "taxid",
-                 "TargetAccession", "ActivityName", "ActivityValueuM", "AssayName")]
-    colnames(out) <- c("cid", "drug_name", "gene_symbol", "geneid", "taxid",
-                       "target_accession", "activity_name", "activity_value_uM", "assay_name")
-    out$db <- "PubChem"
-    rownames(out) <- NULL
-    out
+    df$cid               <- df$CID
+    df$geneid            <- df$TargetGeneID
+    df$target_accession  <- df$TargetAccession
+    df$activity_name      <- df$ActivityName
+    df$activity_value_uM  <- df$ActivityValueuM
+    df$assay_name          <- df$AssayName
+    df$db <- "PubChem"
+    rownames(df) <- NULL
+    .dtiSelectFields(df, fields, .dtiPubchemTargetsCols)
 }
+
+#' Curated column vector for \code{fields = "core"} on \code{getPubchemDrugs()}
+#' @keywords internal
+.dtiPubchemDrugsCols <- c("gene_symbol", "geneid", "target_accession", "cid",
+                          "drug_name", "canonical_smiles", "activity_name",
+                          "activity_value_uM", "assay_name", "db")
+
+#' Curated column vector for \code{fields = "core"} on \code{getPubchemTargets()}
+#' @keywords internal
+.dtiPubchemTargetsCols <- c("cid", "drug_name", "gene_symbol", "geneid", "taxid",
+                            "target_accession", "activity_name",
+                            "activity_value_uM", "assay_name", "db")
+
+#' Documented, best-effort column list for \code{listDrugTargetFields("pubchem")}
+#'
+#' The actual \code{fields = "all"} output depends on which of PubChem's
+#' concise (gene-centric) vs assaysummary (compound-centric) columns are
+#' present for a given query - this is a reference superset of both, not a
+#' guarantee. Pass \code{queryBy} to \code{\link{listDrugTargetFields}} for
+#' the exact columns of a given query.
+#' @keywords internal
+.dtiPubchemAllCols <- c(
+    .dtiPubchemDrugsCols, "taxid",
+    "activity.AID", "activity.SID", "activity.CID", "activity.Activity_Outcome",
+    "activity.Target_Accession", "activity.Target_GeneID",
+    "activity.Activity_Name", "activity.Activity_Qualifier",
+    "activity.Activity_Value_uM", "activity.Assay_Name", "activity.Assay_Type",
+    "activity.PubMed_ID", "activity.RNAi", "activity.Panel_Member_ID"
+)
 
 #' Query PubChem bioactivity data via the uniform queryBy interface
 #'
@@ -1083,7 +1454,9 @@ getPubchemTargets <- function(drugs, taxid = 9606L,
 #'   DrugBank ID, ...) are not yet supported over this wrapper.
 #' @param ... additional arguments passed through to
 #'   \code{\link{getPubchemDrugs}} / \code{\link{getPubchemTargets}} (e.g.
-#'   \code{taxid}, \code{keepActivities}, \code{verbose}).
+#'   \code{taxid}, \code{keepActivities}, \code{verbose}, and \code{fields}
+#'   - see their \code{fields} argument for \code{"core"}/\code{"all"}/
+#'   custom column selection).
 #' @return A \code{data.frame} in the same column shape as
 #'   \code{\link{getPubchemDrugs}} / \code{\link{getPubchemTargets}}, plus a
 #'   leading \code{QueryIDs} column echoing the original \code{queryBy$ids}
@@ -1098,9 +1471,12 @@ getPubchemTargets <- function(drugs, taxid = 9606L,
 #'   ## drug -> target: aspirin
 #'   getPubchemDrugTarget(list(molType = "cmp", idType = "name",
 #'                             ids = "aspirin"))
+#'   ## every available field
+#'   getPubchemDrugTarget(list(molType = "cmp", idType = "name",
+#'                             ids = "aspirin"), fields = "all")
 #' }
 #' @seealso \code{\link{getPubchemDrugs}}, \code{\link{getPubchemTargets}},
-#'   \code{\link{getChemblDrugTarget}}
+#'   \code{\link{getChemblDrugTarget}}, \code{\link{listDrugTargetFields}}
 #' @export
 getPubchemDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
                                                 ids = NULL), ...) {
@@ -1188,6 +1564,30 @@ getPubchemDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
                    "interaction_types", "directionality", "interaction_score",
                    "evidence_score", "sources", "db")
 
+#' Documented column list for \code{listDrugTargetFields("dgidb")}
+#'
+#' Unlike ChEMBL/PubChem's REST responses, DGIdb's GraphQL API only
+#' returns fields the query explicitly asks for, so this list is exactly
+#' what \code{fields = "all"} requests via
+#' \code{\link{.dtiDgidbSelection}(wantAll = TRUE)} - not a superset
+#' subject to drift the way the REST sources' documented lists are.
+#' @keywords internal
+.dtiDgidbAllCols <- c(
+    .dtiDgidbCols,
+    "interaction.id", "interaction.drug_id", "interaction.gene_id",
+    "interaction.drug_specificity", "interaction.gene_specificity",
+    "drug.id", "drug.anti_neoplastic", "drug.immunotherapy",
+    "gene.id", "gene.long_name", "gene.concept_id",
+    "interaction_types.definition", "interaction_types.reference",
+    "source.full_name", "source.citation", "source.citation_short",
+    "source.pmid", "source.doi", "source.base_url", "source.site_url",
+    "source.license", "source.license_link", "source.source_db_version",
+    "source.drug_claims_count", "source.gene_claims_count",
+    "source.interaction_claims_count",
+    "publication.pmid", "publication.citation",
+    "interaction_attribute.name", "interaction_attribute.value"
+)
+
 #' Empty DGIdb data.frame with the canonical columns
 #' @keywords internal
 .dtiEmptyDgidb <- function() {
@@ -1197,19 +1597,44 @@ getPubchemDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
 }
 
 #' The reusable GraphQL selection for one Interaction node (no outer braces)
+#'
+#' \code{wantAll = TRUE} widens the selection to every scalar field
+#' documented on \code{Interaction}/\code{Drug}/\code{Gene}/
+#' \code{InteractionClaimType}/\code{Source}/\code{Publication}/
+#' \code{InteractionAttribute} (confirmed live via GraphQL introspection
+#' against \url{https://dgidb.org/api/graphql}), stopping short of the
+#' deeper \code{interactionClaims}/\code{drugClaims}/\code{geneClaims}
+#' provenance chain (each carries its own nested lists back to
+#' \code{Source} etc. - out of scope for a single extra request).
+#' @param wantAll logical(1).
 #' @keywords internal
-.dtiDgidbSelection <- function() {
-    "drug { name conceptId approved }
+.dtiDgidbSelection <- function(wantAll = FALSE) {
+    if (!wantAll) {
+        return("drug { name conceptId approved }
      gene { name }
      interactionScore
      evidenceScore
      interactionTypes { type directionality }
-     sources { sourceDbName }"
+     sources { sourceDbName }")
+    }
+    "id drugId geneId drugSpecificity geneSpecificity
+     drug { id name conceptId approved antiNeoplastic immunotherapy }
+     gene { id name longName conceptId }
+     interactionScore
+     evidenceScore
+     interactionTypes { type directionality definition reference }
+     sources { sourceDbName fullName citation citationShort pmid doi baseUrl
+               siteUrl license licenseLink sourceDbVersion drugClaimsCount
+               geneClaimsCount interactionClaimsCount }
+     publications { pmid citation }
+     interactionAttributes { name value }"
 }
 
 #' Parse a list of Interaction nodes into a tidy data.frame
+#' @param wantAll logical(1); also flatten the extra fields requested by
+#'   \code{\link{.dtiDgidbSelection}(wantAll = TRUE)}.
 #' @keywords internal
-.dtiParseDgidbInteractions <- function(nodes) {
+.dtiParseDgidbInteractions <- function(nodes, wantAll = FALSE) {
     nodes <- nodes %||% list()
     if (length(nodes) == 0L) return(.dtiEmptyDgidb())
     collapse <- function(x) paste(unique(stats::na.omit(x)), collapse = "; ")
@@ -1224,7 +1649,7 @@ getPubchemDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
         srcs   <- n$sources %||% list()
         srcNames <- collapse(vapply(srcs, function(s) s$sourceDbName %||% NA_character_,
                                     character(1)))
-        data.frame(
+        base <- list(
             gene_name         = gene$name %||% NA_character_,
             drug_name         = drug$name %||% NA_character_,
             drug_concept_id   = drug$conceptId %||% NA_character_,
@@ -1234,10 +1659,66 @@ getPubchemDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
             interaction_score = as.numeric(n$interactionScore %||% NA),
             evidence_score    = as.numeric(n$evidenceScore %||% NA),
             sources           = srcNames,
-            db                = "DGIdb",
-            stringsAsFactors = FALSE)
+            db                = "DGIdb")
+        extra <- list()
+        if (wantAll) {
+            pubs  <- n$publications %||% list()
+            attrs <- n$interactionAttributes %||% list()
+            extra <- list(
+                interaction.id                = n$id %||% NA_character_,
+                interaction.drug_id           = n$drugId %||% NA_character_,
+                interaction.gene_id           = n$geneId %||% NA_character_,
+                interaction.drug_specificity  = as.numeric(n$drugSpecificity %||% NA),
+                interaction.gene_specificity  = as.numeric(n$geneSpecificity %||% NA),
+                drug.id                       = drug$id %||% NA_character_,
+                drug.anti_neoplastic          = as.logical(drug$antiNeoplastic %||% NA),
+                drug.immunotherapy            = as.logical(drug$immunotherapy %||% NA),
+                gene.id                       = gene$id %||% NA_character_,
+                gene.long_name                = gene$longName %||% NA_character_,
+                gene.concept_id                = gene$conceptId %||% NA_character_,
+                interaction_types.definition  = collapse(vapply(itypes, function(t)
+                    t$definition %||% NA_character_, character(1))),
+                interaction_types.reference   = collapse(vapply(itypes, function(t)
+                    t$reference %||% NA_character_, character(1))),
+                source.full_name               = collapse(vapply(srcs, function(s)
+                    s$fullName %||% NA_character_, character(1))),
+                source.citation                = collapse(vapply(srcs, function(s)
+                    s$citation %||% NA_character_, character(1))),
+                source.citation_short          = collapse(vapply(srcs, function(s)
+                    s$citationShort %||% NA_character_, character(1))),
+                source.pmid                    = collapse(vapply(srcs, function(s)
+                    s$pmid %||% NA_character_, character(1))),
+                source.doi                     = collapse(vapply(srcs, function(s)
+                    s$doi %||% NA_character_, character(1))),
+                source.base_url                = collapse(vapply(srcs, function(s)
+                    s$baseUrl %||% NA_character_, character(1))),
+                source.site_url                = collapse(vapply(srcs, function(s)
+                    s$siteUrl %||% NA_character_, character(1))),
+                source.license                  = collapse(vapply(srcs, function(s)
+                    s$license %||% NA_character_, character(1))),
+                source.license_link            = collapse(vapply(srcs, function(s)
+                    s$licenseLink %||% NA_character_, character(1))),
+                source.source_db_version       = collapse(vapply(srcs, function(s)
+                    s$sourceDbVersion %||% NA_character_, character(1))),
+                source.drug_claims_count      = collapse(vapply(srcs, function(s)
+                    as.character(s$drugClaimsCount %||% NA), character(1))),
+                source.gene_claims_count      = collapse(vapply(srcs, function(s)
+                    as.character(s$geneClaimsCount %||% NA), character(1))),
+                source.interaction_claims_count = collapse(vapply(srcs, function(s)
+                    as.character(s$interactionClaimsCount %||% NA), character(1))),
+                publication.pmid                = collapse(vapply(pubs, function(p)
+                    as.character(p$pmid %||% NA), character(1))),
+                publication.citation            = collapse(vapply(pubs, function(p)
+                    p$citation %||% NA_character_, character(1))),
+                interaction_attribute.name     = collapse(vapply(attrs, function(a)
+                    a$name %||% NA_character_, character(1))),
+                interaction_attribute.value    = collapse(vapply(attrs, function(a)
+                    a$value %||% NA_character_, character(1)))
+            )
+        }
+        do.call(data.frame, c(base, extra, list(stringsAsFactors = FALSE)))
     })
-    df <- do.call(rbind, rows)
+    df <- .dtiRbindFill(rows)
     rownames(df) <- NULL
     df
 }
@@ -1258,10 +1739,13 @@ getPubchemDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
 #' @param maxRows integer(1) cap on total returned rows.
 #' @param chunkSize integer(1) max names sent per request.
 #' @param verbose logical(1); if TRUE, message progress per chunk/page.
+#' @param wantAll logical(1); request \code{\link{.dtiDgidbSelection}(wantAll
+#'   = TRUE)}'s wider field set instead of the curated default.
 #' @return list of raw \code{Interaction} GraphQL nodes (unparsed).
 #' @keywords internal
 .dtiDgidbFetch <- function(names, by = c("gene", "drug"), pageSize = 500L,
-                           maxRows = 5000L, chunkSize = 300L, verbose = FALSE) {
+                           maxRows = 5000L, chunkSize = 300L, verbose = FALSE,
+                           wantAll = FALSE) {
     by <- match.arg(by)
     url <- .dtiEndpoints()$dgidb
     argName <- if (by == "gene") "geneNames" else "drugNames"
@@ -1271,7 +1755,7 @@ getPubchemDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
           pageInfo { hasNextPage endCursor }
           nodes { %s }
         }
-      }", argName, .dtiDgidbSelection())
+      }", argName, .dtiDgidbSelection(wantAll))
 
     acc <- list()
     for (chunk in .dtiChunk(unique(names), chunkSize)) {
@@ -1318,13 +1802,28 @@ getPubchemDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
 #'   df <- getDgidbDrugs(c("FGFR1", "KLB"))
 #'   table(df$gene_name)
 #' }
+#' @param fields \code{"core"} (default), \code{"all"}, or a character
+#'   vector of column names. \code{"core"} returns exactly the curated
+#'   columns above (unchanged from previous versions). \code{"all"} also
+#'   returns further fields DGIdb's GraphQL API exposes on the matched
+#'   \code{Interaction}/\code{Drug}/\code{Gene}/\code{Source}/
+#'   \code{Publication} records, source-prefixed (e.g. \code{drug.id},
+#'   \code{source.citation}, \code{publication.pmid}) - these are
+#'   requested from the API in the same query (GraphQL only returns what's
+#'   asked for), so \code{fields = "all"} does cost a wider response, not
+#'   an extra request. A character vector requests just those extra
+#'   columns. See \code{\link{listDrugTargetFields}} to browse what's
+#'   available.
 #' @seealso \code{\link{getDgidbTargets}}, \code{\link{getDgidbDrugTarget}}
 #' @export
-getDgidbDrugs <- function(genes, pageSize = 500L, maxRows = 5000L, verbose = FALSE) {
+getDgidbDrugs <- function(genes, pageSize = 500L, maxRows = 5000L, verbose = FALSE,
+                          fields = "core") {
     stopifnot(is.character(genes), length(genes) >= 1L)
+    wantAll <- !identical(fields, "core")
     nodes <- .dtiDgidbFetch(genes, by = "gene", pageSize = pageSize,
-                            maxRows = maxRows, verbose = verbose)
-    .dtiParseDgidbInteractions(nodes)
+                            maxRows = maxRows, verbose = verbose, wantAll = wantAll)
+    .dtiSelectFields(.dtiParseDgidbInteractions(nodes, wantAll = wantAll),
+                     fields, .dtiDgidbCols)
 }
 
 #' Retrieve DGIdb target interactions for one or more drugs
@@ -1340,6 +1839,9 @@ getDgidbDrugs <- function(genes, pageSize = 500L, maxRows = 5000L, verbose = FAL
 #' @param pageSize integer(1) rows per GraphQL page (default 500).
 #' @param maxRows integer(1) cap on total returned rows (default 5000).
 #' @param verbose logical(1); if TRUE, message progress per chunk/page.
+#' @param fields \code{"core"}, \code{"all"}, or a character vector of
+#'   column names, matching \code{\link{getDgidbDrugs}}'s \code{fields}
+#'   argument.
 #' @return A \code{data.frame}; see \code{\link{getDgidbDrugs}} for columns.
 #' @examples
 #' \donttest{
@@ -1348,11 +1850,14 @@ getDgidbDrugs <- function(genes, pageSize = 500L, maxRows = 5000L, verbose = FAL
 #' }
 #' @seealso \code{\link{getDgidbDrugs}}, \code{\link{getDgidbDrugTarget}}
 #' @export
-getDgidbTargets <- function(drugs, pageSize = 500L, maxRows = 5000L, verbose = FALSE) {
+getDgidbTargets <- function(drugs, pageSize = 500L, maxRows = 5000L, verbose = FALSE,
+                            fields = "core") {
     stopifnot(is.character(drugs), length(drugs) >= 1L)
+    wantAll <- !identical(fields, "core")
     nodes <- .dtiDgidbFetch(drugs, by = "drug", pageSize = pageSize,
-                            maxRows = maxRows, verbose = verbose)
-    .dtiParseDgidbInteractions(nodes)
+                            maxRows = maxRows, verbose = verbose, wantAll = wantAll)
+    .dtiSelectFields(.dtiParseDgidbInteractions(nodes, wantAll = wantAll),
+                     fields, .dtiDgidbCols)
 }
 
 #' Query DGIdb interaction data via the uniform queryBy interface
@@ -1374,7 +1879,9 @@ getDgidbTargets <- function(drugs, pageSize = 500L, maxRows = 5000L, verbose = F
 #'   vocabulary for the same concepts.
 #' @param ... additional arguments passed through to
 #'   \code{\link{getDgidbDrugs}} / \code{\link{getDgidbTargets}} (e.g.
-#'   \code{pageSize}, \code{maxRows}, \code{verbose}).
+#'   \code{pageSize}, \code{maxRows}, \code{verbose}, and \code{fields} -
+#'   see their \code{fields} argument for \code{"core"}/\code{"all"}/
+#'   custom column selection).
 #' @return A \code{data.frame} in the same column shape as
 #'   \code{\link{getDgidbDrugs}} / \code{\link{getDgidbTargets}}, plus a
 #'   leading \code{QueryIDs} column echoing the original \code{queryBy$ids}
@@ -1388,9 +1895,13 @@ getDgidbTargets <- function(drugs, pageSize = 500L, maxRows = 5000L, verbose = F
 #'   ## drug -> target: imatinib
 #'   getDgidbDrugTarget(list(molType = "cmp", idType = "name",
 #'                           ids = "imatinib"))
+#'   ## every available field
+#'   getDgidbDrugTarget(list(molType = "cmp", idType = "name",
+#'                           ids = "imatinib"), fields = "all")
 #' }
 #' @seealso \code{\link{getDgidbDrugs}}, \code{\link{getDgidbTargets}},
-#'   \code{\link{getChemblDrugTarget}}, \code{\link{getPubchemDrugTarget}}
+#'   \code{\link{getChemblDrugTarget}}, \code{\link{getPubchemDrugTarget}},
+#'   \code{\link{listDrugTargetFields}}
 #' @export
 getDgidbDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
                                               ids = NULL), ...) {
@@ -1556,15 +2067,53 @@ getOpenTargetsIds <- function(symbols, chunkSize = 100L, pause = 0.1,
 }
 
 #' The reusable GraphQL selection for one target's drugs (no outer braces)
+#'
+#' \code{wantAll = TRUE} widens the selection with every scalar (and
+#' simple 2-field-object list, e.g. \code{synonyms { label source }})
+#' field documented on Open Targets' \code{Target}/\code{Drug} types
+#' (confirmed live via GraphQL introspection against
+#' \url{https://api.platform.opentargets.org/api/v4/graphql}). Fields that
+#' need their own multi-level sub-selection or represent a whole separate
+#' dataset (\code{tractability}, \code{safetyLiabilities},
+#' \code{geneOntology}, \code{pathways}, \code{homologues},
+#' \code{associatedDiseases}, \code{evidences}, \code{interactions},
+#' \code{pharmacogenomics}, \code{indications}, \code{adverseEvents}, ...)
+#' are out of scope for this pass.
+#' @param wantAll logical(1).
 #' @keywords internal
-.dtiDrugSelection <- function() {
-    "approvedSymbol
+.dtiDrugSelection <- function(wantAll = FALSE) {
+    if (!wantAll) {
+        return("approvedSymbol
      drugAndClinicalCandidates {
        count
        rows {
          maxClinicalStage
          drug {
            id name drugType maximumClinicalStage
+           mechanismsOfAction { rows { mechanismOfAction actionType } }
+         }
+         diseases { disease { id name } }
+       }
+     }")
+    }
+    "approvedSymbol
+     approvedName biotype isEssential
+     functionDescriptions alternativeGenes transcriptIds
+     synonyms { label source }
+     obsoleteSymbols { label source }
+     obsoleteNames { label source }
+     symbolSynonyms { label source }
+     proteinIds { id source }
+     dbXrefs { id source }
+     targetClass { id label level }
+     drugAndClinicalCandidates {
+       count
+       rows {
+         maxClinicalStage
+         drug {
+           id name drugType maximumClinicalStage description molblock
+           synonyms { label source }
+           tradeNames { label source }
            mechanismsOfAction { rows { mechanismOfAction actionType } }
          }
          diseases { disease { id name } }
@@ -1578,14 +2127,23 @@ getOpenTargetsIds <- function(symbols, chunkSize = 100L, pause = 0.1,
 #' @param tgt list; the GraphQL \code{target} object (may be NULL).
 #' @param ensg character(1); the Ensembl ID this object was queried with.
 #' @param expand character(1); one of "mechanism", "disease", "drug".
+#' @param wantAll logical(1); also flatten the extra target/drug fields
+#'   requested by \code{\link{.dtiDrugSelection}(wantAll = TRUE)}.
 #' @return data.frame with columns \code{.dtiDrugCols}; empty if no rows.
 #' @keywords internal
-.dtiParseTargetDrugs <- function(tgt, ensg, expand) {
+.dtiParseTargetDrugs <- function(tgt, ensg, expand, wantAll = FALSE) {
     tgt  <- tgt %||% list()
     rows <- tgt$drugAndClinicalCandidates$rows %||% list()
     if (length(rows) == 0L) return(.dtiEmptyDrugs())
     sym  <- tgt$approvedSymbol %||% NA_character_
     collapse <- function(x) paste(unique(stats::na.omit(x)), collapse = "; ")
+    tgtFlat <- list()
+    if (wantAll) {
+        tgtMeta <- tgt
+        tgtMeta$drugAndClinicalCandidates <- NULL
+        tgtMeta$approvedSymbol <- NULL
+        tgtFlat <- .dtiFlattenRecord(tgtMeta, "target")
+    }
     perRow <- lapply(rows, function(r) {
         drug <- r$drug %||% list()
         moaRows <- drug$mechanismsOfAction$rows %||% list()
@@ -1630,9 +2188,17 @@ getOpenTargetsIds <- function(symbols, chunkSize = 100L, pause = 0.1,
             out$disease_id          <- collapse(dz$disease_id)
             out$disease_name        <- collapse(dz$disease_name)
         }
-        out[, .dtiDrugCols]
+        out <- out[, .dtiDrugCols]
+        if (wantAll) {
+            drugMeta <- drug
+            drugMeta$mechanismsOfAction <- NULL
+            drugFlat <- .dtiFlattenRecord(drugMeta, "drug")
+            out <- do.call(data.frame, c(as.list(out), tgtFlat, drugFlat,
+                                         list(stringsAsFactors = FALSE)))
+        }
+        out
     })
-    df <- do.call(rbind, perRow)
+    df <- .dtiRbindFill(perRow)
     rownames(df) <- NULL
     df
 }
@@ -1678,13 +2244,25 @@ getOpenTargetsIds <- function(symbols, chunkSize = 100L, pause = 0.1,
 #'   drugs <- getOpenTargetsDrugs(c("FGFR1", "KLB"))
 #'   head(drugs[, c("drug_name", "mechanism_of_action", "max_clinical_stage")])
 #' }
+#' @param fields \code{"core"} (default), \code{"all"}, or a character
+#'   vector of column names. \code{"core"} returns exactly the curated
+#'   columns above (unchanged from previous versions). \code{"all"} also
+#'   returns further fields Open Targets' GraphQL API exposes on the
+#'   matched \code{Target}/\code{Drug} records, prefixed \code{target.}/
+#'   \code{drug.} (e.g. \code{target.biotype}, \code{drug.description}) -
+#'   requested in the same query (GraphQL only returns what's asked for),
+#'   so \code{fields = "all"} costs a wider response, not an extra
+#'   request. A character vector requests just those extra columns. See
+#'   \code{\link{listDrugTargetFields}} to browse what's available.
 #' @seealso \code{\link{getOpenTargetsIds}}, \code{\link{getOpenTargetsTargets}},
 #'   \code{\link{getOpenTargetsDrugTarget}}
 #' @export
 getOpenTargetsDrugs <- function(genes, expand = c("mechanism", "disease", "drug"),
-                                chunkSize = 25L, pause = 0.1, verbose = FALSE) {
+                                chunkSize = 25L, pause = 0.1, verbose = FALSE,
+                                fields = "core") {
     expand <- match.arg(expand)
     stopifnot(is.character(genes), length(genes) >= 1L)
+    wantAll <- !identical(fields, "core")
     url <- .dtiEndpoints()$opentargets
 
     ## Resolve any symbols to Ensembl IDs (Ensembl IDs pass through).
@@ -1697,7 +2275,7 @@ getOpenTargetsDrugs <- function(genes, expand = c("mechanism", "disease", "drug"
     }
     keep <- !is.na(ensg) & nzchar(ensg)
     ensg <- unique(ensg[keep])
-    if (length(ensg) == 0L) return(.dtiEmptyDrugs())
+    if (length(ensg) == 0L) return(.dtiSelectFields(.dtiEmptyDrugs(), fields, .dtiDrugCols))
 
     acc <- vector("list", length(ensg)); k <- 0L
     chunks <- .dtiChunk(ensg, chunkSize)
@@ -1708,20 +2286,21 @@ getOpenTargetsDrugs <- function(genes, expand = c("mechanism", "disease", "drug"
         varDefs <- paste(sprintf("$e%d: String!", seq_along(ch)), collapse = ", ")
         aliases <- paste(sprintf("t%d: target(ensemblId: $e%d) { %s }",
                                  seq_along(ch), seq_along(ch),
-                                 .dtiDrugSelection()), collapse = "\n")
+                                 .dtiDrugSelection(wantAll)), collapse = "\n")
         query <- sprintf("query drugsBatch(%s) {\n%s\n}", varDefs, aliases)
         vars <- stats::setNames(as.list(ch), sprintf("e%d", seq_along(ch)))
         data <- .dtiGraphQL(url, query, variables = vars)
         if (!is.null(data)) for (j in seq_along(ch)) {
-            df <- .dtiParseTargetDrugs(data[[sprintf("t%d", j)]], ch[j], expand)
+            df <- .dtiParseTargetDrugs(data[[sprintf("t%d", j)]], ch[j], expand,
+                                      wantAll = wantAll)
             if (nrow(df) > 0L) { k <- k + 1L; acc[[k]] <- df }
         }
         if (pause > 0 && i < length(chunks)) Sys.sleep(pause)
     }
-    if (k == 0L) return(.dtiEmptyDrugs())
-    out <- do.call(rbind, acc[seq_len(k)])
+    if (k == 0L) return(.dtiSelectFields(.dtiEmptyDrugs(), fields, .dtiDrugCols))
+    out <- .dtiRbindFill(acc[seq_len(k)])
     rownames(out) <- NULL
-    out
+    .dtiSelectFields(out, fields, .dtiDrugCols)
 }
 
 #' Resolve many drug names to ChEMBL IDs in batched GraphQL requests
@@ -1785,6 +2364,31 @@ getOpenTargetsDrugIds <- function(names, chunkSize = 100L, pause = 0.1,
                     "mechanism_of_action", "action_type", "moa_target_name",
                     "target_id", "approved_symbol")
 
+#' Documented column list for \code{listDrugTargetFields("opentargets")}
+#'
+#' Like DGIdb, Open Targets' GraphQL API only returns fields the query
+#' explicitly asks for, so this is exactly what \code{fields = "all"}
+#' requests via \code{\link{.dtiDrugSelection}}/\code{\link{.dtiTargetSelection}}
+#' (\code{wantAll = TRUE}) - not a superset subject to drift.
+#' @keywords internal
+.dtiOpenTargetsAllCols <- c(
+    .dtiDrugCols, .dtiTargetCols,
+    "target.id", "target.approvedSymbol", "target.approvedName",
+    "target.biotype", "target.isEssential", "target.functionDescriptions",
+    "target.alternativeGenes", "target.transcriptIds",
+    "target.synonyms.label", "target.synonyms.source",
+    "target.obsoleteSymbols.label", "target.obsoleteSymbols.source",
+    "target.obsoleteNames.label", "target.obsoleteNames.source",
+    "target.symbolSynonyms.label", "target.symbolSynonyms.source",
+    "target.proteinIds.id", "target.proteinIds.source",
+    "target.dbXrefs.id", "target.dbXrefs.source",
+    "target.targetClass.id", "target.targetClass.label", "target.targetClass.level",
+    "drug.id", "drug.name", "drug.drugType", "drug.maximumClinicalStage",
+    "drug.description", "drug.molblock",
+    "drug.synonyms.label", "drug.synonyms.source",
+    "drug.tradeNames.label", "drug.tradeNames.source"
+)
+
 #' Empty target data.frame with the canonical columns
 #' @keywords internal
 .dtiEmptyTargets <- function() {
@@ -1794,13 +2398,40 @@ getOpenTargetsDrugIds <- function(names, chunkSize = 100L, pause = 0.1,
 }
 
 #' The reusable GraphQL selection for one drug's targets (no outer braces)
+#'
+#' \code{wantAll = TRUE} widens the selection the same way as
+#' \code{\link{.dtiDrugSelection}(wantAll = TRUE)}, just from the
+#' opposite (\code{Drug} first, then nested \code{Target}) direction.
+#' @param wantAll logical(1).
 #' @keywords internal
-.dtiTargetSelection <- function() {
-    "id name drugType maximumClinicalStage
+.dtiTargetSelection <- function(wantAll = FALSE) {
+    if (!wantAll) {
+        return("id name drugType maximumClinicalStage
      mechanismsOfAction {
        rows {
          mechanismOfAction actionType targetName
          targets { id approvedSymbol }
+       }
+     }")
+    }
+    "id name drugType maximumClinicalStage description molblock
+     synonyms { label source }
+     tradeNames { label source }
+     mechanismsOfAction {
+       rows {
+         mechanismOfAction actionType targetName
+         targets {
+           id approvedSymbol
+           approvedName biotype isEssential
+           functionDescriptions alternativeGenes transcriptIds
+           synonyms { label source }
+           obsoleteSymbols { label source }
+           obsoleteNames { label source }
+           symbolSynonyms { label source }
+           proteinIds { id source }
+           dbXrefs { id source }
+           targetClass { id label level }
+         }
        }
      }"
 }
@@ -1811,9 +2442,11 @@ getOpenTargetsDrugIds <- function(names, chunkSize = 100L, pause = 0.1,
 #' @param drg list; the GraphQL \code{drug} object (may be NULL).
 #' @param chemblId character(1); the ChEMBL ID this object was queried with.
 #' @param expand character(1); one of "target", "mechanism".
+#' @param wantAll logical(1); also flatten the extra drug/target fields
+#'   requested by \code{\link{.dtiTargetSelection}(wantAll = TRUE)}.
 #' @return data.frame with columns \code{.dtiTargetCols}; empty if no rows.
 #' @keywords internal
-.dtiParseDrugTargets <- function(drg, chemblId, expand) {
+.dtiParseDrugTargets <- function(drg, chemblId, expand, wantAll = FALSE) {
     drg  <- drg %||% list()
     rows <- drg$mechanismsOfAction$rows %||% list()
     if (length(rows) == 0L) return(.dtiEmptyTargets())
@@ -1821,6 +2454,12 @@ getOpenTargetsDrugIds <- function(names, chunkSize = 100L, pause = 0.1,
     dtype <- drg$drugType %||% NA_character_
     mcs   <- drg$maximumClinicalStage %||% NA_character_
     collapse <- function(x) paste(unique(stats::na.omit(x)), collapse = "; ")
+    drgFlat <- list()
+    if (wantAll) {
+        drgMeta <- drg
+        drgMeta$mechanismsOfAction <- NULL
+        drgFlat <- .dtiFlattenRecord(drgMeta, "drug")
+    }
     perRow <- lapply(rows, function(r) {
         tgts <- r$targets %||% list()
         tg <- if (length(tgts) == 0L)
@@ -1842,14 +2481,29 @@ getOpenTargetsDrugIds <- function(names, chunkSize = 100L, pause = 0.1,
             stringsAsFactors = FALSE)
         if (expand == "target") {
             out <- merge(base, tg, by = NULL)
+            if (wantAll && length(tgts) > 0L) {
+                tgExtra <- .dtiRbindFill(lapply(tgts, function(t) do.call(data.frame,
+                    c(list(target_id = t$id %||% NA_character_),
+                      .dtiFlattenRecord(t, "target"), list(stringsAsFactors = FALSE)))))
+                tgExtra <- tgExtra[!duplicated(tgExtra$target_id), , drop = FALSE]
+                out <- merge(out, tgExtra, by = "target_id", all.x = TRUE)
+            }
         } else {  # mechanism
             out <- base
             out$target_id       <- collapse(tg$target_id)
             out$approved_symbol <- collapse(tg$approved_symbol)
+            if (wantAll && length(tgts) > 0L) {
+                out <- do.call(data.frame, c(as.list(out),
+                    .dtiFlattenGrouped(tgts, "target"), list(stringsAsFactors = FALSE)))
+            }
         }
-        out[, .dtiTargetCols]
+        keepCols <- if (wantAll) union(.dtiTargetCols, names(out)) else .dtiTargetCols
+        out <- out[, intersect(keepCols, names(out)), drop = FALSE]
+        if (wantAll)
+            out <- do.call(data.frame, c(as.list(out), drgFlat, list(stringsAsFactors = FALSE)))
+        out
     })
-    df <- do.call(rbind, perRow)
+    df <- .dtiRbindFill(perRow)
     rownames(df) <- NULL
     df
 }
@@ -1884,13 +2538,19 @@ getOpenTargetsDrugIds <- function(names, chunkSize = 100L, pause = 0.1,
 #'   tgts <- getOpenTargetsTargets("aspirin")
 #'   tgts[, c("approved_symbol", "mechanism_of_action")]
 #' }
+#' @param fields \code{"core"}, \code{"all"}, or a character vector of
+#'   column names, matching \code{\link{getOpenTargetsDrugs}}'s
+#'   \code{fields} argument (same \code{target.}/\code{drug.}-prefixed
+#'   extra columns, from the opposite query direction).
 #' @seealso \code{\link{getOpenTargetsDrugIds}}, \code{\link{getOpenTargetsDrugs}},
 #'   \code{\link{getOpenTargetsDrugTarget}}
 #' @export
 getOpenTargetsTargets <- function(drugs, expand = c("target", "mechanism"),
-                                  chunkSize = 25L, pause = 0.1, verbose = FALSE) {
+                                  chunkSize = 25L, pause = 0.1, verbose = FALSE,
+                                  fields = "core") {
     expand <- match.arg(expand)
     stopifnot(is.character(drugs), length(drugs) >= 1L)
+    wantAll <- !identical(fields, "core")
     url <- .dtiEndpoints()$opentargets
 
     ## Resolve any names to ChEMBL IDs (ChEMBL IDs pass through).
@@ -1903,7 +2563,7 @@ getOpenTargetsTargets <- function(drugs, expand = c("target", "mechanism"),
     }
     keep <- !is.na(chemblId) & nzchar(chemblId)
     chemblId <- unique(chemblId[keep])
-    if (length(chemblId) == 0L) return(.dtiEmptyTargets())
+    if (length(chemblId) == 0L) return(.dtiSelectFields(.dtiEmptyTargets(), fields, .dtiTargetCols))
 
     acc <- vector("list", length(chemblId)); k <- 0L
     chunks <- .dtiChunk(chemblId, chunkSize)
@@ -1914,20 +2574,21 @@ getOpenTargetsTargets <- function(drugs, expand = c("target", "mechanism"),
         varDefs <- paste(sprintf("$c%d: String!", seq_along(ch)), collapse = ", ")
         aliases <- paste(sprintf("d%d: drug(chemblId: $c%d) { %s }",
                                  seq_along(ch), seq_along(ch),
-                                 .dtiTargetSelection()), collapse = "\n")
+                                 .dtiTargetSelection(wantAll)), collapse = "\n")
         query <- sprintf("query targetsBatch(%s) {\n%s\n}", varDefs, aliases)
         vars <- stats::setNames(as.list(ch), sprintf("c%d", seq_along(ch)))
         data <- .dtiGraphQL(url, query, variables = vars)
         if (!is.null(data)) for (j in seq_along(ch)) {
-            df <- .dtiParseDrugTargets(data[[sprintf("d%d", j)]], ch[j], expand)
+            df <- .dtiParseDrugTargets(data[[sprintf("d%d", j)]], ch[j], expand,
+                                       wantAll = wantAll)
             if (nrow(df) > 0L) { k <- k + 1L; acc[[k]] <- df }
         }
         if (pause > 0 && i < length(chunks)) Sys.sleep(pause)
     }
-    if (k == 0L) return(.dtiEmptyTargets())
-    out <- do.call(rbind, acc[seq_len(k)])
+    if (k == 0L) return(.dtiSelectFields(.dtiEmptyTargets(), fields, .dtiTargetCols))
+    out <- .dtiRbindFill(acc[seq_len(k)])
     rownames(out) <- NULL
-    out
+    .dtiSelectFields(out, fields, .dtiTargetCols)
 }
 
 #' Query Open Targets drug/target data via the uniform queryBy interface
@@ -1954,7 +2615,9 @@ getOpenTargetsTargets <- function(drugs, expand = c("target", "mechanism"),
 #'   vocabulary for the same concepts.
 #' @param ... additional arguments passed through to
 #'   \code{\link{getOpenTargetsDrugs}} / \code{\link{getOpenTargetsTargets}}
-#'   (e.g. \code{expand}, \code{chunkSize}, \code{verbose}).
+#'   (e.g. \code{expand}, \code{chunkSize}, \code{verbose}, and
+#'   \code{fields} - see their \code{fields} argument for
+#'   \code{"core"}/\code{"all"}/custom column selection).
 #' @return A \code{data.frame} in the same column shape as
 #'   \code{\link{getOpenTargetsDrugs}} / \code{\link{getOpenTargetsTargets}},
 #'   plus a leading \code{QueryIDs} column echoing the original
@@ -1969,10 +2632,13 @@ getOpenTargetsTargets <- function(drugs, expand = c("target", "mechanism"),
 #'   ## drug -> target: aspirin
 #'   getOpenTargetsDrugTarget(list(molType = "cmp", idType = "name",
 #'                                 ids = "aspirin"))
+#'   ## every available field
+#'   getOpenTargetsDrugTarget(list(molType = "cmp", idType = "name",
+#'                                 ids = "aspirin"), fields = "all")
 #' }
 #' @seealso \code{\link{getOpenTargetsDrugs}}, \code{\link{getOpenTargetsTargets}},
 #'   \code{\link{getChemblDrugTarget}}, \code{\link{getPubchemDrugTarget}},
-#'   \code{\link{getDgidbDrugTarget}}
+#'   \code{\link{getDgidbDrugTarget}}, \code{\link{listDrugTargetFields}}
 #' @export
 getOpenTargetsDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
                                                      ids = NULL), ...) {

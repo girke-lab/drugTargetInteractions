@@ -4,7 +4,11 @@
 \alias{.dtiParseDgidbInteractions}
 \title{Parse a list of Interaction nodes into a tidy data.frame}
 \usage{
-.dtiParseDgidbInteractions(nodes)
+.dtiParseDgidbInteractions(nodes, wantAll = FALSE)
+}
+\arguments{
+\item{wantAll}{logical(1); also flatten the extra fields requested by
+\code{\link{.dtiDgidbSelection}(wantAll = TRUE)}.}
 }
 \description{
 Parse a list of Interaction nodes into a tidy data.frame

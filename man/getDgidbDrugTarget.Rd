@@ -19,7 +19,9 @@ vocabulary for the same concepts.}
 
 \item{...}{additional arguments passed through to
 \code{\link{getDgidbDrugs}} / \code{\link{getDgidbTargets}} (e.g.
-\code{pageSize}, \code{maxRows}, \code{verbose}).}
+\code{pageSize}, \code{maxRows}, \code{verbose}, and \code{fields} -
+see their \code{fields} argument for \code{"core"}/\code{"all"}/
+custom column selection).}
 }
 \value{
 A \code{data.frame} in the same column shape as
@@ -46,9 +48,13 @@ token \emph{case-insensitively} rather than by verbatim string equality.
   ## drug -> target: imatinib
   getDgidbDrugTarget(list(molType = "cmp", idType = "name",
                           ids = "imatinib"))
+  ## every available field
+  getDgidbDrugTarget(list(molType = "cmp", idType = "name",
+                          ids = "imatinib"), fields = "all")
 }
 }
 \seealso{
 \code{\link{getDgidbDrugs}}, \code{\link{getDgidbTargets}},
-  \code{\link{getChemblDrugTarget}}, \code{\link{getPubchemDrugTarget}}
+  \code{\link{getChemblDrugTarget}}, \code{\link{getPubchemDrugTarget}},
+  \code{\link{listDrugTargetFields}}
 }

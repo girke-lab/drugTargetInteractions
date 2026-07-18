@@ -20,7 +20,9 @@ vocabulary for the same concepts.}
 
 \item{...}{additional arguments passed through to
 \code{\link{getOpenTargetsDrugs}} / \code{\link{getOpenTargetsTargets}}
-(e.g. \code{expand}, \code{chunkSize}, \code{verbose}).}
+(e.g. \code{expand}, \code{chunkSize}, \code{verbose}, and
+\code{fields} - see their \code{fields} argument for
+\code{"core"}/\code{"all"}/custom column selection).}
 }
 \value{
 A \code{data.frame} in the same column shape as
@@ -52,10 +54,13 @@ wrapper (see the file header note).
   ## drug -> target: aspirin
   getOpenTargetsDrugTarget(list(molType = "cmp", idType = "name",
                                 ids = "aspirin"))
+  ## every available field
+  getOpenTargetsDrugTarget(list(molType = "cmp", idType = "name",
+                                ids = "aspirin"), fields = "all")
 }
 }
 \seealso{
 \code{\link{getOpenTargetsDrugs}}, \code{\link{getOpenTargetsTargets}},
   \code{\link{getChemblDrugTarget}}, \code{\link{getPubchemDrugTarget}},
-  \code{\link{getDgidbDrugTarget}}
+  \code{\link{getDgidbDrugTarget}}, \code{\link{listDrugTargetFields}}
 }

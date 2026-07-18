@@ -4,9 +4,14 @@
 \alias{.dtiTargetSelection}
 \title{The reusable GraphQL selection for one drug's targets (no outer braces)}
 \usage{
-.dtiTargetSelection()
+.dtiTargetSelection(wantAll = FALSE)
+}
+\arguments{
+\item{wantAll}{logical(1).}
 }
 \description{
-The reusable GraphQL selection for one drug's targets (no outer braces)
+\code{wantAll = TRUE} widens the selection the same way as
+\code{\link{.dtiDrugSelection}(wantAll = TRUE)}, just from the
+opposite (\code{Drug} first, then nested \code{Target}) direction.
 }
 \keyword{internal}
