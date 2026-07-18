@@ -7,7 +7,8 @@
 getChemblDrugTarget(
   queryBy = list(molType = NULL, idType = NULL, ids = NULL),
   verbose = FALSE,
-  chunkSize = 200L
+  chunkSize = 200L,
+  fields = "core"
 )
 }
 \arguments{
@@ -34,15 +35,30 @@ margin for both short legacy IDs (e.g. \code{"CHEMBL25"}) and longer
 modern ones (e.g. \code{"CHEMBL5291677"}). Requests are also
 client-side throttled (see \code{\link{.dtiApiGET}}) to be a polite
 API citizen; ChEMBL does not publish a hard rate limit.}
+
+\item{fields}{\code{"core"} (default), \code{"all"}, or a character
+vector of column names. \code{"core"} returns exactly the curated
+columns listed under \code{Value} below (unchanged from previous
+versions). \code{"all"} additionally returns every other field ChEMBL's
+\code{target}/\code{mechanism}/\code{molecule}/\code{drug_indication}
+REST resources provide for the matched records, source-prefixed (e.g.
+\code{target.target_type}, \code{mechanism.mechanism_comment},
+\code{molecule.molecule_properties.alogp}) - no extra API calls, these
+are already fetched and simply no longer discarded. A character
+vector requests just those extra fields (\code{QueryIDs} is always
+included). See \code{\link{listDrugTargetFields}} to browse what's
+available.}
 }
 \value{
 A \code{data.frame} with columns \code{QueryIDs},
   \code{chembl_id}, \code{Drug_Name}, \code{MOA}, \code{Action_Type},
   \code{Max_Phase}, \code{First_Approval}, \code{ChEMBL_TID},
   \code{UniProt_ID}, \code{Desc}, \code{Organism},
-  \code{Mesh_Indication}. Query IDs that return no rows still appear as
-  a single row with all other fields \code{NA}, so callers can always
-  confirm which of their input IDs were resolved.
+  \code{Mesh_Indication} (with \code{fields = "core"}, the default), plus
+  further source-prefixed columns when \code{fields} requests more. Query
+  IDs that return no rows still appear as a single row with all other
+  fields \code{NA}, so callers can always confirm which of their input
+  IDs were resolved.
 }
 \description{
 REST-API equivalent of \code{\link{drugTargetAnnot}} for the package's
@@ -76,8 +92,12 @@ side) so that this function's interface stays uniform across sources.
   ## drug -> target: dasatinib
   getChemblDrugTarget(list(molType = "cmp", idType = "chembl_id",
                            ids = "CHEMBL1421"))
+  ## every available field
+  getChemblDrugTarget(list(molType = "cmp", idType = "chembl_id",
+                           ids = "CHEMBL1421"), fields = "all")
 }
 }
 \seealso{
-\code{\link{drugTargetAnnot}}, \code{\link{getChemblMolecule}}
+\code{\link{drugTargetAnnot}}, \code{\link{getChemblMolecule}},
+  \code{\link{listDrugTargetFields}}
 }

@@ -4,7 +4,13 @@
 \alias{getDgidbDrugs}
 \title{Retrieve DGIdb drug interactions for one or more genes}
 \usage{
-getDgidbDrugs(genes, pageSize = 500L, maxRows = 5000L, verbose = FALSE)
+getDgidbDrugs(
+  genes,
+  pageSize = 500L,
+  maxRows = 5000L,
+  verbose = FALSE,
+  fields = "core"
+)
 }
 \arguments{
 \item{genes}{character vector of HGNC gene symbols (case-insensitive;
@@ -15,6 +21,19 @@ unmatched symbols simply contribute no rows, no error).}
 \item{maxRows}{integer(1) cap on total returned rows (default 5000).}
 
 \item{verbose}{logical(1); if TRUE, message progress per chunk/page.}
+
+\item{fields}{\code{"core"} (default), \code{"all"}, or a character
+vector of column names. \code{"core"} returns exactly the curated
+columns above (unchanged from previous versions). \code{"all"} also
+returns further fields DGIdb's GraphQL API exposes on the matched
+\code{Interaction}/\code{Drug}/\code{Gene}/\code{Source}/
+\code{Publication} records, source-prefixed (e.g. \code{drug.id},
+\code{source.citation}, \code{publication.pmid}) - these are
+requested from the API in the same query (GraphQL only returns what's
+asked for), so \code{fields = "all"} does cost a wider response, not
+an extra request. A character vector requests just those extra
+columns. See \code{\link{listDrugTargetFields}} to browse what's
+available.}
 }
 \value{
 A \code{data.frame} with columns \code{gene_name},

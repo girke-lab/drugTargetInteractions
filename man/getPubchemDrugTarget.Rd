@@ -23,7 +23,9 @@ DrugBank ID, ...) are not yet supported over this wrapper.}
 
 \item{...}{additional arguments passed through to
 \code{\link{getPubchemDrugs}} / \code{\link{getPubchemTargets}} (e.g.
-\code{taxid}, \code{keepActivities}, \code{verbose}).}
+\code{taxid}, \code{keepActivities}, \code{verbose}, and \code{fields}
+- see their \code{fields} argument for \code{"core"}/\code{"all"}/
+custom column selection).}
 }
 \value{
 A \code{data.frame} in the same column shape as
@@ -53,9 +55,12 @@ it does not change their query logic.
   ## drug -> target: aspirin
   getPubchemDrugTarget(list(molType = "cmp", idType = "name",
                             ids = "aspirin"))
+  ## every available field
+  getPubchemDrugTarget(list(molType = "cmp", idType = "name",
+                            ids = "aspirin"), fields = "all")
 }
 }
 \seealso{
 \code{\link{getPubchemDrugs}}, \code{\link{getPubchemTargets}},
-  \code{\link{getChemblDrugTarget}}
+  \code{\link{getChemblDrugTarget}}, \code{\link{listDrugTargetFields}}
 }

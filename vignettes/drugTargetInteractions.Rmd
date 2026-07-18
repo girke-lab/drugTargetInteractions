@@ -288,6 +288,47 @@ NLRP3, TFEB, ADIPOR1/2 in this package's original test-gene set)
 legitimately return zero rows from Open Targets - that reflects the state
 of drug discovery for that target, not a query failure.
 
+## Requesting Additional Fields
+
+`getChemblDrugTarget()`, `getPubchemDrugTarget()`, `getDgidbDrugTarget()`
+and `getOpenTargetsDrugTarget()` return a small, harmonized set of columns
+by default (`fields = "core"`) - this is exactly what lets
+`combineDrugTargets()` bind rows from different sources into one table
+(see [Combining Results]). For a single-source query, though, each
+underlying API exposes many more fields than this curated set. Pass
+`fields = "all"` to get everything available, source-prefixed to avoid
+name clashes between sources:
+
+```{r fields_all, eval=TRUE}
+chembl_all <- getChemblDrugTarget(
+    list(molType = "cmp", idType = "chembl_id", ids = "CHEMBL25"), fields = "all")
+dim(chembl_all)
+chembl_all[, c("Drug_Name", "mechanism.mechanism_comment", "molecule.molecule_type")]
+```
+
+Use `listDrugTargetFields()` to browse what a source offers before
+deciding what to keep:
+
+```{r fields_list, eval=TRUE}
+listDrugTargetFields("chembl")[1:10]
+```
+
+`fields` also accepts a character vector directly, so a single call can
+ask for just the extra columns you actually want:
+
+```{r fields_custom, eval=TRUE}
+getChemblDrugTarget(
+    list(molType = "cmp", idType = "chembl_id", ids = "CHEMBL25"),
+    fields = c("Drug_Name", "molecule.molecule_type", "target.organism"))
+```
+
+The same `fields` argument works identically on all four source
+functions (and on `queryDrugTargets()`, which forwards it through). For
+ChEMBL and PubChem (REST APIs), `fields = "all"` costs nothing extra -
+the full response is already fetched, just no longer discarded. For
+DGIdb and Open Targets (GraphQL APIs), it does request a wider response,
+since GraphQL only returns fields a query explicitly asks for.
+
 ## TTD (Therapeutic Target Database)
 
 TTD has no live API. Its flat files are downloaded once and assembled into

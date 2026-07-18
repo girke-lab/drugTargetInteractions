@@ -9,7 +9,8 @@ getOpenTargetsTargets(
   expand = c("target", "mechanism"),
   chunkSize = 25L,
   pause = 0.1,
-  verbose = FALSE
+  verbose = FALSE,
+  fields = "core"
 )
 }
 \arguments{
@@ -25,6 +26,11 @@ semicolon-delimited string.}
 \item{pause}{numeric(1) seconds to sleep between requests.}
 
 \item{verbose}{logical(1) progress messages.}
+
+\item{fields}{\code{"core"}, \code{"all"}, or a character vector of
+column names, matching \code{\link{getOpenTargetsDrugs}}'s
+\code{fields} argument (same \code{target.}/\code{drug.}-prefixed
+extra columns, from the opposite query direction).}
 }
 \value{
 A \code{data.frame} with columns \code{chembl_id},

@@ -10,7 +10,8 @@ getPubchemDrugs(
   keepActivities = .dtiPotencyEndpoints,
   maxCids = 400L,
   pause = 0.34,
-  verbose = FALSE
+  verbose = FALSE,
+  fields = "core"
 )
 }
 \arguments{
@@ -29,6 +30,15 @@ keep (default IC50/Ki/Kd/EC50/AC50/Potency); \code{NULL} keeps all.}
 without an API key).}
 
 \item{verbose}{logical(1) progress messages.}
+
+\item{fields}{\code{"core"} (default), \code{"all"}, or a character
+vector of column names. \code{"core"} returns exactly the curated
+columns above (unchanged from previous versions). \code{"all"} also
+returns every other column PubChem's \code{concise} bioactivity table
+provides, prefixed \code{activity.} (e.g. \code{activity.PubMed_ID},
+\code{activity.RNAi} - no extra API calls, already fetched). A
+character vector requests just those extra columns. See
+\code{\link{listDrugTargetFields}} to browse what's available.}
 }
 \value{
 A \code{data.frame} with columns \code{gene_symbol},

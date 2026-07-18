@@ -4,7 +4,12 @@
 \alias{.dtiPubchemFilterRows}
 \title{Filter+tidy raw concise/assaysummary rows to Active, numeric, potency}
 \usage{
-.dtiPubchemFilterRows(cols, rows, keepActivities = .dtiPotencyEndpoints)
+.dtiPubchemFilterRows(
+  cols,
+  rows,
+  keepActivities = .dtiPotencyEndpoints,
+  keepAllCols = FALSE
+)
 }
 \arguments{
 \item{cols}{list of raw column-name strings (PUG-REST \code{Columns}).}
@@ -14,11 +19,19 @@
 
 \item{keepActivities}{character vector of Activity Name values to
 keep, or \code{NULL} to keep all.}
+
+\item{keepAllCols}{logical(1); if \code{TRUE}, also attach every other
+column present in the raw concise/assaysummary table (sanitized,
+\code{activity.}-prefixed), not just the curated 6 - used by
+\code{fields != "core"} in \code{\link{getPubchemDrugs}}/
+\code{\link{getPubchemTargets}}. No extra API calls: the full table
+is already fetched, this just stops discarding columns from it.}
 }
 \value{
 data.frame with columns \code{CID}, \code{TargetAccession},
   \code{TargetGeneID}, \code{ActivityName}, \code{ActivityValueuM},
-  \code{AssayName}.
+  \code{AssayName}, plus \code{activity.*} columns when
+  \code{keepAllCols = TRUE}.
 }
 \description{
 Shared by both directions - PubChem's gene-centric "concise" table and

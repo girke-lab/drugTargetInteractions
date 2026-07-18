@@ -4,9 +4,22 @@
 \alias{.dtiDrugSelection}
 \title{The reusable GraphQL selection for one target's drugs (no outer braces)}
 \usage{
-.dtiDrugSelection()
+.dtiDrugSelection(wantAll = FALSE)
+}
+\arguments{
+\item{wantAll}{logical(1).}
 }
 \description{
-The reusable GraphQL selection for one target's drugs (no outer braces)
+\code{wantAll = TRUE} widens the selection with every scalar (and
+simple 2-field-object list, e.g. \code{synonyms { label source }})
+field documented on Open Targets' \code{Target}/\code{Drug} types
+(confirmed live via GraphQL introspection against
+\url{https://api.platform.opentargets.org/api/v4/graphql}). Fields that
+need their own multi-level sub-selection or represent a whole separate
+dataset (\code{tractability}, \code{safetyLiabilities},
+\code{geneOntology}, \code{pathways}, \code{homologues},
+\code{associatedDiseases}, \code{evidences}, \code{interactions},
+\code{pharmacogenomics}, \code{indications}, \code{adverseEvents}, ...)
+are out of scope for this pass.
 }
 \keyword{internal}
