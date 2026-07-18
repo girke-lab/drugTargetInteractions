@@ -69,6 +69,15 @@ SQLite built from its public flat files. ChEMBL remains additionally
 available through a downloaded local SQLite instance for users who prefer
 that (see the [Supplement]).
 
+Four of these (ChEMBL, DGIdb, Open Targets, TTD) provide curated
+**drug-target annotations** - an expert-curated call that a drug acts on a
+target via some mechanism - and are queried the same way via
+`queryDrugTargets()`/`combineDrugTargets()` (see [Cross-Source Queries]).
+PubChem instead provides raw **bioassay measurements** (individual assay
+results, no mechanism claim attached) - a genuinely different kind of
+data, covered separately in [Bioassay Queries] alongside ChEMBL's own
+bioassay function, `getChemblBioassay()`.
+
 Because every source has its own native identifier vocabulary (a ChEMBL
 molecule ID is not a PubChem CID is not a DrugBank ID), the package also
 provides a **generic ID-translation layer**: live services for mapping
@@ -86,8 +95,10 @@ results.
 This vignette is organised as follows:
 
 - **[Quick Start]** - a five-minute tour of the essential commands.
-- **[Data Sources in Detail]** - one section per source, with both query
-  directions.
+- **[Data Sources in Detail]** - one section per annotation source, with
+  both query directions.
+- **[Bioassay Queries]** - the separate, raw-measurement track (ChEMBL,
+  PubChem).
 - **[ID Translation Layer]** - the standalone translation functions.
 - **[Cross-Source Queries]** - `queryDrugTargets()` across one or many
   sources at once, performance guidance, and combining results into a
@@ -156,7 +167,7 @@ as many sources as you like in one call:
 ```{r quickstart_meta, eval=TRUE}
 res <- queryDrugTargets(
     list(molType = "gene", idType = "symbol", ids = "FGFR1"),
-    sources = c("chembl", "pubchem", "dgidb", "opentargets"))
+    sources = c("chembl", "dgidb", "opentargets"))
 names(res)              # one data.frame per source that returned results
 sapply(res, nrow)
 ```
@@ -205,34 +216,6 @@ Standalone helpers are also available: `getChemblMolecule()` (compound
 properties), `getChemblTarget()` (search targets by gene/protein name), and
 `getChemblBioactivities()` (raw IC50/Ki/Kd/EC50 measurements for one
 target).
-
-## PubChem
-
-PubChem's bioactivity data is queried through its PUG-REST API and NCBI
-E-utilities via `getPubchemDrugTarget()`. Native identifiers: a **gene
-symbol** (an NCBI GeneID also passes through unresolved) for target &rarr;
-drug, a **compound name** (a PubChem CID also passes through unresolved)
-for drug &rarr; target.
-
-```{r pubchem_target2drug, eval=TRUE}
-pubchem_t2d <- getPubchemDrugTarget(
-    list(molType = "gene", idType = "symbol", ids = "KLB"))
-head(pubchem_t2d[, c("drug_name", "activity_name", "activity_value_uM")])
-```
-
-```{r pubchem_drug2target, eval=TRUE}
-pubchem_d2t <- getPubchemDrugTarget(
-    list(molType = "cmp", idType = "name", ids = "aspirin"))
-pubchem_d2t[, c("gene_symbol", "activity_name", "activity_value_uM")]
-```
-
-PubChem is compound-centric and high-volume; results are capped per gene
-(`maxCids`, default 400) and filtered to Active, numeric, potency-endpoint
-measurements (IC50/Ki/Kd/EC50/AC50/Potency) by default. Because
-compound-centric assay data spans whatever species each assay used (e.g.
-aspirin's classic COX1/COX2 potency assays are annotated against *sheep*
-GeneIDs in PubChem), `getPubchemTargets()`/`getPubchemDrugTarget()` filter
-to human (`taxid = 9606`) by default - pass `taxid = NULL` for all species.
 
 ## DGIdb
 
@@ -364,6 +347,85 @@ into your local cache and builds the SQLite there - the package itself
 ships no TTD data (TTD's license permits academic use but has no explicit
 redistribution grant).
 
+# Bioassay Queries
+
+Everything in [Data Sources in Detail] returns curated drug-target
+*annotations* - a database's own expert-curated call that a drug acts on
+a target via some mechanism (ChEMBL's `drug_mechanism`, DGIdb's
+aggregated interactions, Open Targets' `mechanismsOfAction`, TTD's
+target-drug mappings). That's a genuinely different kind of data from a
+raw *bioassay measurement* - one experimental result, e.g. "this compound
+inhibited this target with an IC50 of 42nM in this specific assay" - with
+no claim about mechanism or curation attached. PubChem's REST API only
+ever returns the latter, and ChEMBL exposes both kinds side by side. To
+keep the two from being silently conflated, this package always keeps
+them in separate functions and never combines them:
+`queryDrugTargets()`/`combineDrugTargets()` (see [Cross-Source Queries])
+only ever touch the four annotation sources - PubChem is not one of
+their `sources`.
+
+## ChEMBL
+
+`getChemblBioassay()` is the bioassay-track sibling of
+`getChemblDrugTarget()`: same bidirectional `queryBy` interface (UniProt
+accession for target &rarr; drug, ChEMBL molecule ID for drug &rarr;
+target), but pulling from ChEMBL's `activity` resource instead of
+`drug_mechanism`.
+
+```{r chembl_bioassay_target2drug, eval=TRUE}
+chembl_ba_t2d <- getChemblBioassay(
+    list(molType = "protein", idType = "Uniprot", ids = "P11362"),  # FGFR1
+    standardType = "IC50")
+head(chembl_ba_t2d[, c("Drug_Name", "standard_value", "standard_units")])
+```
+
+```{r chembl_bioassay_drug2target, eval=TRUE}
+chembl_ba_d2t <- getChemblBioassay(
+    list(molType = "cmp", idType = "chembl_id", ids = "CHEMBL1421"))  # dasatinib
+head(chembl_ba_d2t[, c("UniProt_ID", "standard_type", "standard_value")])
+```
+
+A single-target convenience helper, `getChemblBioactivities()`, is also
+available for a quick one-target lookup without the batching/direction
+machinery. `getChemblBioassay()` also supports the same `fields =
+"core"/"all"/<vector>` mechanism as the annotation functions (see
+[Requesting Additional Fields]) - use `listBioassayFields("chembl")` to
+browse the extra columns available:
+
+```{r chembl_bioassay_fields, eval=TRUE}
+listBioassayFields("chembl")[1:10]
+```
+
+## PubChem
+
+PubChem's bioactivity data is queried through its PUG-REST API and NCBI
+E-utilities via `getPubchemDrugTarget()`. Native identifiers: a **gene
+symbol** (an NCBI GeneID also passes through unresolved) for target &rarr;
+drug, a **compound name** (a PubChem CID also passes through unresolved)
+for drug &rarr; target.
+
+```{r pubchem_target2drug, eval=TRUE}
+pubchem_t2d <- getPubchemDrugTarget(
+    list(molType = "gene", idType = "symbol", ids = "KLB"))
+head(pubchem_t2d[, c("drug_name", "activity_name", "activity_value_uM")])
+```
+
+```{r pubchem_drug2target, eval=TRUE}
+pubchem_d2t <- getPubchemDrugTarget(
+    list(molType = "cmp", idType = "name", ids = "aspirin"))
+pubchem_d2t[, c("gene_symbol", "activity_name", "activity_value_uM")]
+```
+
+PubChem is compound-centric and high-volume; results are capped per gene
+(`maxCids`, default 400) and filtered to Active, numeric, potency-endpoint
+measurements (IC50/Ki/Kd/EC50/AC50/Potency) by default. Because
+compound-centric assay data spans whatever species each assay used (e.g.
+aspirin's classic COX1/COX2 potency assays are annotated against *sheep*
+GeneIDs in PubChem), `getPubchemTargets()`/`getPubchemDrugTarget()` filter
+to human (`taxid = 9606`) by default - pass `taxid = NULL` for all species.
+Like ChEMBL's bioassay function, `fields = "core"/"all"/<vector>` and
+`listBioassayFields("pubchem")` are available here too.
+
 # ID Translation Layer
 
 Every source function above expects that source's *native* identifier
@@ -472,7 +534,7 @@ sapply(res_ensembl, nrow)
 ## TTD needs a local db path (see above); other sources ignore it.
 res_all_live <- queryDrugTargets(
     list(molType = "gene", idType = "symbol", ids = "FGFR1"),
-    sources = c("chembl", "pubchem", "dgidb", "opentargets", "ttd"),
+    sources = c("chembl", "dgidb", "opentargets", "ttd"),
     ttdDbPath = ttdDbPath)
 sapply(res_all_live, nrow)
 ```
@@ -508,10 +570,12 @@ these without a specific reason):
 | UniProt ID Mapping | Server-enforced job size cap | up to 100,000 IDs/job (asynchronous) |
 | UniChem | No batching in the live API at all - hence the local-SQLite design | n/a (local queries) |
 
-All five per-source functions and `queryDrugTargets()` chunk large `ids`
-vectors into these batch sizes automatically, so a query of, say, 2,000
-UniProt accessions works the same as one - it just takes proportionally
-longer and issues proportionally more requests. When testing or debugging
+Every per-source function chunks large `ids` vectors into these batch
+sizes automatically - including `queryDrugTargets()`, for the four
+annotation sources it dispatches to (see [Bioassay Queries] for why
+PubChem isn't one of them) - so a query of, say, 2,000 UniProt
+accessions works the same as one - it just takes proportionally longer
+and issues proportionally more requests. When testing or debugging
 with a deliberately small `chunkSize`, pick one relative to the *endpoint's
 fan-out*, not arbitrarily small: a tiny `chunkSize` against a low-fan-out
 endpoint (e.g. ChEMBL's `molecule` lookup, one record per ID) is a cheap

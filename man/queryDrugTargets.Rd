@@ -28,8 +28,8 @@ protein side (see \code{\link{.resolveGeneIds}}), or one of
 vocabulary, which this function translates to internally.}
 
 \item{sources}{character vector, any of \code{"chembl"},
-\code{"pubchem"}, \code{"dgidb"}, \code{"opentargets"}, \code{"ttd"}
-(default: all five).}
+\code{"dgidb"}, \code{"opentargets"}, \code{"ttd"} (default: all
+four annotation sources; PubChem is not included here, see Details).}
 
 \item{ttdDbPath}{character(1) path to a local TTD SQLite (see
 \code{\link{buildTtdDb}}); required if \code{"ttd"} is in
@@ -69,14 +69,22 @@ The tying-together piece of the ID-translation layer (see
 \code{queryBy$ids} to whatever native identifier each requested
 source needs (see \code{\link{.resolveGeneIds}}/
 \code{\link{.resolveCompoundIds}} for how), then dispatches to that
-source's own bidirectional query function
-(\code{\link{getChemblDrugTarget}}, \code{\link{getPubchemDrugTarget}},
-\code{\link{getDgidbDrugTarget}}, \code{\link{getOpenTargetsDrugTarget}},
-\code{\link{ttdTargetAnnot}}). Named \code{queryDrugTargets()}, not
-\code{getDrugTarget()} - that name is already taken by an older,
-unrelated function in \code{drugTargetAnnotations_Fct.R}.
+source's own bidirectional \emph{annotation} query function
+(\code{\link{getChemblDrugTarget}}, \code{\link{getDgidbDrugTarget}},
+\code{\link{getOpenTargetsDrugTarget}}, \code{\link{ttdTargetAnnot}}).
+Named \code{queryDrugTargets()}, not \code{getDrugTarget()} - that
+name is already taken by an older, unrelated function in
+\code{drugTargetAnnotations_Fct.R}.
 }
 \details{
+PubChem is intentionally not one of the dispatchable \code{sources}:
+its REST accessors return raw bioassay measurements, not curated
+drug-target annotations, a different data type from what this
+function and \code{\link{combineDrugTargets}} harmonize. Use
+\code{\link{getPubchemDrugTarget}} directly, or
+\code{\link{getChemblBioassay}} for ChEMBL's own bioassay data - see
+the "Bioassay Queries" vignette section.
+
 Returns a named list, one element per successfully-queried source -
 \strong{not} one unified table. Cross-source schema harmonization is a
 separate, deferred phase (see \code{PROGRESS.md}'s 2026-07-13 S4
@@ -92,7 +100,7 @@ supplied) - set \code{verbose = TRUE} to see why.
   ## target -> drug, starting from an Ensembl gene ID, all live sources
   res <- queryDrugTargets(
     list(molType = "gene", idType = "ensembl", ids = "ENSG00000077782"),
-    sources = c("chembl", "pubchem", "dgidb", "opentargets"))
+    sources = c("chembl", "dgidb", "opentargets"))
   names(res)
   res$chembl
 
@@ -103,8 +111,8 @@ supplied) - set \code{verbose = TRUE} to see why.
 }
 }
 \seealso{
-\code{\link{getChemblDrugTarget}}, \code{\link{getPubchemDrugTarget}},
-  \code{\link{getDgidbDrugTarget}}, \code{\link{getOpenTargetsDrugTarget}},
-  \code{\link{ttdTargetAnnot}}, \code{\link{getUniprotMapping}},
-  \code{\link{getUnichemMapping}}
+\code{\link{getChemblDrugTarget}}, \code{\link{getDgidbDrugTarget}},
+  \code{\link{getOpenTargetsDrugTarget}}, \code{\link{ttdTargetAnnot}},
+  \code{\link{getPubchemDrugTarget}}, \code{\link{getChemblBioassay}},
+  \code{\link{getUniprotMapping}}, \code{\link{getUnichemMapping}}
 }

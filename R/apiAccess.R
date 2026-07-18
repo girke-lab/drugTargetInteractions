@@ -456,6 +456,44 @@ listDrugTargetFields <- function(source = c("chembl", "pubchem", "dgidb", "opent
         opentargets = .dtiOpenTargetsAllCols)
 }
 
+#' List the fields available from a bioassay source under \code{fields = "all"}
+#'
+#' The bioassay-track counterpart of \code{\link{listDrugTargetFields}},
+#' kept as a separate function rather than adding new source keys there -
+#' this package deliberately keeps drug-target \emph{annotation} data
+#' (curated mechanism-of-action calls: ChEMBL/DGIdb/Open Targets/TTD, see
+#' \code{\link{listDrugTargetFields}}) and raw \emph{bioassay}
+#' measurements (individual assay results: ChEMBL/PubChem, this function)
+#' as two distinct tracks everywhere, including field discovery. See the
+#' "Bioassay Queries" vignette section for the full distinction.
+#'
+#' @param source character(1); one of \code{"chembl"} (see
+#'   \code{\link{getChemblBioassay}}) or \code{"pubchem"} (see
+#'   \code{\link{getPubchemDrugTarget}}).
+#' @param queryBy optional \code{queryBy} list to probe live instead of
+#'   returning the static documented list (see
+#'   \code{\link{listDrugTargetFields}}'s \code{queryBy} argument for the
+#'   same tradeoff).
+#' @param ... additional arguments passed to the source function when
+#'   \code{queryBy} is supplied (e.g. \code{standardType} for
+#'   \code{\link{getChemblBioassay}}, \code{verbose}).
+#' @return character vector of column names.
+#' @examples
+#' listBioassayFields("chembl")
+#' @seealso \code{\link{getChemblBioassay}}, \code{\link{getPubchemDrugTarget}},
+#'   \code{\link{listDrugTargetFields}}
+#' @export
+listBioassayFields <- function(source = c("chembl", "pubchem"), queryBy = NULL, ...) {
+    source <- match.arg(source)
+    if (!is.null(queryBy)) {
+        fn <- switch(source, chembl = getChemblBioassay, pubchem = getPubchemDrugTarget)
+        return(names(fn(queryBy, fields = "all", ...)))
+    }
+    switch(source,
+        chembl  = .dtiChemblBioassayAllCols,
+        pubchem = .dtiPubchemAllCols)
+}
+
 
 ## ---------------------------------------------------------------------
 ## ChEMBL REST access
@@ -641,6 +679,249 @@ getChemblBioactivities <- function(targetChemblId, standardType = NA,
     rownames(df) <- NULL
     df
 }
+
+#' UniProt accession -> ChEMBL target ID(s) + component description
+#'
+#' Lean, standalone version of the same resolution
+#' \code{\link{getChemblDrugTarget}} does internally for its
+#' target -> drug direction (kept separate, not shared code, to avoid
+#' touching that function's already-tested internal closures) - used by
+#' \code{\link{getChemblBioassay}}'s target-direction query. One
+#' accession can map to several ChEMBL targets (single-protein plus any
+#' protein-family/complex targets it belongs to); a returned (possibly
+#' multi-component) target is exploded against every query accession it
+#' actually contains.
+#' @keywords internal
+.dtiChemblAccessionToTargetId <- function(accessions, base, chunkSize, verbose) {
+    accessions <- unique(accessions)
+    recs <- .dtiBatchGET(paste0(base, "/target.json"),
+                         "target_components__accession__in", accessions,
+                         "targets", chunkSize = chunkSize, verbose = verbose)
+    rows <- lapply(recs, function(t) {
+        comps <- t$target_components %||% list()
+        compAcc <- vapply(comps, function(c) c$accession %||% NA_character_,
+                          character(1))
+        matched <- intersect(compAcc, accessions)
+        if (length(matched) == 0L) return(NULL)
+        do.call(rbind, lapply(matched, function(acc) {
+            comp <- Filter(function(c) identical(c$accession %||% NA, acc), comps)
+            comp <- if (length(comp)) comp[[1]] else list()
+            data.frame(QueryIDs = acc,
+                      ChEMBL_TID = t$target_chembl_id %||% NA_character_,
+                      Desc = comp$component_description %||% NA_character_,
+                      stringsAsFactors = FALSE)
+        }))
+    })
+    out <- do.call(rbind, rows)
+    if (is.null(out)) {
+        out <- data.frame(QueryIDs = character(0), ChEMBL_TID = character(0),
+                          Desc = character(0), stringsAsFactors = FALSE)
+    }
+    out
+}
+
+#' ChEMBL target ID(s) -> UniProt accession + component description
+#'
+#' Lean, standalone counterpart to
+#' \code{\link{.dtiChemblAccessionToTargetId}}, used by
+#' \code{\link{getChemblBioassay}}'s compound-direction query, where the
+#' target's accession isn't known until activity rows come back.
+#' @keywords internal
+.dtiChemblTargetMeta <- function(targetChemblIds, base, chunkSize, verbose) {
+    empty <- data.frame(ChEMBL_TID = character(0), UniProt_ID = character(0),
+                        Desc = character(0), stringsAsFactors = FALSE)
+    targetChemblIds <- unique(stats::na.omit(targetChemblIds))
+    if (length(targetChemblIds) == 0L) return(empty)
+    recs <- .dtiBatchGET(paste0(base, "/target.json"), "target_chembl_id__in",
+                         targetChemblIds, "targets", chunkSize = chunkSize,
+                         verbose = verbose)
+    if (length(recs) == 0L) return(empty)
+    rows <- lapply(recs, function(t) {
+        comps <- t$target_components %||% list()
+        if (length(comps) == 0L) {
+            return(data.frame(ChEMBL_TID = t$target_chembl_id %||% NA_character_,
+                              UniProt_ID = NA_character_, Desc = NA_character_,
+                              stringsAsFactors = FALSE))
+        }
+        do.call(rbind, lapply(comps, function(c) data.frame(
+            ChEMBL_TID = t$target_chembl_id %||% NA_character_,
+            UniProt_ID = c$accession %||% NA_character_,
+            Desc       = c$component_description %||% NA_character_,
+            stringsAsFactors = FALSE)))
+    })
+    do.call(rbind, rows)
+}
+
+#' Query raw ChEMBL bioassay measurements via the queryBy interface
+#'
+#' Bidirectional, batched REST equivalent of the package's legacy
+#' local-ChEMBL-SQLite \code{drugTargetBioactivity()} query
+#' (\code{R/drugTargetAnnotations_Fct.R}): given one or more UniProt
+#' accessions, returns every bioassay measurement recorded against
+#' ChEMBL targets matching those accessions (target -> drug bioassay
+#' direction); given one or more ChEMBL molecule IDs, returns every
+#' measurement recorded for those compounds (drug -> target bioassay
+#' direction). This is the raw-measurement counterpart to
+#' \code{\link{getChemblDrugTarget}}'s curated \code{drug_mechanism}
+#' annotations - see the "Bioassay Queries" vignette section for the
+#' annotation-vs-bioassay distinction. Unlike
+#' \code{\link{getChemblBioactivities}} (a simple single-target
+#' convenience lookup, kept as-is), this batches arbitrarily many IDs and
+#' supports both query directions, matching
+#' \code{\link{getChemblDrugTarget}}'s interface.
+#'
+#' @param queryBy named list with components \code{molType}, \code{idType}
+#'   and \code{ids}, same vocabulary as \code{\link{getChemblDrugTarget}}:
+#'   \code{molType = "protein"} with \code{idType} containing
+#'   \code{"Uniprot"} for target -> drug bioassay by UniProt accession(s)
+#'   in \code{ids}; \code{molType = "cmp"} with \code{idType =
+#'   "chembl_id"} for drug -> target bioassay by ChEMBL molecule ID(s).
+#' @param standardType character(1) or \code{NA}; restrict to one
+#'   measurement type (e.g. \code{"IC50"}). \code{NA} (default) keeps all
+#'   types.
+#' @param fields \code{"core"} (default), \code{"all"}, or a character
+#'   vector of column names - see \code{\link{getChemblDrugTarget}}'s
+#'   \code{fields} argument for the general mechanism; use
+#'   \code{\link{listBioassayFields}} to browse what's available for
+#'   this function specifically.
+#' @param verbose logical(1); if TRUE, message progress per batch.
+#' @param chunkSize integer(1), same batching convention as
+#'   \code{\link{getChemblDrugTarget}}.
+#' @return A \code{data.frame} with columns \code{QueryIDs},
+#'   \code{chembl_id}, \code{Drug_Name}, \code{ChEMBL_TID},
+#'   \code{UniProt_ID}, \code{Organism}, \code{Desc},
+#'   \code{assay_chembl_id}, \code{assay_description},
+#'   \code{standard_type}, \code{standard_relation},
+#'   \code{standard_value}, \code{standard_units}, \code{pchembl_value}
+#'   (with \code{fields = "core"}, the default), plus further
+#'   \code{activity.}-prefixed columns when \code{fields} requests more.
+#'   Query IDs that return no rows still appear as a single row with all
+#'   other fields \code{NA}.
+#' @examples
+#' \donttest{
+#'   ## target -> drug bioassay: FGFR1
+#'   getChemblBioassay(list(molType = "protein", idType = "Uniprot",
+#'                          ids = "P11362"), standardType = "IC50")
+#'   ## drug -> target bioassay: dasatinib
+#'   getChemblBioassay(list(molType = "cmp", idType = "chembl_id",
+#'                          ids = "CHEMBL1421"))
+#' }
+#' @seealso \code{\link{getChemblDrugTarget}}, \code{\link{getChemblBioactivities}},
+#'   \code{\link{listBioassayFields}}
+#' @export
+getChemblBioassay <- function(queryBy = list(molType = NULL, idType = NULL, ids = NULL),
+                              standardType = NA, fields = "core", verbose = FALSE,
+                              chunkSize = 200L) {
+    if (!identical(names(queryBy), c("molType", "idType", "ids"))) {
+        stop(
+            "All three list components in 'queryBy' (named: 'molType',",
+            " 'idType' and 'ids') need to be present."
+        )
+    }
+    if (any(vapply(queryBy, length, integer(1)) == 0)) {
+        stop(
+            "All components in 'queryBy' list need to be populated with ",
+            "corresponding character vectors."
+        )
+    }
+
+    base <- .dtiEndpoints()$chembl
+    wantAll <- !identical(fields, "core")
+    emptyCols <- c("QueryIDs", "chembl_id", "Drug_Name", "ChEMBL_TID",
+                  "UniProt_ID", "Organism", "Desc", "assay_chembl_id",
+                  "assay_description", "standard_type", "standard_relation",
+                  "standard_value", "standard_units", "pchembl_value")
+    emptyDF <- as.data.frame(stats::setNames(
+        replicate(length(emptyCols), character(0), simplify = FALSE),
+        emptyCols), stringsAsFactors = FALSE)
+
+    isTarget <- identical(queryBy$molType, "protein") &&
+        grepl("Uniprot", queryBy$idType[[1]], ignore.case = TRUE)
+    isCmp <- identical(queryBy$molType, "cmp") &&
+        identical(queryBy$idType, "chembl_id")
+    if (!isTarget && !isCmp) {
+        stop(
+            "getChemblBioassay() currently supports only ",
+            "queryBy=list(molType=\"protein\", idType=\"Uniprot\", ids=...) ",
+            "or queryBy=list(molType=\"cmp\", idType=\"chembl_id\", ids=...)."
+        )
+    }
+
+    extraQuery <- if (!is.na(standardType)) list(standard_type = standardType) else list()
+
+    flattenActivity <- function(a) {
+        core <- list(
+            chembl_id          = a$molecule_chembl_id %||% NA_character_,
+            Drug_Name          = a$molecule_pref_name  %||% NA_character_,
+            ChEMBL_TID         = a$target_chembl_id    %||% NA_character_,
+            Organism           = a$target_organism     %||% NA_character_,
+            assay_chembl_id    = a$assay_chembl_id     %||% NA_character_,
+            assay_description  = a$assay_description   %||% NA_character_,
+            standard_type      = a$standard_type       %||% NA_character_,
+            standard_relation  = a$standard_relation   %||% NA_character_,
+            standard_value     = as.numeric(a$standard_value %||% NA),
+            standard_units     = a$standard_units      %||% NA_character_,
+            pchembl_value      = as.numeric(a$pchembl_value %||% NA))
+        extra <- if (wantAll) .dtiFlattenRecord(a, "activity") else list()
+        do.call(data.frame, c(core, extra, list(stringsAsFactors = FALSE)))
+    }
+
+    if (isTarget) {
+        tgt <- .dtiChemblAccessionToTargetId(queryBy$ids, base, chunkSize, verbose)
+        if (nrow(tgt) == 0L) return(.dtiSelectFields(emptyDF, fields, emptyCols))
+        recs <- .dtiBatchGET(paste0(base, "/activity.json"), "target_chembl_id__in",
+                             unique(tgt$ChEMBL_TID), "activities", chunkSize = chunkSize,
+                             extraQuery = extraQuery, verbose = verbose)
+        if (length(recs) == 0L) return(.dtiSelectFields(emptyDF, fields, emptyCols))
+        act <- .dtiRbindFill(lapply(recs, flattenActivity))
+        out <- merge(tgt, act, by = "ChEMBL_TID")
+        out$UniProt_ID <- out$QueryIDs
+    } else {
+        recs <- .dtiBatchGET(paste0(base, "/activity.json"), "molecule_chembl_id__in",
+                             queryBy$ids, "activities", chunkSize = chunkSize,
+                             extraQuery = extraQuery, verbose = verbose)
+        if (length(recs) == 0L) return(.dtiSelectFields(emptyDF, fields, emptyCols))
+        act <- .dtiRbindFill(lapply(recs, flattenActivity))
+        act$QueryIDs <- act$chembl_id
+        meta <- .dtiChemblTargetMeta(unique(act$ChEMBL_TID), base, chunkSize, verbose)
+        out <- merge(act, meta, by = "ChEMBL_TID", all.x = TRUE)
+    }
+
+    unmatched <- setdiff(queryBy$ids, unique(out$QueryIDs))
+    if (length(unmatched)) {
+        extra <- out[rep(NA_integer_, length(unmatched)), , drop = FALSE]
+        extra$QueryIDs <- unmatched
+        out <- rbind(out, extra)
+    }
+    out <- out[order(match(out$QueryIDs, queryBy$ids)), , drop = FALSE]
+    rownames(out) <- NULL
+    .dtiSelectFields(out, fields, emptyCols)
+}
+
+#' Documented column list for \code{listBioassayFields("chembl")}
+#' @keywords internal
+.dtiChemblBioassayAllCols <- c(
+    "QueryIDs", "chembl_id", "Drug_Name", "ChEMBL_TID", "UniProt_ID",
+    "Organism", "Desc", "assay_chembl_id", "assay_description",
+    "standard_type", "standard_relation", "standard_value",
+    "standard_units", "pchembl_value",
+    "activity.action_type", "activity.activity_comment", "activity.activity_id",
+    "activity.activity_properties", "activity.assay_type",
+    "activity.assay_variant_accession", "activity.assay_variant_mutation",
+    "activity.bao_endpoint", "activity.bao_format", "activity.bao_label",
+    "activity.canonical_smiles", "activity.data_validity_comment",
+    "activity.data_validity_description", "activity.document_chembl_id",
+    "activity.document_journal", "activity.document_year",
+    "activity.ligand_efficiency.bei", "activity.ligand_efficiency.le",
+    "activity.ligand_efficiency.lle", "activity.ligand_efficiency.sei",
+    "activity.modality",
+    "activity.parent_molecule_chembl_id", "activity.potential_duplicate",
+    "activity.qudt_units", "activity.record_id", "activity.relation",
+    "activity.src_id", "activity.standard_flag", "activity.standard_text_value",
+    "activity.standard_upper_value", "activity.target_tax_id",
+    "activity.text_value", "activity.toid", "activity.type", "activity.units",
+    "activity.uo_units", "activity.upper_value", "activity.value"
+)
 
 #' Resolve the latest ChEMBL release number
 #'

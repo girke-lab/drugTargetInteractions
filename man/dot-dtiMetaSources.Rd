@@ -17,16 +17,14 @@ through unresolved).}
 .dtiMetaSources
 }
 \description{
-All sources \code{\link{queryDrugTargets}} knows how to dispatch to,
-and the canonical resolution target each one's native \code{queryBy}
-interface needs. Gene/protein side all resolve to a symbol - the one
-type every non-ChEMBL source accepts directly - except ChEMBL, which
-needs a UniProt accession. Compound side all resolve to a name -
-efficient in the common case (a name input is a zero-network
-passthrough - see \code{\link{.resolveCompoundIds}}) - except ChEMBL
-and Open Targets, which take a ChEMBL ID directly (and, for Open
-Targets, still work when handed one under \code{idType = "name"},
-since \code{getOpenTargetsDrugTarget()} passes ChEMBL-shaped strings
-through unresolved).
+PubChem is deliberately \strong{not} listed here: its REST accessors
+(\code{getPubchemDrugs()}/\code{getPubchemTargets()}/
+\code{getPubchemDrugTarget()}) return raw bioassay measurements, not
+curated drug-target annotations the way every other source here does
+- a different data type that doesn't belong in this dispatcher or in
+\code{\link{combineDrugTargets}}'s column harmonization. See the
+"Bioassay Queries" vignette section, \code{\link{getChemblBioassay}}
+and \code{\link{listBioassayFields}} for the bioassay-track
+counterpart.
 }
 \keyword{internal}

@@ -55,14 +55,15 @@ source's full original data remains available unchanged in
 concept: ChEMBL's \code{Action_Type} and Open Targets'
 \code{action_type} are categorical mechanism labels (e.g.
 \code{"INHIBITOR"}); TTD's \code{MOA} and DGIdb's
-\code{interaction_types} are similar; PubChem's \code{activity_name}
-is a bioactivity *assay endpoint type* (e.g. \code{"IC50"}, not a
-mechanism label at all - PubChem has no mechanism-of-action concept).
+\code{interaction_types} are similar. PubChem is not one of the
+combinable sources at all (see \code{\link{.dtiMetaSources}}): its
+bioactivity data has no mechanism-of-action concept to align to in
+the first place.
 }
 \examples{
 \donttest{
   res <- queryDrugTargets(list(molType = "gene", idType = "symbol", ids = "FGFR1"),
-                          sources = c("chembl", "pubchem", "dgidb", "opentargets"))
+                          sources = c("chembl", "dgidb", "opentargets"))
   combineDrugTargets(res)
   combineDrugTargets(res, resolveGeneSymbol = TRUE)  ## fills ChEMBL's gene_symbol too
 }

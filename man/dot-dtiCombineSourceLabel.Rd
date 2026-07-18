@@ -7,6 +7,7 @@
 .dtiCombineSourceLabel
 }
 \description{
-Display name per source, used as a constant \code{source} column value
+PubChem is not included - see \code{\link{.dtiMetaSources}} for why
+it's excluded from this whole annotation-combining layer.
 }
 \keyword{internal}

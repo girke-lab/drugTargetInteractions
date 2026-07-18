@@ -115,6 +115,72 @@ test_that("getChemblDrugTarget batches multiple compound IDs (drug->target)", {
     expect_true("P00519" %in% df$UniProt_ID[df$QueryIDs == "CHEMBL1421"])
 })
 
+test_that("getChemblBioassay target->drug returns FGFR1 IC50 measurements", {
+    skip_if_offline_dti()
+    df <- getChemblBioassay(list(molType = "protein", idType = "Uniprot",
+                                 ids = "P11362"), standardType = "IC50")
+    expect_s3_class(df, "data.frame")
+    expect_identical(names(df), c("QueryIDs", "chembl_id", "Drug_Name", "ChEMBL_TID",
+                                  "UniProt_ID", "Organism", "Desc", "assay_chembl_id",
+                                  "assay_description", "standard_type",
+                                  "standard_relation", "standard_value",
+                                  "standard_units", "pchembl_value"))
+    expect_true(nrow(df) > 0L)
+    expect_true(all(df$QueryIDs == "P11362"))
+    expect_true(all(df$standard_type == "IC50"))
+})
+
+test_that("getChemblBioassay drug->target returns dasatinib's measurements", {
+    skip_if_offline_dti()
+    df <- getChemblBioassay(list(molType = "cmp", idType = "chembl_id",
+                                 ids = "CHEMBL1421"))
+    expect_true(nrow(df) > 0L)
+    expect_true(all(df$QueryIDs == "CHEMBL1421"))
+    expect_identical(unique(df$chembl_id), "CHEMBL1421")
+})
+
+test_that("getChemblBioassay surfaces unmatched query IDs as NA rows", {
+    skip_if_offline_dti()
+    df <- getChemblBioassay(list(molType = "protein", idType = "Uniprot",
+                                 ids = c("P11362", "NOTAREALACCESSION")),
+                            standardType = "IC50")
+    expect_true("NOTAREALACCESSION" %in% df$QueryIDs)
+    naRow <- df[df$QueryIDs == "NOTAREALACCESSION", ]
+    expect_equal(nrow(naRow), 1L)
+    expect_true(is.na(naRow$chembl_id))
+})
+
+test_that("getChemblBioassay rejects unsupported idType / malformed queryBy", {
+    expect_error(
+        getChemblBioassay(list(molType = "cmp", idType = "PubChem_ID", ids = "2244")),
+        "currently supports only")
+    expect_error(
+        getChemblBioassay(list(molType = "cmp", idType = "chembl_id", ids = character(0))),
+        "need to be populated")
+})
+
+test_that("getChemblBioassay(fields = 'all') adds activity.*-prefixed columns", {
+    skip_if_offline_dti()
+    core <- getChemblBioassay(list(molType = "cmp", idType = "chembl_id", ids = "CHEMBL1421"))
+    all  <- getChemblBioassay(list(molType = "cmp", idType = "chembl_id", ids = "CHEMBL1421"),
+                              fields = "all")
+    expect_true(all(names(core) %in% names(all)))
+    expect_true(ncol(all) > ncol(core))
+    expect_true("activity.bao_label" %in% names(all))
+
+    sub <- getChemblBioassay(list(molType = "cmp", idType = "chembl_id", ids = "CHEMBL1421"),
+                             fields = c("Drug_Name", "activity.assay_type"))
+    expect_identical(names(sub), c("QueryIDs", "Drug_Name", "activity.assay_type"))
+})
+
+test_that("listBioassayFields returns the documented static column list, no network", {
+    fc <- listBioassayFields("chembl")
+    expect_true("standard_type" %in% fc)
+    fp <- listBioassayFields("pubchem")
+    expect_true("gene_symbol" %in% fp)
+    expect_error(listBioassayFields("dgidb"))
+})
+
 test_that("getChemblMolecule batches across chunks, preserves order/duplicates, NA-fills unresolved IDs", {
     skip_if_offline_dti()
     ## molecule.json is 1 record per ID (no fan-out), so chunkSize=1 here

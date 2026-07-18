@@ -113,7 +113,7 @@ test_that(".dtiMetaQueryBy builds the correct native queryBy per source/directio
                      list(molType = "protein", idType = "Uniprot", ids = "P11362"))
     expect_identical(.dtiMetaQueryBy("ttd", TRUE, "FGFR1"),
                      list(molType = "protein", idType = "symbol", ids = "FGFR1"))
-    expect_identical(.dtiMetaQueryBy("pubchem", FALSE, "aspirin"),
+    expect_identical(.dtiMetaQueryBy("dgidb", FALSE, "aspirin"),
                      list(molType = "cmp", idType = "name", ids = "aspirin"))
     expect_identical(.dtiMetaQueryBy("opentargets", FALSE, "CHEMBL25"),
                      list(molType = "cmp", idType = "name", ids = "CHEMBL25"))
@@ -137,14 +137,20 @@ test_that("queryDrugTargets rejects malformed queryBy without any network calls"
 test_that("queryDrugTargets: gene direction dispatches to multiple sources and matches their standalone counts", {
     skip_if_offline_dti()
     res <- queryDrugTargets(list(molType = "gene", idType = "symbol", ids = "FGFR1"),
-                            sources = c("chembl", "pubchem", "dgidb", "opentargets"))
-    expect_true(setequal(names(res), c("chembl", "pubchem", "dgidb", "opentargets")))
-    expect_identical(nrow(res$pubchem), nrow(getPubchemDrugs("FGFR1")))
+                            sources = c("chembl", "dgidb", "opentargets"))
+    expect_true(setequal(names(res), c("chembl", "dgidb", "opentargets")))
     expect_identical(nrow(res$dgidb), nrow(getDgidbDrugs("FGFR1")))
     expect_identical(nrow(res$opentargets), nrow(getOpenTargetsDrugs("FGFR1")))
     resolved <- attr(res, "resolved")
     expect_identical(unname(resolved$chembl), "P11362")
-    expect_identical(unname(resolved$pubchem), "FGFR1")
+    expect_identical(unname(resolved$dgidb), "FGFR1")
+})
+
+test_that("queryDrugTargets rejects 'pubchem' as a source (bioassay data, not an annotation source)", {
+    expect_error(
+        queryDrugTargets(list(molType = "gene", idType = "symbol", ids = "FGFR1"),
+                         sources = "pubchem"),
+        "sources")
 })
 
 test_that("queryDrugTargets resolves a non-native starting ID type (Ensembl) via 2-hop routing", {
@@ -204,11 +210,6 @@ test_that("queryDrugTargets returns an empty list when nothing resolves for the 
             Max_Phase = 4, First_Approval = 2006, ChEMBL_TID = "CHEMBL1862",
             UniProt_ID = "P11362", Desc = "d", Organism = "Homo sapiens",
             Mesh_Indication = NA, stringsAsFactors = FALSE),
-        pubchem = data.frame(
-            QueryIDs = "FGFR1", gene_symbol = "FGFR1", geneid = "2260",
-            target_accession = "P11362", cid = "51039095", drug_name = "AZD4547",
-            canonical_smiles = "x", activity_name = "IC50", activity_value_uM = 0.0002,
-            assay_name = "a", db = "PubChem", stringsAsFactors = FALSE),
         dgidb = data.frame(
             QueryIDs = "FGFR1", gene_name = "FGFR1", drug_name = "SUNITINIB",
             drug_concept_id = "chembl:CHEMBL535", drug_approved = TRUE,
@@ -229,7 +230,6 @@ test_that("queryDrugTargets returns an empty list when nothing resolves for the 
     )
     attr(res, "resolved") <- list(
         chembl = c(ENSG00000077782 = "P11362"),
-        pubchem = c(ENSG00000077782 = "FGFR1"),
         dgidb = c(ENSG00000077782 = "FGFR1"),
         opentargets = c(ENSG00000077782 = "FGFR1"),
         ttd = c(ENSG00000077782 = "FGFR1")
@@ -239,14 +239,20 @@ test_that("queryDrugTargets returns an empty list when nothing resolves for the 
 
 test_that("combineDrugTargets maps every source's columns correctly and backfills the original query_id", {
     combined <- combineDrugTargets(.combineFixture())
-    expect_equal(nrow(combined), 5L)
+    expect_equal(nrow(combined), 4L)
     expect_identical(unique(combined$query_id), "ENSG00000077782")  ## not each source's own resolved id
     expect_identical(combined$gene_symbol[combined$source == "ChEMBL"], NA_character_)
-    expect_identical(combined$gene_symbol[combined$source == "PubChem"], "FGFR1")
+    expect_identical(combined$gene_symbol[combined$source == "DGIdb"], "FGFR1")
     expect_identical(combined$drug_name[combined$source == "ChEMBL"], "DASATINIB")
     expect_identical(combined$drug_name[combined$source == "TTD"], "KW-2449")
     expect_identical(combined$action[combined$source == "DGIdb"], "inhibitor")
-    expect_setequal(combined$source, c("ChEMBL", "PubChem", "DGIdb", "OpenTargets", "TTD"))
+    expect_setequal(combined$source, c("ChEMBL", "DGIdb", "OpenTargets", "TTD"))
+})
+
+test_that("combineDrugTargets rejects 'pubchem' as a results name (bioassay data, not combinable)", {
+    fixture <- .combineFixture()
+    fixture$pubchem <- fixture$dgidb
+    expect_error(combineDrugTargets(fixture), "does not recognise source")
 })
 
 test_that("combineDrugTargets falls back to each source's own QueryIDs when there is no 'resolved' attribute", {
@@ -254,7 +260,7 @@ test_that("combineDrugTargets falls back to each source's own QueryIDs when ther
     attr(fixture, "resolved") <- NULL
     combined <- combineDrugTargets(fixture)
     expect_identical(combined$query_id[combined$source == "ChEMBL"], "P11362")
-    expect_identical(combined$query_id[combined$source == "PubChem"], "FGFR1")
+    expect_identical(combined$query_id[combined$source == "DGIdb"], "FGFR1")
 })
 
 test_that("combineDrugTargets respects a custom columns subset", {
@@ -266,7 +272,7 @@ test_that("combineDrugTargets(resolveGeneSymbol=TRUE) fills ChEMBL's gene_symbol
     skip_if_offline_dti()
     combined <- combineDrugTargets(.combineFixture(), resolveGeneSymbol = TRUE)
     expect_identical(combined$gene_symbol[combined$source == "ChEMBL"], "FGFR1")
-    expect_identical(combined$gene_symbol[combined$source == "PubChem"], "FGFR1")
+    expect_identical(combined$gene_symbol[combined$source == "DGIdb"], "FGFR1")
 })
 
 test_that("combineDrugTargets returns an empty, correctly-columned data.frame for an empty results list", {

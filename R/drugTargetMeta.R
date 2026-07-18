@@ -1,15 +1,21 @@
 ## =====================================================================
 ##  drugTargetMeta.R
-##  Cross-source drug-target query dispatcher for the
+##  Cross-source drug-target ANNOTATION query dispatcher for the
 ##  drugTargetInteractions Bioconductor package: given an identifier of
 ##  (in principle) any recognised type, resolves it to whatever native ID
 ##  each requested source needs and dispatches to that source's own
-##  bidirectional query function (getChemblDrugTarget(),
-##  getPubchemDrugTarget(), getDgidbDrugTarget(),
-##  getOpenTargetsDrugTarget(), ttdTargetAnnot()) - the original
-##  motivating goal of the ID-translation layer (see idTranslation.R /
-##  unichemAccess.R, both 2026-07-17), tying it to the 5 already-ported
-##  per-source functions.
+##  bidirectional annotation query function (getChemblDrugTarget(),
+##  getDgidbDrugTarget(), getOpenTargetsDrugTarget(), ttdTargetAnnot()) -
+##  the original motivating goal of the ID-translation layer (see
+##  idTranslation.R / unichemAccess.R, both 2026-07-17), tying it to 4 of
+##  the already-ported per-source functions.
+##
+##  PubChem is deliberately NOT one of these 4: getPubchemDrugTarget()
+##  returns raw bioassay measurements, not curated annotations, and so
+##  doesn't belong in this annotation-only dispatcher/combiner - see
+##  getChemblBioassay()/listBioassayFields() (apiAccess.R) for the
+##  bioassay-track counterpart, and the "Bioassay Queries" vignette
+##  section.
 ##
 ##  Named queryDrugTargets(), not getDrugTarget() - that name is already
 ##  taken by an older, narrower function in
@@ -243,10 +249,19 @@
 #' Targets, still work when handed one under \code{idType = "name"},
 #' since \code{getOpenTargetsDrugTarget()} passes ChEMBL-shaped strings
 #' through unresolved).
+#'
+#' PubChem is deliberately \strong{not} listed here: its REST accessors
+#' (\code{getPubchemDrugs()}/\code{getPubchemTargets()}/
+#' \code{getPubchemDrugTarget()}) return raw bioassay measurements, not
+#' curated drug-target annotations the way every other source here does
+#' - a different data type that doesn't belong in this dispatcher or in
+#' \code{\link{combineDrugTargets}}'s column harmonization. See the
+#' "Bioassay Queries" vignette section, \code{\link{getChemblBioassay}}
+#' and \code{\link{listBioassayFields}} for the bioassay-track
+#' counterpart.
 #' @keywords internal
 .dtiMetaSources <- list(
     chembl      = list(gene = "uniprot",  cmp = "chembl_id"),
-    pubchem     = list(gene = "symbol",   cmp = "name"),
     dgidb       = list(gene = "symbol",   cmp = "name"),
     opentargets = list(gene = "symbol",   cmp = "chembl_id"),
     ttd         = list(gene = "symbol",   cmp = "name")
@@ -258,8 +273,6 @@
     switch(src,
         chembl = if (isGene) list(molType = "protein", idType = "Uniprot", ids = ids)
                  else list(molType = "cmp", idType = "chembl_id", ids = ids),
-        pubchem = if (isGene) list(molType = "gene", idType = "symbol", ids = ids)
-                  else list(molType = "cmp", idType = "name", ids = ids),
         dgidb = if (isGene) list(molType = "gene", idType = "symbol", ids = ids)
                 else list(molType = "cmp", idType = "name", ids = ids),
         opentargets = if (isGene) list(molType = "gene", idType = "symbol", ids = ids)
@@ -276,12 +289,20 @@
 #' \code{queryBy$ids} to whatever native identifier each requested
 #' source needs (see \code{\link{.resolveGeneIds}}/
 #' \code{\link{.resolveCompoundIds}} for how), then dispatches to that
-#' source's own bidirectional query function
-#' (\code{\link{getChemblDrugTarget}}, \code{\link{getPubchemDrugTarget}},
-#' \code{\link{getDgidbDrugTarget}}, \code{\link{getOpenTargetsDrugTarget}},
-#' \code{\link{ttdTargetAnnot}}). Named \code{queryDrugTargets()}, not
-#' \code{getDrugTarget()} - that name is already taken by an older,
-#' unrelated function in \code{drugTargetAnnotations_Fct.R}.
+#' source's own bidirectional \emph{annotation} query function
+#' (\code{\link{getChemblDrugTarget}}, \code{\link{getDgidbDrugTarget}},
+#' \code{\link{getOpenTargetsDrugTarget}}, \code{\link{ttdTargetAnnot}}).
+#' Named \code{queryDrugTargets()}, not \code{getDrugTarget()} - that
+#' name is already taken by an older, unrelated function in
+#' \code{drugTargetAnnotations_Fct.R}.
+#'
+#' PubChem is intentionally not one of the dispatchable \code{sources}:
+#' its REST accessors return raw bioassay measurements, not curated
+#' drug-target annotations, a different data type from what this
+#' function and \code{\link{combineDrugTargets}} harmonize. Use
+#' \code{\link{getPubchemDrugTarget}} directly, or
+#' \code{\link{getChemblBioassay}} for ChEMBL's own bioassay data - see
+#' the "Bioassay Queries" vignette section.
 #'
 #' Returns a named list, one element per successfully-queried source -
 #' \strong{not} one unified table. Cross-source schema harmonization is a
@@ -304,8 +325,8 @@
 #'   \code{\link{.resolveCompoundIds}}) - not each source's own native
 #'   vocabulary, which this function translates to internally.
 #' @param sources character vector, any of \code{"chembl"},
-#'   \code{"pubchem"}, \code{"dgidb"}, \code{"opentargets"}, \code{"ttd"}
-#'   (default: all five).
+#'   \code{"dgidb"}, \code{"opentargets"}, \code{"ttd"} (default: all
+#'   four annotation sources; PubChem is not included here, see Details).
 #' @param ttdDbPath character(1) path to a local TTD SQLite (see
 #'   \code{\link{buildTtdDb}}); required if \code{"ttd"} is in
 #'   \code{sources}. Not built automatically - a TTD build is a real,
@@ -336,7 +357,7 @@
 #'   ## target -> drug, starting from an Ensembl gene ID, all live sources
 #'   res <- queryDrugTargets(
 #'     list(molType = "gene", idType = "ensembl", ids = "ENSG00000077782"),
-#'     sources = c("chembl", "pubchem", "dgidb", "opentargets"))
+#'     sources = c("chembl", "dgidb", "opentargets"))
 #'   names(res)
 #'   res$chembl
 #'
@@ -345,10 +366,10 @@
 #'     list(molType = "cmp", idType = "drugbank_id", ids = "DB00945"),
 #'     sources = "chembl", unichemDbPath = buildUnichemDb(rerun = FALSE))
 #' }
-#' @seealso \code{\link{getChemblDrugTarget}}, \code{\link{getPubchemDrugTarget}},
-#'   \code{\link{getDgidbDrugTarget}}, \code{\link{getOpenTargetsDrugTarget}},
-#'   \code{\link{ttdTargetAnnot}}, \code{\link{getUniprotMapping}},
-#'   \code{\link{getUnichemMapping}}
+#' @seealso \code{\link{getChemblDrugTarget}}, \code{\link{getDgidbDrugTarget}},
+#'   \code{\link{getOpenTargetsDrugTarget}}, \code{\link{ttdTargetAnnot}},
+#'   \code{\link{getPubchemDrugTarget}}, \code{\link{getChemblBioassay}},
+#'   \code{\link{getUniprotMapping}}, \code{\link{getUnichemMapping}}
 #' @export
 queryDrugTargets <- function(queryBy = list(molType = NULL, idType = NULL, ids = NULL),
                              sources = names(.dtiMetaSources), ttdDbPath = NULL,
@@ -396,7 +417,6 @@ queryDrugTargets <- function(queryBy = list(molType = NULL, idType = NULL, ids =
                                  length(rids), " resolved ID(s)")
             switch(src,
                 chembl      = getChemblDrugTarget(qb, verbose = verbose, ...),
-                pubchem     = getPubchemDrugTarget(qb, verbose = verbose, ...),
                 dgidb       = getDgidbDrugTarget(qb, verbose = verbose, ...),
                 opentargets = getOpenTargetsDrugTarget(qb, verbose = verbose, ...),
                 ttd         = {
@@ -424,10 +444,12 @@ queryDrugTargets <- function(queryBy = list(molType = NULL, idType = NULL, ids =
 ## ---------------------------------------------------------------------
 
 #' Display name per source, used as a constant \code{source} column value
+#'
+#' PubChem is not included - see \code{\link{.dtiMetaSources}} for why
+#' it's excluded from this whole annotation-combining layer.
 #' @keywords internal
-.dtiCombineSourceLabel <- c(chembl = "ChEMBL", pubchem = "PubChem",
-                            dgidb = "DGIdb", opentargets = "OpenTargets",
-                            ttd = "TTD")
+.dtiCombineSourceLabel <- c(chembl = "ChEMBL", dgidb = "DGIdb",
+                            opentargets = "OpenTargets", ttd = "TTD")
 
 #' Canonical combined column -> per-source column name.
 #'
@@ -445,13 +467,12 @@ queryDrugTargets <- function(queryBy = list(molType = NULL, idType = NULL, ids =
 #' \code{\link{.dtiCombineSourceLabel}}, not looked up per row).
 #' @keywords internal
 .dtiCombineColMap <- list(
-    gene_symbol = c(chembl = NA, pubchem = "gene_symbol", dgidb = "gene_name",
+    gene_symbol = c(chembl = NA, dgidb = "gene_name",
                     opentargets = "approved_symbol", ttd = "GeneName"),
-    drug_name   = c(chembl = "Drug_Name", pubchem = "drug_name", dgidb = "drug_name",
+    drug_name   = c(chembl = "Drug_Name", dgidb = "drug_name",
                     opentargets = "drug_name", ttd = "DrugName"),
-    action      = c(chembl = "Action_Type", pubchem = "activity_name",
-                    dgidb = "interaction_types", opentargets = "action_type",
-                    ttd = "MOA")
+    action      = c(chembl = "Action_Type", dgidb = "interaction_types",
+                    opentargets = "action_type", ttd = "MOA")
 )
 
 #' Combine \code{\link{queryDrugTargets}} results into one table
@@ -473,9 +494,10 @@ queryDrugTargets <- function(queryBy = list(molType = NULL, idType = NULL, ids =
 #' concept: ChEMBL's \code{Action_Type} and Open Targets'
 #' \code{action_type} are categorical mechanism labels (e.g.
 #' \code{"INHIBITOR"}); TTD's \code{MOA} and DGIdb's
-#' \code{interaction_types} are similar; PubChem's \code{activity_name}
-#' is a bioactivity *assay endpoint type* (e.g. \code{"IC50"}, not a
-#' mechanism label at all - PubChem has no mechanism-of-action concept).
+#' \code{interaction_types} are similar. PubChem is not one of the
+#' combinable sources at all (see \code{\link{.dtiMetaSources}}): its
+#' bioactivity data has no mechanism-of-action concept to align to in
+#' the first place.
 #'
 #' @param results a named list as returned by \code{\link{queryDrugTargets}}
 #'   (or any similarly-shaped named list of per-source data.frames -
@@ -498,7 +520,7 @@ queryDrugTargets <- function(queryBy = list(molType = NULL, idType = NULL, ids =
 #' @examples
 #' \donttest{
 #'   res <- queryDrugTargets(list(molType = "gene", idType = "symbol", ids = "FGFR1"),
-#'                           sources = c("chembl", "pubchem", "dgidb", "opentargets"))
+#'                           sources = c("chembl", "dgidb", "opentargets"))
 #'   combineDrugTargets(res)
 #'   combineDrugTargets(res, resolveGeneSymbol = TRUE)  ## fills ChEMBL's gene_symbol too
 #' }
