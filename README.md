@@ -1,7 +1,7 @@
 ## `drugTargetInteractions` Package
 
 <p align="right">
-  <a href="https://github.com/girke-lab/drugTargetInteractions">
+  <a href="https://girke-lab.github.io/drugTargetInteractions/">
     <img src="https://img.shields.io/badge/TUTORIAL-blue?style=for-the-badge&logo=gitbook&logoColor=white" alt="Tutorial Badge">
   </a>
 </p>
