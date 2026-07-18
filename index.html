@@ -1959,7 +1959,7 @@ function toggle_visibility(id1) {
 
 <h1 class="title toc-ignore">Drug-Target Interactions</h1>
 <p class="author-name">Authors: Kevin Horan, Yuzhu Duan, Austin Leong, Dan Evans, Jamison McCorrison, Nicholas Schork and Thomas Girke</p>
-<h4 class="date">Last update: 17 July, 2026</h4>
+<h4 class="date">Last update: 18 July, 2026</h4>
 
 </div>
 
@@ -2268,8 +2268,46 @@ NLRP3, TFEB, ADIPOR1/2 in this package’s original test-gene set)
 legitimately return zero rows from Open Targets - that reflects the state
 of drug discovery for that target, not a query failure.</p>
 </div>
-<div id="ttd-therapeutic-target-database" class="section level2" number="3.5">
-<h2><span class="header-section-number">3.5</span> TTD (Therapeutic Target Database)</h2>
+<div id="requesting-additional-fields" class="section level2" number="3.5">
+<h2><span class="header-section-number">3.5</span> Requesting Additional Fields</h2>
+<p><code>getChemblDrugTarget()</code>, <code>getPubchemDrugTarget()</code>, <code>getDgidbDrugTarget()</code>
+and <code>getOpenTargetsDrugTarget()</code> return a small, harmonized set of columns
+by default (<code>fields = &quot;core&quot;</code>) - this is exactly what lets
+<code>combineDrugTargets()</code> bind rows from different sources into one table
+(see <a href="#combining-results">Combining Results</a>). For a single-source query, though, each
+underlying API exposes many more fields than this curated set. Pass
+<code>fields = &quot;all&quot;</code> to get everything available, source-prefixed to avoid
+name clashes between sources:</p>
+<pre class="r"><code>chembl_all &lt;- getChemblDrugTarget(
+    list(molType = &quot;cmp&quot;, idType = &quot;chembl_id&quot;, ids = &quot;CHEMBL25&quot;), fields = &quot;all&quot;)
+dim(chembl_all)</code></pre>
+<pre><code>## [1]   2 111</code></pre>
+<pre class="r"><code>chembl_all[, c(&quot;Drug_Name&quot;, &quot;mechanism.mechanism_comment&quot;, &quot;molecule.molecule_type&quot;)]</code></pre>
+<pre><code>##   Drug_Name mechanism.mechanism_comment molecule.molecule_type
+## 1   ASPIRIN                        &lt;NA&gt;         Small molecule
+## 2   ASPIRIN                        &lt;NA&gt;         Small molecule</code></pre>
+<p>Use <code>listDrugTargetFields()</code> to browse what a source offers before
+deciding what to keep:</p>
+<pre class="r"><code>listDrugTargetFields(&quot;chembl&quot;)[1:10]</code></pre>
+<pre><code>##  [1] &quot;QueryIDs&quot;       &quot;chembl_id&quot;      &quot;Drug_Name&quot;      &quot;MOA&quot;            &quot;Action_Type&quot;   
+##  [6] &quot;Max_Phase&quot;      &quot;First_Approval&quot; &quot;ChEMBL_TID&quot;     &quot;UniProt_ID&quot;     &quot;Desc&quot;</code></pre>
+<p><code>fields</code> also accepts a character vector directly, so a single call can
+ask for just the extra columns you actually want:</p>
+<pre class="r"><code>getChemblDrugTarget(
+    list(molType = &quot;cmp&quot;, idType = &quot;chembl_id&quot;, ids = &quot;CHEMBL25&quot;),
+    fields = c(&quot;Drug_Name&quot;, &quot;molecule.molecule_type&quot;, &quot;target.organism&quot;))</code></pre>
+<pre><code>##   QueryIDs Drug_Name molecule.molecule_type target.organism
+## 1 CHEMBL25   ASPIRIN         Small molecule    Homo sapiens
+## 2 CHEMBL25   ASPIRIN         Small molecule    Homo sapiens</code></pre>
+<p>The same <code>fields</code> argument works identically on all four source
+functions (and on <code>queryDrugTargets()</code>, which forwards it through). For
+ChEMBL and PubChem (REST APIs), <code>fields = &quot;all&quot;</code> costs nothing extra -
+the full response is already fetched, just no longer discarded. For
+DGIdb and Open Targets (GraphQL APIs), it does request a wider response,
+since GraphQL only returns fields a query explicitly asks for.</p>
+</div>
+<div id="ttd-therapeutic-target-database" class="section level2" number="3.6">
+<h2><span class="header-section-number">3.6</span> TTD (Therapeutic Target Database)</h2>
 <p>TTD has no live API. Its flat files are downloaded once and assembled into
 a small local SQLite via <code>buildTtdDb()</code>; <code>ttdTargetAnnot()</code> then queries
 that local database repeatedly. This mirrors ChEMBL’s local-SQLite option
