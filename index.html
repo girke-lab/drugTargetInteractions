@@ -2004,6 +2004,14 @@ queried through its own live REST/GraphQL API or, for TTD, a small local
 SQLite built from its public flat files. ChEMBL remains additionally
 available through a downloaded local SQLite instance for users who prefer
 that (see the <a href="#supplement">Supplement</a>).</p>
+<p>Four of these (ChEMBL, DGIdb, Open Targets, TTD) provide curated
+<strong>drug-target annotations</strong> - an expert-curated call that a drug acts on a
+target via some mechanism - and are queried the same way via
+<code>queryDrugTargets()</code>/<code>combineDrugTargets()</code> (see <a href="#cross-source-queries">Cross-Source Queries</a>).
+PubChem instead provides raw <strong>bioassay measurements</strong> (individual assay
+results, no mechanism claim attached) - a genuinely different kind of
+data, covered separately in <a href="#bioassay-queries">Bioassay Queries</a> alongside ChEMBL’s own
+bioassay function, <code>getChemblBioassay()</code>.</p>
 <p>Because every source has its own native identifier vocabulary (a ChEMBL
 molecule ID is not a PubChem CID is not a DrugBank ID), the package also
 provides a <strong>generic ID-translation layer</strong>: live services for mapping
@@ -2020,8 +2028,10 @@ results.</p>
 <p>This vignette is organised as follows:</p>
 <ul>
 <li><strong><a href="#quick-start">Quick Start</a></strong> - a five-minute tour of the essential commands.</li>
-<li><strong><a href="#data-sources-in-detail">Data Sources in Detail</a></strong> - one section per source, with both query
-directions.</li>
+<li><strong><a href="#data-sources-in-detail">Data Sources in Detail</a></strong> - one section per annotation source, with
+both query directions.</li>
+<li><strong><a href="#bioassay-queries">Bioassay Queries</a></strong> - the separate, raw-measurement track (ChEMBL,
+PubChem).</li>
 <li><strong><a href="#id-translation-layer">ID Translation Layer</a></strong> - the standalone translation functions.</li>
 <li><strong><a href="#cross-source-queries">Cross-Source Queries</a></strong> - <code>queryDrugTargets()</code> across one or many
 sources at once, performance guidance, and combining results into a
@@ -2113,12 +2123,12 @@ just each source’s own native ID - see <a href="#id-translation-layer">ID Tran
 as many sources as you like in one call:</p>
 <pre class="r"><code>res &lt;- queryDrugTargets(
     list(molType = &quot;gene&quot;, idType = &quot;symbol&quot;, ids = &quot;FGFR1&quot;),
-    sources = c(&quot;chembl&quot;, &quot;pubchem&quot;, &quot;dgidb&quot;, &quot;opentargets&quot;))
+    sources = c(&quot;chembl&quot;, &quot;dgidb&quot;, &quot;opentargets&quot;))
 names(res)              # one data.frame per source that returned results</code></pre>
-<pre><code>## [1] &quot;chembl&quot;      &quot;pubchem&quot;     &quot;dgidb&quot;       &quot;opentargets&quot;</code></pre>
+<pre><code>## [1] &quot;chembl&quot;      &quot;dgidb&quot;       &quot;opentargets&quot;</code></pre>
 <pre class="r"><code>sapply(res, nrow)</code></pre>
-<pre><code>##      chembl     pubchem       dgidb opentargets 
-##          26         400         143          94</code></pre>
+<pre><code>##      chembl       dgidb opentargets 
+##          26         143          94</code></pre>
 </div>
 <div id="one-table" class="section level2" number="2.3">
 <h2><span class="header-section-number">2.3</span> One Table</h2>
@@ -2171,41 +2181,8 @@ properties), <code>getChemblTarget()</code> (search targets by gene/protein name
 <code>getChemblBioactivities()</code> (raw IC50/Ki/Kd/EC50 measurements for one
 target).</p>
 </div>
-<div id="pubchem" class="section level2" number="3.2">
-<h2><span class="header-section-number">3.2</span> PubChem</h2>
-<p>PubChem’s bioactivity data is queried through its PUG-REST API and NCBI
-E-utilities via <code>getPubchemDrugTarget()</code>. Native identifiers: a <strong>gene
-symbol</strong> (an NCBI GeneID also passes through unresolved) for target →
-drug, a <strong>compound name</strong> (a PubChem CID also passes through unresolved)
-for drug → target.</p>
-<pre class="r"><code>pubchem_t2d &lt;- getPubchemDrugTarget(
-    list(molType = &quot;gene&quot;, idType = &quot;symbol&quot;, ids = &quot;KLB&quot;))
-head(pubchem_t2d[, c(&quot;drug_name&quot;, &quot;activity_name&quot;, &quot;activity_value_uM&quot;)])</code></pre>
-<pre><code>##   drug_name activity_name activity_value_uM
-## 1      &lt;NA&gt;          &lt;NA&gt;              &lt;NA&gt;</code></pre>
-<pre class="r"><code>pubchem_d2t &lt;- getPubchemDrugTarget(
-    list(molType = &quot;cmp&quot;, idType = &quot;name&quot;, ids = &quot;aspirin&quot;))
-pubchem_d2t[, c(&quot;gene_symbol&quot;, &quot;activity_name&quot;, &quot;activity_value_uM&quot;)]</code></pre>
-<pre><code>##   gene_symbol activity_name activity_value_uM
-## 1       NAPRT            Ki            0.0005
-## 2       PTGS1          IC50            0.3500
-## 3       PTGS2          IC50            2.4000
-## 4       ITGB3          IC50            5.0000
-## 5      ITGA2B          IC50            5.0000
-## 6      CYP2D6       Potency           15.4871
-## 7      CYP3A7       Potency           15.4871
-## 8      CYP1A2       Potency           24.5454
-## 9     CYP2C19       Potency           79.1862</code></pre>
-<p>PubChem is compound-centric and high-volume; results are capped per gene
-(<code>maxCids</code>, default 400) and filtered to Active, numeric, potency-endpoint
-measurements (IC50/Ki/Kd/EC50/AC50/Potency) by default. Because
-compound-centric assay data spans whatever species each assay used (e.g.
-aspirin’s classic COX1/COX2 potency assays are annotated against <em>sheep</em>
-GeneIDs in PubChem), <code>getPubchemTargets()</code>/<code>getPubchemDrugTarget()</code> filter
-to human (<code>taxid = 9606</code>) by default - pass <code>taxid = NULL</code> for all species.</p>
-</div>
-<div id="dgidb" class="section level2" number="3.3">
-<h2><span class="header-section-number">3.3</span> DGIdb</h2>
+<div id="dgidb" class="section level2" number="3.2">
+<h2><span class="header-section-number">3.2</span> DGIdb</h2>
 <p>The Drug Gene Interaction Database is queried through its GraphQL API via
 <code>getDgidbDrugTarget()</code>. DGIdb’s schema is bidirectional by construction - a
 single <code>interactions()</code> query returns nodes that already carry both a gene
@@ -2237,8 +2214,8 @@ many upstream databases (ChEMBL, DrugBank, TTD, and others), each with its
 own license - a row’s <code>sources</code> value tells you where that specific
 interaction actually came from.</p>
 </div>
-<div id="open-targets" class="section level2" number="3.4">
-<h2><span class="header-section-number">3.4</span> Open Targets</h2>
+<div id="open-targets" class="section level2" number="3.3">
+<h2><span class="header-section-number">3.3</span> Open Targets</h2>
 <p>Open Targets is queried through its GraphQL API via
 <code>getOpenTargetsDrugTarget()</code>. Unlike DGIdb, its schema is asymmetric:
 target → drug goes through <code>Target.drugAndClinicalCandidates</code>, drug
@@ -2268,8 +2245,8 @@ NLRP3, TFEB, ADIPOR1/2 in this package’s original test-gene set)
 legitimately return zero rows from Open Targets - that reflects the state
 of drug discovery for that target, not a query failure.</p>
 </div>
-<div id="requesting-additional-fields" class="section level2" number="3.5">
-<h2><span class="header-section-number">3.5</span> Requesting Additional Fields</h2>
+<div id="requesting-additional-fields" class="section level2" number="3.4">
+<h2><span class="header-section-number">3.4</span> Requesting Additional Fields</h2>
 <p><code>getChemblDrugTarget()</code>, <code>getPubchemDrugTarget()</code>, <code>getDgidbDrugTarget()</code>
 and <code>getOpenTargetsDrugTarget()</code> return a small, harmonized set of columns
 by default (<code>fields = &quot;core&quot;</code>) - this is exactly what lets
@@ -2306,8 +2283,8 @@ the full response is already fetched, just no longer discarded. For
 DGIdb and Open Targets (GraphQL APIs), it does request a wider response,
 since GraphQL only returns fields a query explicitly asks for.</p>
 </div>
-<div id="ttd-therapeutic-target-database" class="section level2" number="3.6">
-<h2><span class="header-section-number">3.6</span> TTD (Therapeutic Target Database)</h2>
+<div id="ttd-therapeutic-target-database" class="section level2" number="3.5">
+<h2><span class="header-section-number">3.5</span> TTD (Therapeutic Target Database)</h2>
 <p>TTD has no live API. Its flat files are downloaded once and assembled into
 a small local SQLite via <code>buildTtdDb()</code>; <code>ttdTargetAnnot()</code> then queries
 that local database repeatedly. This mirrors ChEMBL’s local-SQLite option
@@ -2342,13 +2319,103 @@ ships no TTD data (TTD’s license permits academic use but has no explicit
 redistribution grant).</p>
 </div>
 </div>
-<div id="id-translation-layer" class="section level1" number="4">
-<h1><span class="header-section-number">4</span> ID Translation Layer</h1>
+<div id="bioassay-queries" class="section level1" number="4">
+<h1><span class="header-section-number">4</span> Bioassay Queries</h1>
+<p>Everything in <a href="#data-sources-in-detail">Data Sources in Detail</a> returns curated drug-target
+<em>annotations</em> - a database’s own expert-curated call that a drug acts on
+a target via some mechanism (ChEMBL’s <code>drug_mechanism</code>, DGIdb’s
+aggregated interactions, Open Targets’ <code>mechanismsOfAction</code>, TTD’s
+target-drug mappings). That’s a genuinely different kind of data from a
+raw <em>bioassay measurement</em> - one experimental result, e.g. “this compound
+inhibited this target with an IC50 of 42nM in this specific assay” - with
+no claim about mechanism or curation attached. PubChem’s REST API only
+ever returns the latter, and ChEMBL exposes both kinds side by side. To
+keep the two from being silently conflated, this package always keeps
+them in separate functions and never combines them:
+<code>queryDrugTargets()</code>/<code>combineDrugTargets()</code> (see <a href="#cross-source-queries">Cross-Source Queries</a>)
+only ever touch the four annotation sources - PubChem is not one of
+their <code>sources</code>.</p>
+<div id="chembl-1" class="section level2" number="4.1">
+<h2><span class="header-section-number">4.1</span> ChEMBL</h2>
+<p><code>getChemblBioassay()</code> is the bioassay-track sibling of
+<code>getChemblDrugTarget()</code>: same bidirectional <code>queryBy</code> interface (UniProt
+accession for target → drug, ChEMBL molecule ID for drug →
+target), but pulling from ChEMBL’s <code>activity</code> resource instead of
+<code>drug_mechanism</code>.</p>
+<pre class="r"><code>chembl_ba_t2d &lt;- getChemblBioassay(
+    list(molType = &quot;protein&quot;, idType = &quot;Uniprot&quot;, ids = &quot;P11362&quot;),  # FGFR1
+    standardType = &quot;IC50&quot;)
+head(chembl_ba_t2d[, c(&quot;Drug_Name&quot;, &quot;standard_value&quot;, &quot;standard_units&quot;)])</code></pre>
+<pre><code>##   Drug_Name standard_value standard_units
+## 1      &lt;NA&gt;             NA           &lt;NA&gt;
+## 2      &lt;NA&gt;             42             nM
+## 3      &lt;NA&gt;          10000             nM
+## 4      &lt;NA&gt;          50000             nM
+## 5      &lt;NA&gt;          50000             nM
+## 6      &lt;NA&gt;           1520             nM</code></pre>
+<pre class="r"><code>chembl_ba_d2t &lt;- getChemblBioassay(
+    list(molType = &quot;cmp&quot;, idType = &quot;chembl_id&quot;, ids = &quot;CHEMBL1421&quot;))  # dasatinib
+head(chembl_ba_d2t[, c(&quot;UniProt_ID&quot;, &quot;standard_type&quot;, &quot;standard_value&quot;)])</code></pre>
+<pre><code>##   UniProt_ID standard_type standard_value
+## 1     P34152    Inhibition             NA
+## 2       &lt;NA&gt;          GI50          15.00
+## 3       &lt;NA&gt;          GI80       50000.00
+## 4       &lt;NA&gt;          IC50             NA
+## 5     O60885      Delta TM          -1.33
+## 6     P06241            Kd           4.00</code></pre>
+<p>A single-target convenience helper, <code>getChemblBioactivities()</code>, is also
+available for a quick one-target lookup without the batching/direction
+machinery. <code>getChemblBioassay()</code> also supports the same <code>fields = &quot;core&quot;/&quot;all&quot;/&lt;vector&gt;</code> mechanism as the annotation functions (see
+<a href="#requesting-additional-fields">Requesting Additional Fields</a>) - use <code>listBioassayFields(&quot;chembl&quot;)</code> to
+browse the extra columns available:</p>
+<pre class="r"><code>listBioassayFields(&quot;chembl&quot;)[1:10]</code></pre>
+<pre><code>##  [1] &quot;QueryIDs&quot;          &quot;chembl_id&quot;         &quot;Drug_Name&quot;         &quot;ChEMBL_TID&quot;       
+##  [5] &quot;UniProt_ID&quot;        &quot;Organism&quot;          &quot;Desc&quot;              &quot;assay_chembl_id&quot;  
+##  [9] &quot;assay_description&quot; &quot;standard_type&quot;</code></pre>
+</div>
+<div id="pubchem" class="section level2" number="4.2">
+<h2><span class="header-section-number">4.2</span> PubChem</h2>
+<p>PubChem’s bioactivity data is queried through its PUG-REST API and NCBI
+E-utilities via <code>getPubchemDrugTarget()</code>. Native identifiers: a <strong>gene
+symbol</strong> (an NCBI GeneID also passes through unresolved) for target →
+drug, a <strong>compound name</strong> (a PubChem CID also passes through unresolved)
+for drug → target.</p>
+<pre class="r"><code>pubchem_t2d &lt;- getPubchemDrugTarget(
+    list(molType = &quot;gene&quot;, idType = &quot;symbol&quot;, ids = &quot;KLB&quot;))
+head(pubchem_t2d[, c(&quot;drug_name&quot;, &quot;activity_name&quot;, &quot;activity_value_uM&quot;)])</code></pre>
+<pre><code>##   drug_name activity_name activity_value_uM
+## 1      &lt;NA&gt;          &lt;NA&gt;              &lt;NA&gt;</code></pre>
+<pre class="r"><code>pubchem_d2t &lt;- getPubchemDrugTarget(
+    list(molType = &quot;cmp&quot;, idType = &quot;name&quot;, ids = &quot;aspirin&quot;))
+pubchem_d2t[, c(&quot;gene_symbol&quot;, &quot;activity_name&quot;, &quot;activity_value_uM&quot;)]</code></pre>
+<pre><code>##   gene_symbol activity_name activity_value_uM
+## 1       NAPRT            Ki            0.0005
+## 2       PTGS1          IC50            0.3500
+## 3       PTGS2          IC50            2.4000
+## 4       ITGB3          IC50            5.0000
+## 5      ITGA2B          IC50            5.0000
+## 6      CYP2D6       Potency           15.4871
+## 7      CYP3A7       Potency           15.4871
+## 8      CYP1A2       Potency           24.5454
+## 9     CYP2C19       Potency           79.1862</code></pre>
+<p>PubChem is compound-centric and high-volume; results are capped per gene
+(<code>maxCids</code>, default 400) and filtered to Active, numeric, potency-endpoint
+measurements (IC50/Ki/Kd/EC50/AC50/Potency) by default. Because
+compound-centric assay data spans whatever species each assay used (e.g.
+aspirin’s classic COX1/COX2 potency assays are annotated against <em>sheep</em>
+GeneIDs in PubChem), <code>getPubchemTargets()</code>/<code>getPubchemDrugTarget()</code> filter
+to human (<code>taxid = 9606</code>) by default - pass <code>taxid = NULL</code> for all species.
+Like ChEMBL’s bioassay function, <code>fields = &quot;core&quot;/&quot;all&quot;/&lt;vector&gt;</code> and
+<code>listBioassayFields(&quot;pubchem&quot;)</code> are available here too.</p>
+</div>
+</div>
+<div id="id-translation-layer" class="section level1" number="5">
+<h1><span class="header-section-number">5</span> ID Translation Layer</h1>
 <p>Every source function above expects that source’s <em>native</em> identifier
 type. The functions in this section translate between identifier types
 directly, and are also what <code>queryDrugTargets()</code> uses internally.</p>
-<div id="proteingene-ids" class="section level2" number="4.1">
-<h2><span class="header-section-number">4.1</span> Protein/Gene IDs</h2>
+<div id="proteingene-ids" class="section level2" number="5.1">
+<h2><span class="header-section-number">5.1</span> Protein/Gene IDs</h2>
 <p><code>getUniprotMapping()</code> maps identifiers via UniProt’s REST ID Mapping
 service. <code>from</code>/<code>to</code> use UniProt’s own database-name vocabulary (see
 <a href="https://www.uniprot.org/help/id_mapping">UniProt’s ID Mapping help page</a>
@@ -2363,8 +2430,8 @@ for the full list) - a few of the most useful:</p>
 <p><code>taxId</code> restricts matches to one organism (default <code>9606</code> = human) -
 important because a gene symbol can match entries from several species.</p>
 </div>
-<div id="paralogs-and-orthologs" class="section level2" number="4.2">
-<h2><span class="header-section-number">4.2</span> Paralogs and Orthologs</h2>
+<div id="paralogs-and-orthologs" class="section level2" number="5.2">
+<h2><span class="header-section-number">5.2</span> Paralogs and Orthologs</h2>
 <p><code>getEnsemblParalogs()</code>/<code>getEnsemblOrthologs()</code> query Ensembl’s homology
 REST API. Their <code>type</code> classification (<code>ortholog_one2one</code>,
 <code>other_paralog</code>, etc.) comes from gene-tree reconciliation, not raw
@@ -2405,8 +2472,8 @@ pathological slowdown found for such families (see
 an even faster existence-check-only path when you don’t need
 <code>perc_id</code>/<code>perc_pos</code>.</p>
 </div>
-<div id="compound-ids" class="section level2" number="4.3">
-<h2><span class="header-section-number">4.3</span> Compound IDs</h2>
+<div id="compound-ids" class="section level2" number="5.3">
+<h2><span class="header-section-number">5.3</span> Compound IDs</h2>
 <p><code>getUnichemMapping()</code> translates compound identifiers via a local SQLite
 built from UniChem’s bulk compound cross-reference table
 (<code>buildUnichemDb()</code>). It is genuinely source-agnostic: <code>from</code>/<code>to</code> accept
@@ -2433,10 +2500,10 @@ build is a real, deliberate operation (not something to trigger silently),
 <code>getUnichemMapping()</code> or <code>queryDrugTargets()</code> on structured compound IDs.</p>
 </div>
 </div>
-<div id="cross-source-queries" class="section level1" number="5">
-<h1><span class="header-section-number">5</span> Cross-Source Queries</h1>
-<div id="querying-one-or-all-sources" class="section level2" number="5.1">
-<h2><span class="header-section-number">5.1</span> Querying One or All Sources</h2>
+<div id="cross-source-queries" class="section level1" number="6">
+<h1><span class="header-section-number">6</span> Cross-Source Queries</h1>
+<div id="querying-one-or-all-sources" class="section level2" number="6.1">
+<h2><span class="header-section-number">6.1</span> Querying One or All Sources</h2>
 <p><code>queryDrugTargets()</code> resolves <code>queryBy$ids</code> to whatever native identifier
 each requested <code>sources</code> entry needs, then dispatches. <code>queryBy$idType</code>
 uses the same canonical vocabulary as the translation layer above -
@@ -2459,11 +2526,11 @@ sapply(res_ensembl, nrow)</code></pre>
 <pre class="r"><code>## TTD needs a local db path (see above); other sources ignore it.
 res_all_live &lt;- queryDrugTargets(
     list(molType = &quot;gene&quot;, idType = &quot;symbol&quot;, ids = &quot;FGFR1&quot;),
-    sources = c(&quot;chembl&quot;, &quot;pubchem&quot;, &quot;dgidb&quot;, &quot;opentargets&quot;, &quot;ttd&quot;),
+    sources = c(&quot;chembl&quot;, &quot;dgidb&quot;, &quot;opentargets&quot;, &quot;ttd&quot;),
     ttdDbPath = ttdDbPath)
 sapply(res_all_live, nrow)</code></pre>
-<pre><code>##      chembl     pubchem       dgidb opentargets         ttd 
-##          26         400         143          94          37</code></pre>
+<pre><code>##      chembl       dgidb opentargets         ttd 
+##          26         143          94          37</code></pre>
 <p>Starting from a <em>compound</em> identifier that needs the UniChem SQLite works
 the same way once one has been built:</p>
 <pre class="r"><code>res_drugbank &lt;- queryDrugTargets(
@@ -2478,8 +2545,8 @@ a required local database path was not supplied), simply contributes no
 element to the result list rather than raising an error - set
 <code>verbose = TRUE</code> on any of the calls above to see why.</p>
 </div>
-<div id="performance-considerations" class="section level2" number="5.2">
-<h2><span class="header-section-number">5.2</span> Performance Considerations</h2>
+<div id="performance-considerations" class="section level2" number="6.2">
+<h2><span class="header-section-number">6.2</span> Performance Considerations</h2>
 <p>None of the five sources support unlimited-size ID batches in a single
 request, and the live APIs are courtesy-throttled client-side regardless.
 The defaults already reflect each source’s real constraints (do not raise
@@ -2530,10 +2597,12 @@ these without a specific reason):</p>
 </tr>
 </tbody>
 </table></div>
-<p>All five per-source functions and <code>queryDrugTargets()</code> chunk large <code>ids</code>
-vectors into these batch sizes automatically, so a query of, say, 2,000
-UniProt accessions works the same as one - it just takes proportionally
-longer and issues proportionally more requests. When testing or debugging
+<p>Every per-source function chunks large <code>ids</code> vectors into these batch
+sizes automatically - including <code>queryDrugTargets()</code>, for the four
+annotation sources it dispatches to (see <a href="#bioassay-queries">Bioassay Queries</a> for why
+PubChem isn’t one of them) - so a query of, say, 2,000 UniProt
+accessions works the same as one - it just takes proportionally longer
+and issues proportionally more requests. When testing or debugging
 with a deliberately small <code>chunkSize</code>, pick one relative to the <em>endpoint’s
 fan-out</em>, not arbitrarily small: a tiny <code>chunkSize</code> against a low-fan-out
 endpoint (e.g. ChEMBL’s <code>molecule</code> lookup, one record per ID) is a cheap
@@ -2542,8 +2611,8 @@ high-fan-out join (e.g. ChEMBL’s target/mechanism join, where a handful of
 UniProt accessions can expand into 100+ drug rows) multiplies into far
 more live requests than intended.</p>
 </div>
-<div id="combining-results" class="section level2" number="5.3">
-<h2><span class="header-section-number">5.3</span> Combining Results</h2>
+<div id="combining-results" class="section level2" number="6.3">
+<h2><span class="header-section-number">6.3</span> Combining Results</h2>
 <p><code>combineDrugTargets()</code> row-binds a small set of canonical columns
 (<code>query_id</code>, <code>gene_symbol</code>, <code>drug_name</code>, <code>action</code>, <code>source</code> by default)
 across whichever sources are present in a <code>queryDrugTargets()</code> result,
@@ -2551,8 +2620,8 @@ mapping each source’s own column names to this shared vocabulary:</p>
 <pre class="r"><code>combined &lt;- combineDrugTargets(res_all_live)
 table(combined$source)</code></pre>
 <pre><code>## 
-##      ChEMBL       DGIdb OpenTargets     PubChem         TTD 
-##          26         143          94         400          37</code></pre>
+##      ChEMBL       DGIdb OpenTargets         TTD 
+##          26         143          94          37</code></pre>
 <pre class="r"><code>head(combined)</code></pre>
 <pre><code>##   query_id gene_symbol               drug_name    action source
 ## 1    FGFR1        &lt;NA&gt; PAZOPANIB HYDROCHLORIDE INHIBITOR ChEMBL
@@ -2587,14 +2656,14 @@ unchanged in the list <code>queryDrugTargets()</code> returned, regardless of wh
 you pass to <code>combineDrugTargets()</code>.</p>
 </div>
 </div>
-<div id="supplement" class="section level1" number="6">
-<h1><span class="header-section-number">6</span> Supplement</h1>
+<div id="supplement" class="section level1" number="7">
+<h1><span class="header-section-number">7</span> Supplement</h1>
 <p>The functions below predate, and are independent of, the sources and
 translation layer described above. They remain available as
 backward-compatible/alternative options but are not the default workflow
 recommended by this vignette.</p>
-<div id="local-chembl-sqlite-workflow" class="section level2" number="6.1">
-<h2><span class="header-section-number">6.1</span> Local ChEMBL SQLite Workflow</h2>
+<div id="local-chembl-sqlite-workflow" class="section level2" number="7.1">
+<h2><span class="header-section-number">7.1</span> Local ChEMBL SQLite Workflow</h2>
 <p>Before ChEMBL’s REST API was added, this package’s ChEMBL support was
 exclusively through a downloaded local SQLite instance of the full ChEMBL
 database, queried via <code>drugTargetAnnot()</code> (and the related
@@ -2607,8 +2676,8 @@ downloadChemblDb(rerun = TRUE, config = config)  # downloads the full ChEMBL SQL
 queryBy &lt;- list(molType = &quot;protein&quot;, idType = &quot;UniProt_ID&quot;, ids = &quot;P11362&quot;)
 drugTargetAnnot(queryBy, config = config)</code></pre>
 </div>
-<div id="uniprot.ws-based-id-mapping" class="section level2" number="6.2">
-<h2><span class="header-section-number">6.2</span> UniProt.ws-Based ID Mapping</h2>
+<div id="uniprot.ws-based-id-mapping" class="section level2" number="7.2">
+<h2><span class="header-section-number">7.2</span> UniProt.ws-Based ID Mapping</h2>
 <p><code>getUniprotIDs()</code> predates <code>getUniprotMapping()</code> (see <a href="#id-translation-layer">ID Translation
 Layer</a>) and is based on the Bioconductor <em><a href="https://bioconductor.org/packages/3.24/UniProt.ws">UniProt.ws</a></em>
 package rather than a direct REST call. It is kept for backward
@@ -2616,8 +2685,8 @@ compatibility; <code>getUniprotMapping()</code> is the recommended path going
 forward.</p>
 <pre class="r"><code>getUniprotIDs(taxId = 9606, kt = &quot;ENSEMBL&quot;, keys = c(&quot;ENSG00000077782&quot;))</code></pre>
 </div>
-<div id="biomart-based-paralogs" class="section level2" number="6.3">
-<h2><span class="header-section-number">6.3</span> biomaRt-Based Paralogs</h2>
+<div id="biomart-based-paralogs" class="section level2" number="7.3">
+<h2><span class="header-section-number">7.3</span> biomaRt-Based Paralogs</h2>
 <p><code>getParalogs()</code> predates <code>getEnsemblParalogs()</code>/<code>getEnsemblOrthologs()</code>
 (see <a href="#id-translation-layer">ID Translation Layer</a>) and is based on <em><a href="https://CRAN.R-project.org/package=biomaRt">biomaRt</a></em>’s
 BioMart interface rather than Ensembl’s REST API directly. It returns
@@ -2626,8 +2695,8 @@ backward compatibility.</p>
 <pre class="r"><code>queryBy &lt;- list(molType = &quot;gene&quot;, idType = &quot;external_gene_name&quot;, ids = &quot;FGFR1&quot;)
 getParalogs(queryBy)</code></pre>
 </div>
-<div id="static-unichem-mirror" class="section level2" number="6.4">
-<h2><span class="header-section-number">6.4</span> Static UniChem Mirror</h2>
+<div id="static-unichem-mirror" class="section level2" number="7.4">
+<h2><span class="header-section-number">7.4</span> Static UniChem Mirror</h2>
 <p><code>downloadUniChem()</code>/<code>cmpIdMapping()</code> predate <code>buildUnichemDb()</code>/
 <code>getUnichemMapping()</code> (see <a href="#id-translation-layer">ID Translation Layer</a>) and work from a small,
 static, pre-computed ChEMBL↔︎{DrugBank, PubChem, ChEBI} cross-reference
@@ -2638,8 +2707,8 @@ workflow above, which uses it internally via <code>cmpIdMapping()</code>.</p>
 cmpIdMapping(outfile = &quot;cmp_ids.rds&quot;, rerun = TRUE)</code></pre>
 </div>
 </div>
-<div id="session-info" class="section level1" number="7">
-<h1><span class="header-section-number">7</span> Session Info</h1>
+<div id="session-info" class="section level1" number="8">
+<h1><span class="header-section-number">8</span> Session Info</h1>
 <pre class="r"><code>sessionInfo()</code></pre>
 <pre><code>## R Under development (unstable) (2026-06-15 r90156)
 ## Platform: x86_64-pc-linux-gnu
