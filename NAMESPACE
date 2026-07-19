@@ -68,5 +68,11 @@ export( "genConfig",
     "combineDrugTargets",
 
     "listDrugTargetFields",
-    "listBioassayFields"
+    "listBioassayFields",
+
+    "downloadHgncTable",
+    "getHgncGeneTable",
+    "buildHgncSymbolMap",
+    "normalizeGeneSymbols",
+    "buildGenomeWideDrugTargetTable"
 )

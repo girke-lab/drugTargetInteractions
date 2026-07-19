@@ -103,6 +103,8 @@ This vignette is organised as follows:
 - **[Cross-Source Queries]** - `queryDrugTargets()` across one or many
   sources at once, performance guidance, and combining results into a
   single table.
+- **[Genome-Wide Master Table]** - an HGNC-anchored, checkpointed build
+  covering all human protein-coding genes at once.
 - **[Supplement]** - legacy/alternative functions kept for backward
   compatibility.
 
@@ -624,6 +626,99 @@ literal same compound/target could be properly joined - is a separate,
 deferred phase. Every source's full original data remains available
 unchanged in the list `queryDrugTargets()` returned, regardless of what
 you pass to `combineDrugTargets()`.
+
+# Genome-Wide Master Table
+
+`queryDrugTargets()` is designed for on-demand queries of a handful to a
+few thousand identifiers. A different, common need is a **periodically
+rebuilt, shareable master table** covering essentially all human
+protein-coding genes at once - the natural resource for genome-wide
+questions like "do disease-associated gene variants have known drugs
+annotated?" or "do hits from a LINCS perturbation-signature search have
+known targets/MOAs?". A single **target-centric** genome-wide run
+already answers the reverse **drug &rarr; target** question too: every
+row already carries whichever drug matched that gene, so filtering the
+assembled table by drug identifier gives you that direction for free -
+no separate compound-centric run is needed.
+
+The code in this section is illustrative only (`eval=FALSE`) - a
+genome-wide run queries live APIs for ~19,200 genes and can take hours;
+it has no place executing during vignette or `R CMD check` builds. Run
+it directly in an interactive session or a scheduled job instead.
+
+## The HGNC Gene Table (the Anchor)
+
+The gene-centric anchor is [HGNC](https://www.genenames.org/)'s complete
+gene set - the single authoritative source for the current approved
+symbol *and* every previous/alias symbol a gene has ever had, alongside
+its Ensembl gene ID, UniProt accession(s), and Entrez ID, all in one row
+per approved gene (~19,200 of them are protein-coding).
+`getHgncGeneTable()` downloads (and caches) it and reshapes the
+pipe-separated multi-value columns into list-columns:
+
+```{r hgnc_table, eval=FALSE}
+hgncTable <- getHgncGeneTable()
+nrow(hgncTable)
+hgncTable[hgncTable$symbol == "FGFR1", c("symbol", "ensembl_gene_id")]
+hgncTable$uniprot_ids[hgncTable$symbol == "FGFR1"]
+```
+
+By default this uses a **pinned quarterly HGNC snapshot** (not the
+rolling always-latest file) specifically so a master table built today
+and one built next year start from the same gene list unless you
+deliberately ask otherwise (`current = TRUE` for the rolling file, or
+`archiveFile = "..."` for any other specific HGNC archive snapshot).
+
+**Symbol normalization matters here**: DGIdb and TTD echo back whatever
+gene symbol was current when *their own* records were curated, and a
+nontrivial fraction are now outdated relative to HGNC. `buildHgncSymbolMap()`
+builds a lookup from every historical `prev_symbol`/`alias_symbol` to its
+gene's current approved symbol; `normalizeGeneSymbols()` applies it
+(flagging any symbol it still can't resolve, rather than silently
+dropping it):
+
+```{r hgnc_symbol_map, eval=FALSE}
+symbolMap <- buildHgncSymbolMap(hgncTable)
+normalizeGeneSymbols(c("FGFR1", "ABL"), symbolMap = symbolMap, hgncTable = hgncTable)
+```
+
+## Building the Table, With Checkpointing
+
+`buildGenomeWideDrugTargetTable()` loops the four annotation sources'
+own bidirectional functions over every gene in an HGNC table, in
+checkpointed chunks written to `outDir` as it goes - so an interrupted
+run resumes from the last completed chunk instead of starting over
+(`rerun = FALSE`, the default, skips anything the chunk manifest already
+marks done):
+
+```{r genomewide_build, eval=FALSE}
+ttdDbPath <- buildTtdDb(rerun = FALSE)
+masterTable <- buildGenomeWideDrugTargetTable(
+    hgncTable = hgncTable,
+    sources = c("chembl", "dgidb", "opentargets", "ttd"),
+    ttdDbPath = ttdDbPath,
+    outDir = "genomewide_build",  # persists chunk files + a manifest here
+    chunkGenes = 500L)
+sapply(masterTable, nrow)
+```
+
+This deliberately covers only the four **curated-annotation** sources -
+not ChEMBL's bioassay function or PubChem (see [Bioassay Queries]).
+ChEMBL's full activity table is tens of millions of rows and PubChem's
+accessor is inherently a one-gene-at-a-time loop; a genome-wide sweep of
+either is a different kind of job, better done from their bulk data
+downloads than by looping this package's live-API functions tens of
+thousands of times.
+
+The result is a named list - one data.frame per source, each row tagged
+with `hgnc_id`/`symbol`/`ensembl_gene_id` alongside that source's own
+native columns (deliberately *not* passed through `combineDrugTargets()`'s
+harmonization, so no information is lost from a resource meant to be
+reused repeatedly; apply `combineDrugTargets()` afterward if you want the
+flattened cross-source view). The assembled result is also cached via
+`BiocFileCache`, so a completed build is reusable across sessions and
+machines without recomputation - exactly the "compute every few months,
+share the result" workflow this section is meant to support.
 
 # Supplement
 
