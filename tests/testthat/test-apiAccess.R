@@ -2,8 +2,16 @@
 ## skip cleanly when offline so the Bioconductor build machines never
 ## fail on a flaky endpoint (BiocCheck penalises unguarded network calls).
 
+## skip_on_bioc() is a deliberate, temporary over-correction for this
+## major-upgrade release: skip every live-network test on Bioconductor's
+## own build machines for now, rather than risk a flaky external API
+## (rate limiting, a brief outage) failing the official build. Once
+## we've seen clean Bioconductor build reports, remove skip_on_bioc()
+## (not this whole function) from individual tests selectively, source
+## by source, as each proves reliable there - not all at once.
 skip_if_offline_dti <- function() {
     testthat::skip_on_cran()
+    testthat::skip_on_bioc()
     if (!.dtiHasInternet())
         testthat::skip("No internet / API unreachable")
 }
@@ -161,15 +169,25 @@ test_that("getChemblBioassay rejects unsupported idType / malformed queryBy", {
 
 test_that("getChemblBioassay(fields = 'all') adds activity.*-prefixed columns", {
     skip_if_offline_dti()
-    core <- getChemblBioassay(list(molType = "cmp", idType = "chembl_id", ids = "CHEMBL1421"))
-    all  <- getChemblBioassay(list(molType = "cmp", idType = "chembl_id", ids = "CHEMBL1421"),
-                              fields = "all")
-    expect_true(all(names(core) %in% names(all)))
-    expect_true(ncol(all) > ncol(core))
+    ## One live call only: fields = "core" is by construction a fixed
+    ## subset of fields = "all" (.dtiSelectFields()), and the core column
+    ## list is already documented with zero network calls via
+    ## listBioassayFields() - no need to re-fetch a "core" baseline live
+    ## (that path is already covered by the dedicated core test above).
+    all <- getChemblBioassay(list(molType = "cmp", idType = "chembl_id", ids = "CHEMBL1421"),
+                             fields = "all")
+    coreCols <- c("QueryIDs", "chembl_id", "Drug_Name", "ChEMBL_TID", "UniProt_ID",
+                 "Organism", "Desc", "assay_chembl_id", "assay_description",
+                 "standard_type", "standard_relation", "standard_value",
+                 "standard_units", "pchembl_value")
+    expect_identical(coreCols, listBioassayFields("chembl")[seq_along(coreCols)])
+    expect_true(all(coreCols %in% names(all)))
+    expect_true(ncol(all) > length(coreCols))
     expect_true("activity.bao_label" %in% names(all))
 
-    sub <- getChemblBioassay(list(molType = "cmp", idType = "chembl_id", ids = "CHEMBL1421"),
-                             fields = c("Drug_Name", "activity.assay_type"))
+    ## Custom-vector selection is client-side logic on the already-
+    ## fetched wide data - test it directly, no second live call needed.
+    sub <- .dtiSelectFields(all, c("Drug_Name", "activity.assay_type"), coreCols)
     expect_identical(names(sub), c("QueryIDs", "Drug_Name", "activity.assay_type"))
 })
 
@@ -577,48 +595,73 @@ test_that("listDrugTargetFields returns the documented static column list, no ne
 ## fields = "all" on the live get*DrugTarget() source functions
 ## ------------------------------------------------------------------
 
+## The 4 tests below each make exactly one live call (fields = "all")
+## rather than a separate live "core" baseline + a separate live custom-
+## vector call: fields = "core" is by construction a fixed subset of
+## fields = "all" (.dtiSelectFields()), already documented with zero
+## network calls via listDrugTargetFields()/listBioassayFields(), and
+## already exercised live by each function's own dedicated core test
+## elsewhere in this file - re-fetching it here would just be a second
+## live round trip to the same endpoint. Custom-vector selection is
+## client-side logic on the already-fetched wide data, so it's tested
+## directly via .dtiSelectFields() on the "all" result already in hand.
+
 test_that("getChemblDrugTarget(fields = 'all') adds source-prefixed columns", {
     skip_if_offline_dti()
-    core <- getChemblDrugTarget(list(molType = "cmp", idType = "chembl_id",
-                                     ids = "CHEMBL1421"))
-    all  <- getChemblDrugTarget(list(molType = "cmp", idType = "chembl_id",
-                                     ids = "CHEMBL1421"), fields = "all")
-    expect_true(all(names(core) %in% names(all)))
-    expect_true(ncol(all) > ncol(core))
+    all <- getChemblDrugTarget(list(molType = "cmp", idType = "chembl_id",
+                                    ids = "CHEMBL1421"), fields = "all")
+    coreCols <- c("QueryIDs", "chembl_id", "Drug_Name", "MOA", "Action_Type",
+                 "Max_Phase", "First_Approval", "ChEMBL_TID", "UniProt_ID",
+                 "Desc", "Organism", "Mesh_Indication")
+    expect_identical(coreCols, listDrugTargetFields("chembl")[seq_along(coreCols)])
+    expect_true(all(coreCols %in% names(all)))
+    expect_true(ncol(all) > length(coreCols))
     expect_true("molecule.molecule_type" %in% names(all))
 
-    sub <- getChemblDrugTarget(list(molType = "cmp", idType = "chembl_id",
-                                    ids = "CHEMBL1421"),
-                               fields = c("Drug_Name", "mechanism.mechanism_comment"))
+    sub <- .dtiSelectFields(all, c("Drug_Name", "mechanism.mechanism_comment"), coreCols)
     expect_identical(names(sub), c("QueryIDs", "Drug_Name",
                                    "mechanism.mechanism_comment"))
 })
 
 test_that("getPubchemDrugTarget(fields = 'all') adds activity.*-prefixed columns", {
     skip_if_offline_dti()
-    core <- getPubchemDrugs("FGFR1", maxCids = 5L)
-    all  <- getPubchemDrugs("FGFR1", maxCids = 5L, fields = "all")
-    expect_true(all(names(core) %in% names(all)))
-    expect_true(ncol(all) > ncol(core))
+    all <- getPubchemDrugs("FGFR1", maxCids = 5L, fields = "all")
+    coreCols <- c("gene_symbol", "geneid", "target_accession", "cid", "drug_name",
+                 "canonical_smiles", "activity_name", "activity_value_uM",
+                 "assay_name", "db")
+    expect_identical(coreCols, listDrugTargetFields("pubchem")[seq_along(coreCols)])
+    expect_true(all(coreCols %in% names(all)))
+    expect_true(ncol(all) > length(coreCols))
     expect_true(any(grepl("^activity\\.", names(all))))
 })
 
 test_that("getDgidbDrugTarget(fields = 'all') adds drug./gene./source.-prefixed columns", {
     skip_if_offline_dti()
-    core <- getDgidbTargets("imatinib")
-    all  <- getDgidbTargets("imatinib", fields = "all")
-    expect_true(all(names(core) %in% names(all)))
-    expect_true(ncol(all) > ncol(core))
+    all <- getDgidbTargets("imatinib", fields = "all")
+    coreCols <- c("gene_name", "drug_name", "drug_concept_id", "drug_approved",
+                 "interaction_types", "directionality", "interaction_score",
+                 "evidence_score", "sources", "db")
+    expect_identical(coreCols, listDrugTargetFields("dgidb")[seq_along(coreCols)])
+    expect_true(all(coreCols %in% names(all)))
+    expect_true(ncol(all) > length(coreCols))
     expect_true("drug.id" %in% names(all))
     expect_true("source.citation" %in% names(all))
 })
 
 test_that("getOpenTargetsDrugTarget(fields = 'all') adds target./drug.-prefixed columns", {
     skip_if_offline_dti()
-    core <- getOpenTargetsTargets("aspirin", expand = "target")
-    all  <- getOpenTargetsTargets("aspirin", expand = "target", fields = "all")
-    expect_true(all(names(core) %in% names(all)))
-    expect_true(ncol(all) > ncol(core))
+    all <- getOpenTargetsTargets("aspirin", expand = "target", fields = "all")
+    ## getOpenTargetsTargets() is the drug -> target direction, whose core
+    ## columns are .dtiTargetCols - a different slice of
+    ## listDrugTargetFields("opentargets") than the target -> drug
+    ## direction's .dtiDrugCols, so hardcoded here rather than sliced by
+    ## position from the combined list.
+    coreCols <- c("chembl_id", "drug_name", "drug_type", "max_clinical_stage",
+                 "mechanism_of_action", "action_type", "moa_target_name",
+                 "target_id", "approved_symbol")
+    expect_true(all(coreCols %in% listDrugTargetFields("opentargets")))
+    expect_true(all(coreCols %in% names(all)))
+    expect_true(ncol(all) > length(coreCols))
     expect_true("target.biotype" %in% names(all))
     expect_true("drug.description" %in% names(all))
 })

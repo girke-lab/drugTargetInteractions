@@ -1,6 +1,6 @@
 ---
-title: Drug-Target Interactions
-author: "Authors: Kevin Horan, Yuzhu Duan, Austin Leong, Dan Evans, Jamison McCorrison, Nicholas Schork and Thomas Girke"
+title: drugTargetInteractions: Mining the Druggable Genome
+author: "Authors: Kevin Horan, Brandon Le, Brendan Gongol, Desmond Cairo, Mohammad Afsharinia, Tandis Salem, Dan Evans, Nicholas Schork and Thomas Girke"
 date: "Last update: `r format(Sys.time(), '%d %B, %Y')`"
 always_allow_html: yes
 output:

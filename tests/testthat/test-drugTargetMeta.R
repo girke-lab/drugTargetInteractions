@@ -10,8 +10,12 @@
 ## far too heavy to trigger from a test suite. TTD is cheap enough to
 ## build on demand (mirrors test-ttdAccess.R's memoized helper).
 
+## skip_on_bioc() is a deliberate, temporary over-correction for this
+## major-upgrade release - see test-apiAccess.R's copy of this helper
+## for the full rationale. Remove selectively later, not all at once.
 skip_if_offline_dti <- function() {
     testthat::skip_on_cran()
+    testthat::skip_on_bioc()
     if (!.dtiHasInternet())
         testthat::skip("No internet / API unreachable")
 }
