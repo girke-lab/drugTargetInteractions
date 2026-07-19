@@ -1996,22 +1996,24 @@ document.addEventListener("DOMContentLoaded", function() {
 <p>The <code>drugTargetInteractions</code> package provides utilities for identifying
 <strong>drug-target interactions</strong> starting from <em>either</em> a gene/protein identifier
 (target → drug) <em>or</em> a compound identifier (drug → target). It
-covers five independent drug-target data sources - <a href="https://www.ebi.ac.uk/chembl/">ChEMBL</a>
+covers seven independent drug-target data sources - <a href="https://www.ebi.ac.uk/chembl/">ChEMBL</a>
 <span class="citation">(<a href="#ref-Gaulton2012-dv" role="doc-biblioref">Gaulton et al. 2012</a>; <a href="#ref-Bento2014-ry" role="doc-biblioref">Bento et al. 2014</a>)</span>, <a href="https://pubchem.ncbi.nlm.nih.gov/">PubChem</a>,
-<a href="https://dgidb.org/">DGIdb</a>, <a href="https://platform.opentargets.org/">Open Targets</a>
-and the <a href="https://ttd.idrblab.cn/">Therapeutic Target Database (TTD)</a> - each
-queried through its own live REST/GraphQL API or, for TTD, a small local
-SQLite built from its public flat files. ChEMBL remains additionally
-available through a downloaded local SQLite instance for users who prefer
-that (see the <a href="#supplement">Supplement</a>).</p>
-<p>Four of these (ChEMBL, DGIdb, Open Targets, TTD) provide curated
-<strong>drug-target annotations</strong> - an expert-curated call that a drug acts on a
-target via some mechanism - and are queried the same way via
-<code>queryDrugTargets()</code>/<code>combineDrugTargets()</code> (see <a href="#cross-source-queries">Cross-Source Queries</a>).
-PubChem instead provides raw <strong>bioassay measurements</strong> (individual assay
-results, no mechanism claim attached) - a genuinely different kind of
-data, covered separately in <a href="#bioassay-queries">Bioassay Queries</a> alongside ChEMBL’s own
-bioassay function, <code>getChemblBioassay()</code>.</p>
+<a href="https://dgidb.org/">DGIdb</a>, <a href="https://platform.opentargets.org/">Open Targets</a>,
+the <a href="https://ttd.idrblab.cn/">Therapeutic Target Database (TTD)</a>, the
+<a href="https://repo-hub.broadinstitute.org/repurposing">Broad Institute Drug Repurposing Hub</a>
+(CLUE) and the <a href="https://www.guidetopharmacology.org/">IUPHAR/BPS Guide to PHARMACOLOGY</a>
+(GtoPdb) - each queried through its own live REST/GraphQL API or, for TTD,
+the Repurposing Hub and GtoPdb, a small local SQLite built from public
+bulk data. ChEMBL remains additionally available through a downloaded
+local SQLite instance for users who prefer that (see the <a href="#supplement">Supplement</a>).</p>
+<p>Six of these (ChEMBL, DGIdb, Open Targets, TTD, Broad Repurposing Hub,
+GtoPdb) provide curated <strong>drug-target annotations</strong> - an expert-curated call
+that a drug acts on a target via some mechanism - and are queried the same
+way via <code>queryDrugTargets()</code>/<code>combineDrugTargets()</code> (see <a href="#cross-source-queries">Cross-Source
+Queries</a>). PubChem instead provides raw <strong>bioassay measurements</strong>
+(individual assay results, no mechanism claim attached) - a genuinely
+different kind of data, covered separately in <a href="#bioassay-queries">Bioassay Queries</a> alongside
+ChEMBL’s own bioassay function, <code>getChemblBioassay()</code>.</p>
 <p>Because every source has its own native identifier vocabulary (a ChEMBL
 molecule ID is not a PubChem CID is not a DrugBank ID), the package also
 provides a <strong>generic ID-translation layer</strong>: live services for mapping
@@ -2320,6 +2322,98 @@ into your local cache and builds the SQLite there - the package itself
 ships no TTD data (TTD’s license permits academic use but has no explicit
 redistribution grant).</p>
 </div>
+<div id="broad-repurposing-hub-clue" class="section level2" number="3.6">
+<h2><span class="header-section-number">3.6</span> Broad Repurposing Hub (CLUE)</h2>
+<p>Like TTD, the <a href="https://repo-hub.broadinstitute.org/repurposing">Broad Institute Drug Repurposing
+Hub</a> has no live API - two
+flat TSV files (drug-level and physical-sample-level annotation) are
+downloaded once and assembled into a small local SQLite via
+<code>buildBroadRepurposingHubDb()</code>; <code>broadRepurposingHubAnnot()</code> then queries
+that local database repeatedly.</p>
+<pre class="r"><code>brhDbPath &lt;- buildBroadRepurposingHubDb(rerun = FALSE)  # builds once, reuses the cached file afterward</code></pre>
+<p>Native identifiers for <code>broadRepurposingHubAnnot()</code>: for target → drug,
+a <strong>gene symbol</strong> (<code>idType = &quot;symbol&quot;</code> - the Repurposing Hub only exposes
+gene symbols, no accession system of its own); for drug → target, a
+<strong>drug name</strong> (<code>idType = &quot;name&quot;</code>, matched case-insensitively against the
+Hub’s own lower-case <code>pert_iname</code>) or a specific physical sample/batch ID
+(<code>idType = &quot;broad_id&quot;</code>).</p>
+<pre class="r"><code>broad_t2d &lt;- broadRepurposingHubAnnot(
+    list(molType = &quot;protein&quot;, idType = &quot;symbol&quot;, ids = &quot;FGFR1&quot;), brhDbPath)
+head(broad_t2d[, c(&quot;pert_iname&quot;, &quot;clinical_phase&quot;, &quot;moa&quot;)])</code></pre>
+<pre><code>##   pert_iname  clinical_phase                              moa
+## 1    AZD4547 Phase 2/Phase 3                   FGFR inhibitor
+## 2    AZD4547 Phase 2/Phase 3                   FGFR inhibitor
+## 3    AZD4547 Phase 2/Phase 3                   FGFR inhibitor
+## 4   brivanib         Phase 3 FGFR inhibitor | VEGFR inhibitor
+## 5   brivanib         Phase 3 FGFR inhibitor | VEGFR inhibitor
+## 6   brivanib         Phase 3 FGFR inhibitor | VEGFR inhibitor</code></pre>
+<pre class="r"><code>broad_d2t &lt;- broadRepurposingHubAnnot(
+    list(molType = &quot;cmp&quot;, idType = &quot;name&quot;, ids = &quot;pemigatinib&quot;), brhDbPath)
+broad_d2t[, c(&quot;target_gene&quot;, &quot;clinical_phase&quot;, &quot;moa&quot;)]</code></pre>
+<pre><code>##   target_gene clinical_phase            moa
+## 1       FGFR1       Launched fgfr inhibitor
+## 2       FGFR2       Launched fgfr inhibitor
+## 3       FGFR3       Launched fgfr inhibitor</code></pre>
+<p><strong>Distribution note:</strong> <code>buildBroadRepurposingHubDb()</code> only ever downloads
+the Repurposing Hub’s own files into your local cache and builds the SQLite
+there - the package itself ships no Repurposing Hub data. Its license is
+more restrictive than TTD’s: the source files explicitly state they are
+“provided for non-commercial use only.”</p>
+<p><strong>Known operational caveat:</strong> <code>repo-hub.broadinstitute.org</code> has been
+observed serving an incomplete TLS certificate chain (missing the
+InCommon intermediate certificate). Browsers usually mask this by
+auto-fetching the missing intermediate; <code>curl</code>/R’s default download
+methods generally do not, so <code>downloadBroadRepurposingHub()</code> may fail with
+a certificate verification error on some machines until the Broad
+Institute fixes their server configuration. This is a server-side issue,
+not something this package works around.</p>
+</div>
+<div id="gtopdb-iupharbps-guide-to-pharmacology" class="section level2" number="3.7">
+<h2><span class="header-section-number">3.7</span> GtoPdb (IUPHAR/BPS Guide to PHARMACOLOGY)</h2>
+<p>GtoPdb offers a documented REST API, but its per-target endpoints are
+one-resource-per-call with no bulk target-to-gene-symbol mapping endpoint -
+impractical for a genome-wide build. Instead, <code>buildGtoPdbDb()</code> uses
+GtoPdb’s <em>bulk</em> <code>/services/interactions</code> endpoint (one call returns the
+whole ~24,000-row interaction table as JSON) joined locally against a
+small bulk flat file GtoPdb separately publishes for target-ID-to-HGNC
+mapping, assembled into a small local SQLite - the same build-once,
+query-many pattern as TTD and the Repurposing Hub, just sourced from
+REST plus one small file instead of pure flat files.</p>
+<pre class="r"><code>gtoPdbDbPath &lt;- buildGtoPdbDb(rerun = FALSE)  # builds once, reuses the cached file afterward</code></pre>
+<p>Native identifiers for <code>gtoPdbTargetAnnot()</code>: for target → drug, a
+<strong>gene symbol</strong> (<code>idType = &quot;symbol&quot;</code>) or GtoPdb’s own <strong>target ID</strong>
+(<code>idType = &quot;gtp_target_id&quot;</code>); for drug → target, a <strong>ligand name</strong>
+(<code>idType = &quot;name&quot;</code>) or GtoPdb’s own <strong>ligand ID</strong> (<code>idType = &quot;gtp_ligand_id&quot;</code>).
+Interactions are pre-filtered to <code>species == &quot;Human&quot;</code> at build time.</p>
+<pre class="r"><code>gtopdb_t2d &lt;- gtoPdbTargetAnnot(
+    list(molType = &quot;protein&quot;, idType = &quot;symbol&quot;, ids = &quot;FGFR1&quot;), gtoPdbDbPath)
+head(gtopdb_t2d[, c(&quot;ligandName&quot;, &quot;type&quot;, &quot;action&quot;, &quot;affinity&quot;)])</code></pre>
+<pre><code>##                     ligandName      type     action  affinity
+## 1                    dovitinib Inhibitor Inhibition 8.0 - 8.1
+## 2                 dabogratinib Inhibitor Inhibition       6.6
+## 3                   pexmetinib Inhibitor Inhibition       7.6
+## 4                 infigratinib Inhibitor Inhibition       9.1
+## 5                    orantinib Inhibitor Inhibition       5.7
+## 6 compound 2c [PMID: 24900538] Inhibitor Inhibition       8.1</code></pre>
+<pre class="r"><code>gtopdb_d2t &lt;- gtoPdbTargetAnnot(
+    list(molType = &quot;cmp&quot;, idType = &quot;name&quot;, ids = &quot;pemigatinib&quot;), gtoPdbDbPath)
+gtopdb_d2t[, c(&quot;target_gene&quot;, &quot;type&quot;, &quot;action&quot;, &quot;affinity&quot;)]</code></pre>
+<pre><code>##   target_gene      type     action affinity
+## 1       FGFR1 Inhibitor Inhibition      7.0
+## 2       FGFR2 Inhibitor Inhibition      7.0
+## 3       FGFR3 Inhibitor Inhibition      7.0</code></pre>
+<p>GtoPdb is a more targeted, expert-curated resource than TTD/the
+Repurposing Hub, not exhaustive - of this vignette’s 8 target genes, only
+FGFR1 and NLRP3 are covered.</p>
+<p><strong>Distribution note:</strong> unlike TTD and the Repurposing Hub, GtoPdb’s data
+is licensed under the Open Data Commons Open Database License (ODbL)
+with contents under CC-BY-SA 4.0 - clear terms that explicitly permit
+redistribution (with attribution/share-alike). <code>buildGtoPdbDb()</code> still
+only ever downloads into your local cache and builds the SQLite there,
+matching the other local-SQLite sources’ posture for consistency, though
+that default isn’t a licensing requirement here the way it is for TTD/
+the Repurposing Hub.</p>
+</div>
 </div>
 <div id="bioassay-queries" class="section level1" number="4">
 <h1><span class="header-section-number">4</span> Bioassay Queries</h1>
@@ -2525,14 +2619,17 @@ res_ensembl &lt;- queryDrugTargets(
 sapply(res_ensembl, nrow)</code></pre>
 <pre><code>##      chembl opentargets 
 ##          26          94</code></pre>
-<pre class="r"><code>## TTD needs a local db path (see above); other sources ignore it.
+<pre class="r"><code>## TTD, Broad Repurposing Hub and GtoPdb each need a local db path (see
+## above); other sources ignore the ones they don&#39;t use.
 res_all_live &lt;- queryDrugTargets(
     list(molType = &quot;gene&quot;, idType = &quot;symbol&quot;, ids = &quot;FGFR1&quot;),
-    sources = c(&quot;chembl&quot;, &quot;dgidb&quot;, &quot;opentargets&quot;, &quot;ttd&quot;),
-    ttdDbPath = ttdDbPath)
-sapply(res_all_live, nrow)</code></pre>
-<pre><code>##      chembl       dgidb opentargets         ttd 
-##          26         143          94          37</code></pre>
+    sources = c(&quot;chembl&quot;, &quot;dgidb&quot;, &quot;opentargets&quot;, &quot;ttd&quot;, &quot;broad&quot;, &quot;gtopdb&quot;),
+    ttdDbPath = ttdDbPath, brhDbPath = brhDbPath, gtoPdbDbPath = gtoPdbDbPath)</code></pre>
+<pre><code>## Waiting 2s for retry backoff ■■■■■■■■■■■■■■■</code></pre>
+<pre><code>## Waiting 2s for retry backoff ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■</code></pre>
+<pre class="r"><code>sapply(res_all_live, nrow)</code></pre>
+<pre><code>##      chembl       dgidb opentargets         ttd       broad      gtopdb 
+##          26         143          94          37         187          47</code></pre>
 <p>Starting from a <em>compound</em> identifier that needs the UniChem SQLite works
 the same way once one has been built:</p>
 <pre class="r"><code>res_drugbank &lt;- queryDrugTargets(
@@ -2549,7 +2646,7 @@ element to the result list rather than raising an error - set
 </div>
 <div id="performance-considerations" class="section level2" number="6.2">
 <h2><span class="header-section-number">6.2</span> Performance Considerations</h2>
-<p>None of the five sources support unlimited-size ID batches in a single
+<p>None of the seven sources support unlimited-size ID batches in a single
 request, and the live APIs are courtesy-throttled client-side regardless.
 The defaults already reflect each source’s real constraints (do not raise
 these without a specific reason):</p>
@@ -2600,7 +2697,7 @@ these without a specific reason):</p>
 </tbody>
 </table></div>
 <p>Every per-source function chunks large <code>ids</code> vectors into these batch
-sizes automatically - including <code>queryDrugTargets()</code>, for the four
+sizes automatically - including <code>queryDrugTargets()</code>, for the six
 annotation sources it dispatches to (see <a href="#bioassay-queries">Bioassay Queries</a> for why
 PubChem isn’t one of them) - so a query of, say, 2,000 UniProt
 accessions works the same as one - it just takes proportionally longer
@@ -2622,8 +2719,10 @@ mapping each source’s own column names to this shared vocabulary:</p>
 <pre class="r"><code>combined &lt;- combineDrugTargets(res_all_live)
 table(combined$source)</code></pre>
 <pre><code>## 
-##      ChEMBL       DGIdb OpenTargets         TTD 
-##          26         143          94          37</code></pre>
+## Broad Repurposing Hub                ChEMBL                 DGIdb                GtoPdb 
+##                   187                    26                   143                    47 
+##           OpenTargets                   TTD 
+##                    94                    37</code></pre>
 <pre class="r"><code>head(combined)</code></pre>
 <pre><code>##   query_id gene_symbol               drug_name    action source
 ## 1    FGFR1        &lt;NA&gt; PAZOPANIB HYDROCHLORIDE INHIBITOR ChEMBL
