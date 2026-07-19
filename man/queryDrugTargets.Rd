@@ -9,6 +9,7 @@ queryDrugTargets(
   queryBy = list(molType = NULL, idType = NULL, ids = NULL),
   sources = names(.dtiMetaSources),
   ttdDbPath = NULL,
+  brhDbPath = NULL,
   unichemDbPath = NULL,
   taxId = 9606L,
   verbose = FALSE,
@@ -28,14 +29,20 @@ protein side (see \code{\link{.resolveGeneIds}}), or one of
 vocabulary, which this function translates to internally.}
 
 \item{sources}{character vector, any of \code{"chembl"},
-\code{"dgidb"}, \code{"opentargets"}, \code{"ttd"} (default: all
-four annotation sources; PubChem is not included here, see Details).}
+\code{"dgidb"}, \code{"opentargets"}, \code{"ttd"}, \code{"broad"}
+(default: all five annotation sources; PubChem is not included here,
+see Details).}
 
 \item{ttdDbPath}{character(1) path to a local TTD SQLite (see
 \code{\link{buildTtdDb}}); required if \code{"ttd"} is in
 \code{sources}. Not built automatically - a TTD build is a real,
 deliberate operation, not something to trigger silently from inside
 a dispatcher.}
+
+\item{brhDbPath}{character(1) path to a local Broad Repurposing Hub
+SQLite (see \code{\link{buildBroadRepurposingHubDb}}); required if
+\code{"broad"} is in \code{sources}. Not built automatically, same
+rationale as \code{ttdDbPath}.}
 
 \item{unichemDbPath}{character(1) path to a local UniChem SQLite (see
 \code{\link{buildUnichemDb}}); required whenever compound-side
@@ -71,7 +78,8 @@ source needs (see \code{\link{.resolveGeneIds}}/
 \code{\link{.resolveCompoundIds}} for how), then dispatches to that
 source's own bidirectional \emph{annotation} query function
 (\code{\link{getChemblDrugTarget}}, \code{\link{getDgidbDrugTarget}},
-\code{\link{getOpenTargetsDrugTarget}}, \code{\link{ttdTargetAnnot}}).
+\code{\link{getOpenTargetsDrugTarget}}, \code{\link{ttdTargetAnnot}},
+\code{\link{broadRepurposingHubAnnot}}).
 Named \code{queryDrugTargets()}, not \code{getDrugTarget()} - that
 name is already taken by an older, unrelated function in
 \code{drugTargetAnnotations_Fct.R}.
@@ -113,6 +121,7 @@ supplied) - set \code{verbose = TRUE} to see why.
 \seealso{
 \code{\link{getChemblDrugTarget}}, \code{\link{getDgidbDrugTarget}},
   \code{\link{getOpenTargetsDrugTarget}}, \code{\link{ttdTargetAnnot}},
-  \code{\link{getPubchemDrugTarget}}, \code{\link{getChemblBioassay}},
-  \code{\link{getUniprotMapping}}, \code{\link{getUnichemMapping}}
+  \code{\link{broadRepurposingHubAnnot}}, \code{\link{getPubchemDrugTarget}},
+  \code{\link{getChemblBioassay}}, \code{\link{getUniprotMapping}},
+  \code{\link{getUnichemMapping}}
 }

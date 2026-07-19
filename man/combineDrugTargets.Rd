@@ -54,8 +54,10 @@ source's full original data remains available unchanged in
 \code{action} is a best-effort common label, not a perfectly aligned
 concept: ChEMBL's \code{Action_Type} and Open Targets'
 \code{action_type} are categorical mechanism labels (e.g.
-\code{"INHIBITOR"}); TTD's \code{MOA} and DGIdb's
-\code{interaction_types} are similar. PubChem is not one of the
+\code{"INHIBITOR"}); TTD's \code{MOA}, DGIdb's \code{interaction_types}
+and the Broad Repurposing Hub's \code{moa} are similar (the Hub's is
+free text, e.g. \code{"fgfr inhibitor"}, not a controlled vocabulary).
+PubChem is not one of the
 combinable sources at all (see \code{\link{.dtiMetaSources}}): its
 bioactivity data has no mechanism-of-action concept to align to in
 the first place.

@@ -56,6 +56,10 @@ export( "genConfig",
     "buildTtdDb",
     "ttdTargetAnnot",
 
+    "downloadBroadRepurposingHub",
+    "buildBroadRepurposingHubDb",
+    "broadRepurposingHubAnnot",
+
     "getUniprotMapping",
     "getEnsemblParalogs",
     "getEnsemblOrthologs",

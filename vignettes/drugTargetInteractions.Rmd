@@ -60,18 +60,19 @@ library(drugTargetInteractions)
 The `drugTargetInteractions` package provides utilities for identifying
 **drug-target interactions** starting from *either* a gene/protein identifier
 (target &rarr; drug) *or* a compound identifier (drug &rarr; target). It
-covers five independent drug-target data sources - [ChEMBL](https://www.ebi.ac.uk/chembl/)
+covers six independent drug-target data sources - [ChEMBL](https://www.ebi.ac.uk/chembl/)
 [@Gaulton2012-dv; @Bento2014-ry], [PubChem](https://pubchem.ncbi.nlm.nih.gov/),
-[DGIdb](https://dgidb.org/), [Open Targets](https://platform.opentargets.org/)
-and the [Therapeutic Target Database (TTD)](https://ttd.idrblab.cn/) - each
-queried through its own live REST/GraphQL API or, for TTD, a small local
-SQLite built from its public flat files. ChEMBL remains additionally
-available through a downloaded local SQLite instance for users who prefer
-that (see the [Supplement]).
+[DGIdb](https://dgidb.org/), [Open Targets](https://platform.opentargets.org/),
+the [Therapeutic Target Database (TTD)](https://ttd.idrblab.cn/) and the
+[Broad Institute Drug Repurposing Hub](https://repo-hub.broadinstitute.org/repurposing)
+(CLUE) - each queried through its own live REST/GraphQL API or, for TTD and
+the Repurposing Hub, a small local SQLite built from public flat files.
+ChEMBL remains additionally available through a downloaded local SQLite
+instance for users who prefer that (see the [Supplement]).
 
-Four of these (ChEMBL, DGIdb, Open Targets, TTD) provide curated
-**drug-target annotations** - an expert-curated call that a drug acts on a
-target via some mechanism - and are queried the same way via
+Five of these (ChEMBL, DGIdb, Open Targets, TTD, Broad Repurposing Hub)
+provide curated **drug-target annotations** - an expert-curated call that a
+drug acts on a target via some mechanism - and are queried the same way via
 `queryDrugTargets()`/`combineDrugTargets()` (see [Cross-Source Queries]).
 PubChem instead provides raw **bioassay measurements** (individual assay
 results, no mechanism claim attached) - a genuinely different kind of
@@ -349,6 +350,53 @@ into your local cache and builds the SQLite there - the package itself
 ships no TTD data (TTD's license permits academic use but has no explicit
 redistribution grant).
 
+## Broad Repurposing Hub (CLUE)
+
+Like TTD, the [Broad Institute Drug Repurposing
+Hub](https://repo-hub.broadinstitute.org/repurposing) has no live API - two
+flat TSV files (drug-level and physical-sample-level annotation) are
+downloaded once and assembled into a small local SQLite via
+`buildBroadRepurposingHubDb()`; `broadRepurposingHubAnnot()` then queries
+that local database repeatedly.
+
+```{r broad_build, eval=TRUE}
+brhDbPath <- buildBroadRepurposingHubDb(rerun = FALSE)  # builds once, reuses the cached file afterward
+```
+
+Native identifiers for `broadRepurposingHubAnnot()`: for target &rarr; drug,
+a **gene symbol** (`idType = "symbol"` - the Repurposing Hub only exposes
+gene symbols, no accession system of its own); for drug &rarr; target, a
+**drug name** (`idType = "name"`, matched case-insensitively against the
+Hub's own lower-case `pert_iname`) or a specific physical sample/batch ID
+(`idType = "broad_id"`).
+
+```{r broad_target2drug, eval=TRUE}
+broad_t2d <- broadRepurposingHubAnnot(
+    list(molType = "protein", idType = "symbol", ids = "FGFR1"), brhDbPath)
+head(broad_t2d[, c("pert_iname", "clinical_phase", "moa")])
+```
+
+```{r broad_drug2target, eval=TRUE}
+broad_d2t <- broadRepurposingHubAnnot(
+    list(molType = "cmp", idType = "name", ids = "pemigatinib"), brhDbPath)
+broad_d2t[, c("target_gene", "clinical_phase", "moa")]
+```
+
+**Distribution note:** `buildBroadRepurposingHubDb()` only ever downloads
+the Repurposing Hub's own files into your local cache and builds the SQLite
+there - the package itself ships no Repurposing Hub data. Its license is
+more restrictive than TTD's: the source files explicitly state they are
+"provided for non-commercial use only."
+
+**Known operational caveat:** `repo-hub.broadinstitute.org` has been
+observed serving an incomplete TLS certificate chain (missing the
+InCommon intermediate certificate). Browsers usually mask this by
+auto-fetching the missing intermediate; `curl`/R's default download
+methods generally do not, so `downloadBroadRepurposingHub()` may fail with
+a certificate verification error on some machines until the Broad
+Institute fixes their server configuration. This is a server-side issue,
+not something this package works around.
+
 # Bioassay Queries
 
 Everything in [Data Sources in Detail] returns curated drug-target
@@ -533,11 +581,12 @@ sapply(res_ensembl, nrow)
 ```
 
 ```{r meta_ttd, eval=TRUE}
-## TTD needs a local db path (see above); other sources ignore it.
+## TTD and Broad Repurposing Hub each need a local db path (see above);
+## other sources ignore the ones they don't use.
 res_all_live <- queryDrugTargets(
     list(molType = "gene", idType = "symbol", ids = "FGFR1"),
-    sources = c("chembl", "dgidb", "opentargets", "ttd"),
-    ttdDbPath = ttdDbPath)
+    sources = c("chembl", "dgidb", "opentargets", "ttd", "broad"),
+    ttdDbPath = ttdDbPath, brhDbPath = brhDbPath)
 sapply(res_all_live, nrow)
 ```
 
@@ -558,7 +607,7 @@ element to the result list rather than raising an error - set
 
 ## Performance Considerations
 
-None of the five sources support unlimited-size ID batches in a single
+None of the six sources support unlimited-size ID batches in a single
 request, and the live APIs are courtesy-throttled client-side regardless.
 The defaults already reflect each source's real constraints (do not raise
 these without a specific reason):
@@ -573,7 +622,7 @@ these without a specific reason):
 | UniChem | No batching in the live API at all - hence the local-SQLite design | n/a (local queries) |
 
 Every per-source function chunks large `ids` vectors into these batch
-sizes automatically - including `queryDrugTargets()`, for the four
+sizes automatically - including `queryDrugTargets()`, for the five
 annotation sources it dispatches to (see [Bioassay Queries] for why
 PubChem isn't one of them) - so a query of, say, 2,000 UniProt
 accessions works the same as one - it just takes proportionally longer
