@@ -7,7 +7,7 @@
 ##  bidirectional annotation query function (getChemblDrugTarget(),
 ##  getDgidbDrugTarget(), getOpenTargetsDrugTarget(), ttdTargetAnnot()) -
 ##  the original motivating goal of the ID-translation layer (see
-##  idTranslation.R / unichemAccess.R, both 2026-07-17), tying it to 5 of
+##  idTranslation.R / unichemAccess.R, both 2026-07-17), tying it to 6 of
 ##  the already-ported per-source functions.
 ##
 ##  PubChem is deliberately NOT one of these 4: getPubchemDrugTarget()
@@ -264,7 +264,8 @@
     dgidb       = list(gene = "symbol",   cmp = "name"),
     opentargets = list(gene = "symbol",   cmp = "chembl_id"),
     ttd         = list(gene = "symbol",   cmp = "name"),
-    broad       = list(gene = "symbol",   cmp = "name")
+    broad       = list(gene = "symbol",   cmp = "name"),
+    gtopdb      = list(gene = "symbol",   cmp = "name")
 )
 
 #' Build the native \code{queryBy} list a given source's function expects
@@ -280,7 +281,9 @@
         ttd = if (isGene) list(molType = "protein", idType = "symbol", ids = ids)
               else list(molType = "cmp", idType = "name", ids = ids),
         broad = if (isGene) list(molType = "protein", idType = "symbol", ids = ids)
-                else list(molType = "cmp", idType = "name", ids = ids))
+                else list(molType = "cmp", idType = "name", ids = ids),
+        gtopdb = if (isGene) list(molType = "protein", idType = "symbol", ids = ids)
+                 else list(molType = "cmp", idType = "name", ids = ids))
 }
 
 #' Query drug-target interactions across multiple sources from any
@@ -294,7 +297,7 @@
 #' source's own bidirectional \emph{annotation} query function
 #' (\code{\link{getChemblDrugTarget}}, \code{\link{getDgidbDrugTarget}},
 #' \code{\link{getOpenTargetsDrugTarget}}, \code{\link{ttdTargetAnnot}},
-#' \code{\link{broadRepurposingHubAnnot}}).
+#' \code{\link{broadRepurposingHubAnnot}}, \code{\link{gtoPdbTargetAnnot}}).
 #' Named \code{queryDrugTargets()}, not \code{getDrugTarget()} - that
 #' name is already taken by an older, unrelated function in
 #' \code{drugTargetAnnotations_Fct.R}.
@@ -328,9 +331,9 @@
 #'   \code{\link{.resolveCompoundIds}}) - not each source's own native
 #'   vocabulary, which this function translates to internally.
 #' @param sources character vector, any of \code{"chembl"},
-#'   \code{"dgidb"}, \code{"opentargets"}, \code{"ttd"}, \code{"broad"}
-#'   (default: all five annotation sources; PubChem is not included here,
-#'   see Details).
+#'   \code{"dgidb"}, \code{"opentargets"}, \code{"ttd"}, \code{"broad"},
+#'   \code{"gtopdb"} (default: all six annotation sources; PubChem is not
+#'   included here, see Details).
 #' @param ttdDbPath character(1) path to a local TTD SQLite (see
 #'   \code{\link{buildTtdDb}}); required if \code{"ttd"} is in
 #'   \code{sources}. Not built automatically - a TTD build is a real,
@@ -340,6 +343,10 @@
 #'   SQLite (see \code{\link{buildBroadRepurposingHubDb}}); required if
 #'   \code{"broad"} is in \code{sources}. Not built automatically, same
 #'   rationale as \code{ttdDbPath}.
+#' @param gtoPdbDbPath character(1) path to a local GtoPdb SQLite (see
+#'   \code{\link{buildGtoPdbDb}}); required if \code{"gtopdb"} is in
+#'   \code{sources}. Not built automatically, same rationale as
+#'   \code{ttdDbPath}.
 #' @param unichemDbPath character(1) path to a local UniChem SQLite (see
 #'   \code{\link{buildUnichemDb}}); required whenever compound-side
 #'   resolution needs it (structured-ID-to-structured-ID or
@@ -376,14 +383,14 @@
 #' }
 #' @seealso \code{\link{getChemblDrugTarget}}, \code{\link{getDgidbDrugTarget}},
 #'   \code{\link{getOpenTargetsDrugTarget}}, \code{\link{ttdTargetAnnot}},
-#'   \code{\link{broadRepurposingHubAnnot}}, \code{\link{getPubchemDrugTarget}},
-#'   \code{\link{getChemblBioassay}}, \code{\link{getUniprotMapping}},
-#'   \code{\link{getUnichemMapping}}
+#'   \code{\link{broadRepurposingHubAnnot}}, \code{\link{gtoPdbTargetAnnot}},
+#'   \code{\link{getPubchemDrugTarget}}, \code{\link{getChemblBioassay}},
+#'   \code{\link{getUniprotMapping}}, \code{\link{getUnichemMapping}}
 #' @export
 queryDrugTargets <- function(queryBy = list(molType = NULL, idType = NULL, ids = NULL),
                              sources = names(.dtiMetaSources), ttdDbPath = NULL,
-                             brhDbPath = NULL, unichemDbPath = NULL, taxId = 9606L,
-                             verbose = FALSE, ...) {
+                             brhDbPath = NULL, gtoPdbDbPath = NULL, unichemDbPath = NULL,
+                             taxId = 9606L, verbose = FALSE, ...) {
     if (!identical(names(queryBy), c("molType", "idType", "ids"))) {
         stop(
             "All three list components in 'queryBy' (named: 'molType',",
@@ -438,6 +445,11 @@ queryDrugTargets <- function(queryBy = list(molType = NULL, idType = NULL, ids =
                     if (is.null(brhDbPath))
                         stop("'broad' requires brhDbPath (see buildBroadRepurposingHubDb()).")
                     broadRepurposingHubAnnot(qb, brhDbPath)
+                },
+                gtopdb      = {
+                    if (is.null(gtoPdbDbPath))
+                        stop("'gtopdb' requires gtoPdbDbPath (see buildGtoPdbDb()).")
+                    gtoPdbTargetAnnot(qb, gtoPdbDbPath)
                 })
         }, error = function(e) {
             if (verbose) message("queryDrugTargets: source '", src, "' failed: ",
@@ -465,7 +477,7 @@ queryDrugTargets <- function(queryBy = list(molType = NULL, idType = NULL, ids =
 #' @keywords internal
 .dtiCombineSourceLabel <- c(chembl = "ChEMBL", dgidb = "DGIdb",
                             opentargets = "OpenTargets", ttd = "TTD",
-                            broad = "Broad Repurposing Hub")
+                            broad = "Broad Repurposing Hub", gtopdb = "GtoPdb")
 
 #' Canonical combined column -> per-source column name.
 #'
@@ -485,13 +497,13 @@ queryDrugTargets <- function(queryBy = list(molType = NULL, idType = NULL, ids =
 .dtiCombineColMap <- list(
     gene_symbol = c(chembl = NA, dgidb = "gene_name",
                     opentargets = "approved_symbol", ttd = "GeneName",
-                    broad = "target_gene"),
+                    broad = "target_gene", gtopdb = "target_gene"),
     drug_name   = c(chembl = "Drug_Name", dgidb = "drug_name",
                     opentargets = "drug_name", ttd = "DrugName",
-                    broad = "pert_iname"),
+                    broad = "pert_iname", gtopdb = "ligandName"),
     action      = c(chembl = "Action_Type", dgidb = "interaction_types",
                     opentargets = "action_type", ttd = "MOA",
-                    broad = "moa")
+                    broad = "moa", gtopdb = "action")
 )
 
 #' Combine \code{\link{queryDrugTargets}} results into one table
@@ -512,10 +524,11 @@ queryDrugTargets <- function(queryBy = list(molType = NULL, idType = NULL, ids =
 #' \code{action} is a best-effort common label, not a perfectly aligned
 #' concept: ChEMBL's \code{Action_Type} and Open Targets'
 #' \code{action_type} are categorical mechanism labels (e.g.
-#' \code{"INHIBITOR"}); TTD's \code{MOA}, DGIdb's \code{interaction_types}
-#' and the Broad Repurposing Hub's \code{moa} are similar (the Hub's is
-#' free text, e.g. \code{"fgfr inhibitor"}, not a controlled vocabulary).
-#' PubChem is not one of the
+#' \code{"INHIBITOR"}); TTD's \code{MOA}, DGIdb's \code{interaction_types},
+#' the Broad Repurposing Hub's \code{moa} (free text, e.g.
+#' \code{"fgfr inhibitor"}, not a controlled vocabulary) and GtoPdb's
+#' \code{action} (e.g. \code{"Inhibition"}) are similar. PubChem is not
+#' one of the
 #' combinable sources at all (see \code{\link{.dtiMetaSources}}): its
 #' bioactivity data has no mechanism-of-action concept to align to in
 #' the first place.

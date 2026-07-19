@@ -60,6 +60,10 @@ export( "genConfig",
     "buildBroadRepurposingHubDb",
     "broadRepurposingHubAnnot",
 
+    "downloadGtoPdb",
+    "buildGtoPdbDb",
+    "gtoPdbTargetAnnot",
+
     "getUniprotMapping",
     "getEnsemblParalogs",
     "getEnsemblOrthologs",

@@ -10,6 +10,7 @@ queryDrugTargets(
   sources = names(.dtiMetaSources),
   ttdDbPath = NULL,
   brhDbPath = NULL,
+  gtoPdbDbPath = NULL,
   unichemDbPath = NULL,
   taxId = 9606L,
   verbose = FALSE,
@@ -29,9 +30,9 @@ protein side (see \code{\link{.resolveGeneIds}}), or one of
 vocabulary, which this function translates to internally.}
 
 \item{sources}{character vector, any of \code{"chembl"},
-\code{"dgidb"}, \code{"opentargets"}, \code{"ttd"}, \code{"broad"}
-(default: all five annotation sources; PubChem is not included here,
-see Details).}
+\code{"dgidb"}, \code{"opentargets"}, \code{"ttd"}, \code{"broad"},
+\code{"gtopdb"} (default: all six annotation sources; PubChem is not
+included here, see Details).}
 
 \item{ttdDbPath}{character(1) path to a local TTD SQLite (see
 \code{\link{buildTtdDb}}); required if \code{"ttd"} is in
@@ -43,6 +44,11 @@ a dispatcher.}
 SQLite (see \code{\link{buildBroadRepurposingHubDb}}); required if
 \code{"broad"} is in \code{sources}. Not built automatically, same
 rationale as \code{ttdDbPath}.}
+
+\item{gtoPdbDbPath}{character(1) path to a local GtoPdb SQLite (see
+\code{\link{buildGtoPdbDb}}); required if \code{"gtopdb"} is in
+\code{sources}. Not built automatically, same rationale as
+\code{ttdDbPath}.}
 
 \item{unichemDbPath}{character(1) path to a local UniChem SQLite (see
 \code{\link{buildUnichemDb}}); required whenever compound-side
@@ -79,7 +85,7 @@ source needs (see \code{\link{.resolveGeneIds}}/
 source's own bidirectional \emph{annotation} query function
 (\code{\link{getChemblDrugTarget}}, \code{\link{getDgidbDrugTarget}},
 \code{\link{getOpenTargetsDrugTarget}}, \code{\link{ttdTargetAnnot}},
-\code{\link{broadRepurposingHubAnnot}}).
+\code{\link{broadRepurposingHubAnnot}}, \code{\link{gtoPdbTargetAnnot}}).
 Named \code{queryDrugTargets()}, not \code{getDrugTarget()} - that
 name is already taken by an older, unrelated function in
 \code{drugTargetAnnotations_Fct.R}.
@@ -121,7 +127,7 @@ supplied) - set \code{verbose = TRUE} to see why.
 \seealso{
 \code{\link{getChemblDrugTarget}}, \code{\link{getDgidbDrugTarget}},
   \code{\link{getOpenTargetsDrugTarget}}, \code{\link{ttdTargetAnnot}},
-  \code{\link{broadRepurposingHubAnnot}}, \code{\link{getPubchemDrugTarget}},
-  \code{\link{getChemblBioassay}}, \code{\link{getUniprotMapping}},
-  \code{\link{getUnichemMapping}}
+  \code{\link{broadRepurposingHubAnnot}}, \code{\link{gtoPdbTargetAnnot}},
+  \code{\link{getPubchemDrugTarget}}, \code{\link{getChemblBioassay}},
+  \code{\link{getUniprotMapping}}, \code{\link{getUnichemMapping}}
 }

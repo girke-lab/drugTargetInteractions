@@ -60,24 +60,25 @@ library(drugTargetInteractions)
 The `drugTargetInteractions` package provides utilities for identifying
 **drug-target interactions** starting from *either* a gene/protein identifier
 (target &rarr; drug) *or* a compound identifier (drug &rarr; target). It
-covers six independent drug-target data sources - [ChEMBL](https://www.ebi.ac.uk/chembl/)
+covers seven independent drug-target data sources - [ChEMBL](https://www.ebi.ac.uk/chembl/)
 [@Gaulton2012-dv; @Bento2014-ry], [PubChem](https://pubchem.ncbi.nlm.nih.gov/),
 [DGIdb](https://dgidb.org/), [Open Targets](https://platform.opentargets.org/),
-the [Therapeutic Target Database (TTD)](https://ttd.idrblab.cn/) and the
+the [Therapeutic Target Database (TTD)](https://ttd.idrblab.cn/), the
 [Broad Institute Drug Repurposing Hub](https://repo-hub.broadinstitute.org/repurposing)
-(CLUE) - each queried through its own live REST/GraphQL API or, for TTD and
-the Repurposing Hub, a small local SQLite built from public flat files.
-ChEMBL remains additionally available through a downloaded local SQLite
-instance for users who prefer that (see the [Supplement]).
+(CLUE) and the [IUPHAR/BPS Guide to PHARMACOLOGY](https://www.guidetopharmacology.org/)
+(GtoPdb) - each queried through its own live REST/GraphQL API or, for TTD,
+the Repurposing Hub and GtoPdb, a small local SQLite built from public
+bulk data. ChEMBL remains additionally available through a downloaded
+local SQLite instance for users who prefer that (see the [Supplement]).
 
-Five of these (ChEMBL, DGIdb, Open Targets, TTD, Broad Repurposing Hub)
-provide curated **drug-target annotations** - an expert-curated call that a
-drug acts on a target via some mechanism - and are queried the same way via
-`queryDrugTargets()`/`combineDrugTargets()` (see [Cross-Source Queries]).
-PubChem instead provides raw **bioassay measurements** (individual assay
-results, no mechanism claim attached) - a genuinely different kind of
-data, covered separately in [Bioassay Queries] alongside ChEMBL's own
-bioassay function, `getChemblBioassay()`.
+Six of these (ChEMBL, DGIdb, Open Targets, TTD, Broad Repurposing Hub,
+GtoPdb) provide curated **drug-target annotations** - an expert-curated call
+that a drug acts on a target via some mechanism - and are queried the same
+way via `queryDrugTargets()`/`combineDrugTargets()` (see [Cross-Source
+Queries]). PubChem instead provides raw **bioassay measurements**
+(individual assay results, no mechanism claim attached) - a genuinely
+different kind of data, covered separately in [Bioassay Queries] alongside
+ChEMBL's own bioassay function, `getChemblBioassay()`.
 
 Because every source has its own native identifier vocabulary (a ChEMBL
 molecule ID is not a PubChem CID is not a DrugBank ID), the package also
@@ -397,6 +398,53 @@ a certificate verification error on some machines until the Broad
 Institute fixes their server configuration. This is a server-side issue,
 not something this package works around.
 
+## GtoPdb (IUPHAR/BPS Guide to PHARMACOLOGY)
+
+GtoPdb offers a documented REST API, but its per-target endpoints are
+one-resource-per-call with no bulk target-to-gene-symbol mapping endpoint -
+impractical for a genome-wide build. Instead, `buildGtoPdbDb()` uses
+GtoPdb's *bulk* `/services/interactions` endpoint (one call returns the
+whole ~24,000-row interaction table as JSON) joined locally against a
+small bulk flat file GtoPdb separately publishes for target-ID-to-HGNC
+mapping, assembled into a small local SQLite - the same build-once,
+query-many pattern as TTD and the Repurposing Hub, just sourced from
+REST plus one small file instead of pure flat files.
+
+```{r gtopdb_build, eval=TRUE}
+gtoPdbDbPath <- buildGtoPdbDb(rerun = FALSE)  # builds once, reuses the cached file afterward
+```
+
+Native identifiers for `gtoPdbTargetAnnot()`: for target &rarr; drug, a
+**gene symbol** (`idType = "symbol"`) or GtoPdb's own **target ID**
+(`idType = "gtp_target_id"`); for drug &rarr; target, a **ligand name**
+(`idType = "name"`) or GtoPdb's own **ligand ID** (`idType = "gtp_ligand_id"`).
+Interactions are pre-filtered to `species == "Human"` at build time.
+
+```{r gtopdb_target2drug, eval=TRUE}
+gtopdb_t2d <- gtoPdbTargetAnnot(
+    list(molType = "protein", idType = "symbol", ids = "FGFR1"), gtoPdbDbPath)
+head(gtopdb_t2d[, c("ligandName", "type", "action", "affinity")])
+```
+
+```{r gtopdb_drug2target, eval=TRUE}
+gtopdb_d2t <- gtoPdbTargetAnnot(
+    list(molType = "cmp", idType = "name", ids = "pemigatinib"), gtoPdbDbPath)
+gtopdb_d2t[, c("target_gene", "type", "action", "affinity")]
+```
+
+GtoPdb is a more targeted, expert-curated resource than TTD/the
+Repurposing Hub, not exhaustive - of this vignette's 8 target genes, only
+FGFR1 and NLRP3 are covered.
+
+**Distribution note:** unlike TTD and the Repurposing Hub, GtoPdb's data
+is licensed under the Open Data Commons Open Database License (ODbL)
+with contents under CC-BY-SA 4.0 - clear terms that explicitly permit
+redistribution (with attribution/share-alike). `buildGtoPdbDb()` still
+only ever downloads into your local cache and builds the SQLite there,
+matching the other local-SQLite sources' posture for consistency, though
+that default isn't a licensing requirement here the way it is for TTD/
+the Repurposing Hub.
+
 # Bioassay Queries
 
 Everything in [Data Sources in Detail] returns curated drug-target
@@ -581,12 +629,12 @@ sapply(res_ensembl, nrow)
 ```
 
 ```{r meta_ttd, eval=TRUE}
-## TTD and Broad Repurposing Hub each need a local db path (see above);
-## other sources ignore the ones they don't use.
+## TTD, Broad Repurposing Hub and GtoPdb each need a local db path (see
+## above); other sources ignore the ones they don't use.
 res_all_live <- queryDrugTargets(
     list(molType = "gene", idType = "symbol", ids = "FGFR1"),
-    sources = c("chembl", "dgidb", "opentargets", "ttd", "broad"),
-    ttdDbPath = ttdDbPath, brhDbPath = brhDbPath)
+    sources = c("chembl", "dgidb", "opentargets", "ttd", "broad", "gtopdb"),
+    ttdDbPath = ttdDbPath, brhDbPath = brhDbPath, gtoPdbDbPath = gtoPdbDbPath)
 sapply(res_all_live, nrow)
 ```
 
@@ -607,7 +655,7 @@ element to the result list rather than raising an error - set
 
 ## Performance Considerations
 
-None of the six sources support unlimited-size ID batches in a single
+None of the seven sources support unlimited-size ID batches in a single
 request, and the live APIs are courtesy-throttled client-side regardless.
 The defaults already reflect each source's real constraints (do not raise
 these without a specific reason):
@@ -622,7 +670,7 @@ these without a specific reason):
 | UniChem | No batching in the live API at all - hence the local-SQLite design | n/a (local queries) |
 
 Every per-source function chunks large `ids` vectors into these batch
-sizes automatically - including `queryDrugTargets()`, for the five
+sizes automatically - including `queryDrugTargets()`, for the six
 annotation sources it dispatches to (see [Bioassay Queries] for why
 PubChem isn't one of them) - so a query of, say, 2,000 UniProt
 accessions works the same as one - it just takes proportionally longer

@@ -275,10 +275,11 @@ normalizeGeneSymbols <- function(symbols, symbolMap = NULL, hgncTable = NULL) {
 }
 
 #' Genome-wide, checkpointed drug-target annotation build across the
-#' four annotation sources, anchored on an HGNC gene table
+#' six annotation sources, anchored on an HGNC gene table
 #'
 #' Loops \code{\link{getChemblDrugTarget}}/\code{\link{getDgidbDrugTarget}}/
-#' \code{\link{getOpenTargetsDrugTarget}}/\code{\link{ttdTargetAnnot}}
+#' \code{\link{getOpenTargetsDrugTarget}}/\code{\link{ttdTargetAnnot}}/
+#' \code{\link{broadRepurposingHubAnnot}}/\code{\link{gtoPdbTargetAnnot}}
 #' over every gene in \code{hgncTable} (default: all human protein-coding
 #' genes from \code{\link{getHgncGeneTable}}), in checkpointed chunks
 #' written to \code{outDir} as it goes - so an interrupted run resumes
@@ -295,9 +296,16 @@ normalizeGeneSymbols <- function(symbols, symbolMap = NULL, hgncTable = NULL) {
 #' @param hgncTable data.frame from \code{\link{getHgncGeneTable}}
 #'   (default: fetched automatically if not supplied).
 #' @param sources character vector, any of \code{"chembl"}, \code{"dgidb"},
-#'   \code{"opentargets"}, \code{"ttd"} (default: all four).
+#'   \code{"opentargets"}, \code{"ttd"}, \code{"broad"}, \code{"gtopdb"}
+#'   (default: all six).
 #' @param ttdDbPath character(1) path to a local TTD SQLite (see
 #'   \code{\link{buildTtdDb}}); required if \code{"ttd"} is in
+#'   \code{sources}.
+#' @param brhDbPath character(1) path to a local Broad Repurposing Hub
+#'   SQLite (see \code{\link{buildBroadRepurposingHubDb}}); required if
+#'   \code{"broad"} is in \code{sources}.
+#' @param gtoPdbDbPath character(1) path to a local GtoPdb SQLite (see
+#'   \code{\link{buildGtoPdbDb}}); required if \code{"gtopdb"} is in
 #'   \code{sources}.
 #' @param outDir character(1) directory to write checkpoint chunks and
 #'   the manifest to; created if it doesn't exist.
@@ -312,8 +320,8 @@ normalizeGeneSymbols <- function(symbols, symbolMap = NULL, hgncTable = NULL) {
 #'   other \code{build*()} functions) since this is a long-running job.
 #' @param ... additional arguments passed through to the ChEMBL/DGIdb/
 #'   Open Targets calls (e.g. \code{fields}, \code{chunkSize}) - not
-#'   forwarded to \code{ttdTargetAnnot()}, which takes no extra
-#'   arguments.
+#'   forwarded to \code{ttdTargetAnnot()}/\code{broadRepurposingHubAnnot()}/
+#'   \code{gtoPdbTargetAnnot()}, none of which take extra arguments.
 #' @return A named list, one data.frame per successfully-built source,
 #'   each row tagged with \code{hgnc_id}/\code{symbol}/\code{ensembl_gene_id}
 #'   alongside that source's own native columns (not run through
@@ -338,15 +346,22 @@ normalizeGeneSymbols <- function(symbols, symbolMap = NULL, hgncTable = NULL) {
 #'   \code{\link{combineDrugTargets}}
 #' @export
 buildGenomeWideDrugTargetTable <- function(hgncTable = NULL,
-                                           sources = c("chembl", "dgidb", "opentargets", "ttd"),
-                                           ttdDbPath = NULL, outDir, chunkGenes = 500L,
+                                           sources = c("chembl", "dgidb", "opentargets",
+                                                      "ttd", "broad", "gtopdb"),
+                                           ttdDbPath = NULL, brhDbPath = NULL,
+                                           gtoPdbDbPath = NULL, outDir, chunkGenes = 500L,
                                            rerun = FALSE, verbose = TRUE, ...) {
     if (missing(outDir) || !is.character(outDir) || length(outDir) != 1L)
         stop("'outDir' must be supplied (a single directory path).")
-    sources <- match.arg(sources, c("chembl", "dgidb", "opentargets", "ttd"),
+    sources <- match.arg(sources, c("chembl", "dgidb", "opentargets", "ttd",
+                                    "broad", "gtopdb"),
                          several.ok = TRUE)
     if ("ttd" %in% sources && is.null(ttdDbPath))
         stop("'ttd' requires ttdDbPath (see buildTtdDb()).")
+    if ("broad" %in% sources && is.null(brhDbPath))
+        stop("'broad' requires brhDbPath (see buildBroadRepurposingHubDb()).")
+    if ("gtopdb" %in% sources && is.null(gtoPdbDbPath))
+        stop("'gtopdb' requires gtoPdbDbPath (see buildGtoPdbDb()).")
     if (is.null(hgncTable)) hgncTable <- getHgncGeneTable()
     stopifnot(is.data.frame(hgncTable),
              all(c("hgnc_id", "symbol", "ensembl_gene_id", "uniprot_ids") %in% names(hgncTable)))
@@ -361,7 +376,7 @@ buildGenomeWideDrugTargetTable <- function(hgncTable = NULL,
     ## row per gene already, no explosion needed).
     keyTables <- list()
     if ("chembl" %in% sources) keyTables$chembl <- .hgncExplode(hgncTable, "uniprot_ids")
-    for (src in intersect(sources, c("dgidb", "opentargets", "ttd"))) {
+    for (src in intersect(sources, c("dgidb", "opentargets", "ttd", "broad", "gtopdb"))) {
         keyTables[[src]] <- data.frame(
             hgnc_id = hgncTable$hgnc_id, symbol = hgncTable$symbol,
             ensembl_gene_id = hgncTable$ensembl_gene_id, id = hgncTable$symbol,
@@ -383,12 +398,16 @@ buildGenomeWideDrugTargetTable <- function(hgncTable = NULL,
                     chembl      = list(molType = "protein", idType = "Uniprot", ids = ids),
                     dgidb       = list(molType = "gene", idType = "symbol", ids = ids),
                     opentargets = list(molType = "gene", idType = "symbol", ids = ids),
-                    ttd         = list(molType = "protein", idType = "symbol", ids = ids))
+                    ttd         = list(molType = "protein", idType = "symbol", ids = ids),
+                    broad       = list(molType = "protein", idType = "symbol", ids = ids),
+                    gtopdb      = list(molType = "protein", idType = "symbol", ids = ids))
                 switch(src,
                     chembl      = getChemblDrugTarget(qb, verbose = FALSE, ...),
                     dgidb       = getDgidbDrugTarget(qb, verbose = FALSE, ...),
                     opentargets = getOpenTargetsDrugTarget(qb, verbose = FALSE, ...),
-                    ttd         = ttdTargetAnnot(qb, ttdDbPath))
+                    ttd         = ttdTargetAnnot(qb, ttdDbPath),
+                    broad       = broadRepurposingHubAnnot(qb, brhDbPath),
+                    gtopdb      = gtoPdbTargetAnnot(qb, gtoPdbDbPath))
             }, error = function(e) {
                 warning("buildGenomeWideDrugTargetTable: ", src, " chunk ", i,
                         " failed: ", conditionMessage(e), call. = FALSE)

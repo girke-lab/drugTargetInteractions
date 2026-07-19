@@ -47,6 +47,12 @@ skip_if_no_unichem_db <- function() {
     .brhTestDb$path
 }
 
+.gtoPdbTestDb <- new.env(parent = emptyenv())
+.getGtoPdbTestDbPath <- function() {
+    if (is.null(.gtoPdbTestDb$path)) .gtoPdbTestDb$path <- buildGtoPdbDb()
+    .gtoPdbTestDb$path
+}
+
 ## --- .resolveGeneIds() ---------------------------------------------------
 
 test_that(".resolveGeneIds passthrough needs no network", {
@@ -131,6 +137,10 @@ test_that(".dtiMetaQueryBy builds the correct native queryBy per source/directio
                      list(molType = "protein", idType = "symbol", ids = "FGFR1"))
     expect_identical(.dtiMetaQueryBy("broad", FALSE, "pemigatinib"),
                      list(molType = "cmp", idType = "name", ids = "pemigatinib"))
+    expect_identical(.dtiMetaQueryBy("gtopdb", TRUE, "FGFR1"),
+                     list(molType = "protein", idType = "symbol", ids = "FGFR1"))
+    expect_identical(.dtiMetaQueryBy("gtopdb", FALSE, "pemigatinib"),
+                     list(molType = "cmp", idType = "name", ids = "pemigatinib"))
 })
 
 ## --- queryDrugTargets() ----------------------------------------------------
@@ -203,6 +213,15 @@ test_that("queryDrugTargets dispatches to Broad Repurposing Hub given a local db
     expect_identical(res$broad, direct)
 })
 
+test_that("queryDrugTargets dispatches to GtoPdb given a local db path, matching gtoPdbTargetAnnot directly", {
+    skip_if_offline_dti()
+    dbPath <- .getGtoPdbTestDbPath()
+    res <- queryDrugTargets(list(molType = "gene", idType = "symbol", ids = "FGFR1"),
+                            sources = "gtopdb", gtoPdbDbPath = dbPath)
+    direct <- gtoPdbTargetAnnot(list(molType = "protein", idType = "symbol", ids = "FGFR1"), dbPath)
+    expect_identical(res$gtopdb, direct)
+})
+
 test_that("queryDrugTargets returns an empty list (not an error) when a required local db path is missing", {
     ## symbol->symbol is a zero-network passthrough, so this needs no
     ## internet access - the point is purely the missing-ttdDbPath path.
@@ -256,30 +275,41 @@ test_that("queryDrugTargets returns an empty list when nothing resolves for the 
             indication = NA, broad_id = "BRD-K00104124-001-01-9", qc_incompatible = 0,
             purity = 95, vendor = "MedChemEx", catalog_no = "x", vendor_name = "x",
             expected_mass = 1, smiles = "x", InChIKey = "x", pubchem_cid = "1",
-            deprecated_broad_id = NA, stringsAsFactors = FALSE)
+            deprecated_broad_id = NA, stringsAsFactors = FALSE),
+        gtopdb = data.frame(
+            QueryIDs = "FGFR1", target_gene = "FGFR1", targetId = 1808L,
+            targetName = "fibroblast growth factor receptor 1", species = "Human",
+            primaryTarget = TRUE, ligandId = 9767L, ligandName = "pemigatinib",
+            type = "Inhibitor", action = "Inhibition", affinity = "7.0",
+            affinityParameter = "pIC50", selectivity = NA, refIds = "34085",
+            stringsAsFactors = FALSE)
     )
     attr(res, "resolved") <- list(
         chembl = c(ENSG00000077782 = "P11362"),
         dgidb = c(ENSG00000077782 = "FGFR1"),
         opentargets = c(ENSG00000077782 = "FGFR1"),
         ttd = c(ENSG00000077782 = "FGFR1"),
-        broad = c(ENSG00000077782 = "FGFR1")
+        broad = c(ENSG00000077782 = "FGFR1"),
+        gtopdb = c(ENSG00000077782 = "FGFR1")
     )
     res
 }
 
 test_that("combineDrugTargets maps every source's columns correctly and backfills the original query_id", {
     combined <- combineDrugTargets(.combineFixture())
-    expect_equal(nrow(combined), 5L)
+    expect_equal(nrow(combined), 6L)
     expect_identical(unique(combined$query_id), "ENSG00000077782")  ## not each source's own resolved id
     expect_identical(combined$gene_symbol[combined$source == "ChEMBL"], NA_character_)
     expect_identical(combined$gene_symbol[combined$source == "DGIdb"], "FGFR1")
     expect_identical(combined$drug_name[combined$source == "ChEMBL"], "DASATINIB")
     expect_identical(combined$drug_name[combined$source == "TTD"], "KW-2449")
     expect_identical(combined$drug_name[combined$source == "Broad Repurposing Hub"], "pemigatinib")
+    expect_identical(combined$drug_name[combined$source == "GtoPdb"], "pemigatinib")
     expect_identical(combined$action[combined$source == "DGIdb"], "inhibitor")
     expect_identical(combined$action[combined$source == "Broad Repurposing Hub"], "fgfr inhibitor")
-    expect_setequal(combined$source, c("ChEMBL", "DGIdb", "OpenTargets", "TTD", "Broad Repurposing Hub"))
+    expect_identical(combined$action[combined$source == "GtoPdb"], "Inhibition")
+    expect_setequal(combined$source, c("ChEMBL", "DGIdb", "OpenTargets", "TTD",
+                                       "Broad Repurposing Hub", "GtoPdb"))
 })
 
 test_that("combineDrugTargets rejects 'pubchem' as a results name (bioassay data, not combinable)", {

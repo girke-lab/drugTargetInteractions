@@ -3,12 +3,14 @@
 \name{buildGenomeWideDrugTargetTable}
 \alias{buildGenomeWideDrugTargetTable}
 \title{Genome-wide, checkpointed drug-target annotation build across the
-four annotation sources, anchored on an HGNC gene table}
+six annotation sources, anchored on an HGNC gene table}
 \usage{
 buildGenomeWideDrugTargetTable(
   hgncTable = NULL,
-  sources = c("chembl", "dgidb", "opentargets", "ttd"),
+  sources = c("chembl", "dgidb", "opentargets", "ttd", "broad", "gtopdb"),
   ttdDbPath = NULL,
+  brhDbPath = NULL,
+  gtoPdbDbPath = NULL,
   outDir,
   chunkGenes = 500L,
   rerun = FALSE,
@@ -21,10 +23,19 @@ buildGenomeWideDrugTargetTable(
 (default: fetched automatically if not supplied).}
 
 \item{sources}{character vector, any of \code{"chembl"}, \code{"dgidb"},
-\code{"opentargets"}, \code{"ttd"} (default: all four).}
+\code{"opentargets"}, \code{"ttd"}, \code{"broad"}, \code{"gtopdb"}
+(default: all six).}
 
 \item{ttdDbPath}{character(1) path to a local TTD SQLite (see
 \code{\link{buildTtdDb}}); required if \code{"ttd"} is in
+\code{sources}.}
+
+\item{brhDbPath}{character(1) path to a local Broad Repurposing Hub
+SQLite (see \code{\link{buildBroadRepurposingHubDb}}); required if
+\code{"broad"} is in \code{sources}.}
+
+\item{gtoPdbDbPath}{character(1) path to a local GtoPdb SQLite (see
+\code{\link{buildGtoPdbDb}}); required if \code{"gtopdb"} is in
 \code{sources}.}
 
 \item{outDir}{character(1) directory to write checkpoint chunks and
@@ -44,8 +55,8 @@ other \code{build*()} functions) since this is a long-running job.}
 
 \item{...}{additional arguments passed through to the ChEMBL/DGIdb/
 Open Targets calls (e.g. \code{fields}, \code{chunkSize}) - not
-forwarded to \code{ttdTargetAnnot()}, which takes no extra
-arguments.}
+forwarded to \code{ttdTargetAnnot()}/\code{broadRepurposingHubAnnot()}/
+\code{gtoPdbTargetAnnot()}, none of which take extra arguments.}
 }
 \value{
 A named list, one data.frame per successfully-built source,
@@ -60,7 +71,8 @@ A named list, one data.frame per successfully-built source,
 }
 \description{
 Loops \code{\link{getChemblDrugTarget}}/\code{\link{getDgidbDrugTarget}}/
-\code{\link{getOpenTargetsDrugTarget}}/\code{\link{ttdTargetAnnot}}
+\code{\link{getOpenTargetsDrugTarget}}/\code{\link{ttdTargetAnnot}}/
+\code{\link{broadRepurposingHubAnnot}}/\code{\link{gtoPdbTargetAnnot}}
 over every gene in \code{hgncTable} (default: all human protein-coding
 genes from \code{\link{getHgncGeneTable}}), in checkpointed chunks
 written to \code{outDir} as it goes - so an interrupted run resumes
