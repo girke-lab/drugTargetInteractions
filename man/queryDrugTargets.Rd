@@ -86,10 +86,10 @@ function and \code{\link{combineDrugTargets}} harmonize. Use
 the "Bioassay Queries" vignette section.
 
 Returns a named list, one element per successfully-queried source -
-\strong{not} one unified table. Cross-source schema harmonization is a
-separate, deferred phase (see \code{PROGRESS.md}'s 2026-07-13 S4
-harmonization-class analysis); this function's job is ID resolution
-and dispatch, not schema design. A source contributes no list element
+\strong{not} one unified table. Cross-source schema harmonization (e.g.
+a proper S4 container) is a separate, deferred phase; this function's
+job is ID resolution and dispatch, not schema design. A source
+contributes no list element
 at all (rather than an empty data.frame) when none of \code{queryBy$ids}
 resolved to that source's native ID type, or when the source's own
 function raised an error (e.g. a required local database path was not

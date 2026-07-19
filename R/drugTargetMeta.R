@@ -23,9 +23,8 @@
 ##  a different mechanism entirely.
 ##
 ##  Deliberately returns a named list of per-source results, not one
-##  unified table: cross-source schema harmonization was explicitly
-##  deferred to a later phase (see the S4-vs-S7 harmonization-class
-##  analysis in PROGRESS.md's 2026-07-13 section) and forcing
+##  unified table: cross-source schema harmonization (e.g. a proper S4
+##  container) was explicitly deferred to a later phase, and forcing
 ##  unification here would be premature - this function's job is ID
 ##  resolution + dispatch, not schema design.
 ##
@@ -305,10 +304,10 @@
 #' the "Bioassay Queries" vignette section.
 #'
 #' Returns a named list, one element per successfully-queried source -
-#' \strong{not} one unified table. Cross-source schema harmonization is a
-#' separate, deferred phase (see \code{PROGRESS.md}'s 2026-07-13 S4
-#' harmonization-class analysis); this function's job is ID resolution
-#' and dispatch, not schema design. A source contributes no list element
+#' \strong{not} one unified table. Cross-source schema harmonization (e.g.
+#' a proper S4 container) is a separate, deferred phase; this function's
+#' job is ID resolution and dispatch, not schema design. A source
+#' contributes no list element
 #' at all (rather than an empty data.frame) when none of \code{queryBy$ids}
 #' resolved to that source's native ID type, or when the source's own
 #' function raised an error (e.g. a required local database path was not
@@ -439,8 +438,8 @@ queryDrugTargets <- function(queryBy = list(molType = NULL, idType = NULL, ids =
 
 ## ---------------------------------------------------------------------
 ## Combining results across sources (row/column append, not
-## harmonization - see the file header and PROGRESS.md's 2026-07-13
-## S4-vs-S7 analysis for the deferred, more principled version)
+## harmonization - see the file header for why a proper S4 container
+## is a deferred, more principled version of this)
 ## ---------------------------------------------------------------------
 
 #' Display name per source, used as a constant \code{source} column value
@@ -484,9 +483,9 @@ queryDrugTargets <- function(queryBy = list(molType = NULL, idType = NULL, ids =
 #' deduplication, not cross-source identity resolution (the same
 #' compound or target appearing under different native IDs in different
 #' sources is not merged). A more principled harmonized container (an S4
-#' class, analysed but not yet built - see \code{PROGRESS.md}'s
-#' 2026-07-13 section) is a separate, deferred phase; this function is
-#' the "just append them" version to use in the meantime, and every
+#' class, analysed but not yet built) is a separate, deferred phase;
+#' this function is the "just append them" version to use in the
+#' meantime, and every
 #' source's full original data remains available unchanged in
 #' \code{results} itself.
 #'

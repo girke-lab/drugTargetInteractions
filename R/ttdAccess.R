@@ -228,8 +228,7 @@ downloadTTD <- function(rerun = TRUE, config = genConfig()) {
 #'   examples, tests, and vignette chunks - defaulting to \code{TRUE}
 #'   there meant every such run silently rebuilt and re-cached the
 #'   database from scratch, accumulating redundant copies over time
-#'   with no benefit (found and cleaned up in practice - see
-#'   \code{PROGRESS.md}). Pass \code{rerun = TRUE} explicitly to force
+#'   with no benefit. Pass \code{rerun = TRUE} explicitly to force
 #'   a fresh check for a new TTD release.
 #' @param config list as returned by \code{genConfig()}.
 #' @return character(1) local file path to the SQLite database.

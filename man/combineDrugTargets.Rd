@@ -44,9 +44,9 @@ deliberately just column-name alignment and row append - not
 deduplication, not cross-source identity resolution (the same
 compound or target appearing under different native IDs in different
 sources is not merged). A more principled harmonized container (an S4
-class, analysed but not yet built - see \code{PROGRESS.md}'s
-2026-07-13 section) is a separate, deferred phase; this function is
-the "just append them" version to use in the meantime, and every
+class, analysed but not yet built) is a separate, deferred phase;
+this function is the "just append them" version to use in the
+meantime, and every
 source's full original data remains available unchanged in
 \code{results} itself.
 }
