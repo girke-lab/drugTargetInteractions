@@ -23,7 +23,13 @@ a fresh check for a new TTD release.}
 \item{config}{list as returned by \code{genConfig()}.}
 }
 \value{
-character(1) local file path to the SQLite database.
+character(1) local file path to the SQLite database. The
+  database additionally carries a \code{ttd_release} table (columns
+  \code{file}, \code{version}, \code{date}) recording every downloaded
+  TTD file's own embedded release stamp separately, since TTD does not
+  reliably move these together across files - see the file header
+  note. \code{\link{ttdTargetAnnot}} attaches this as
+  \code{attr(result, "ttd_release")}.
 }
 \description{
 Downloads the TTD flat files (see \code{\link{downloadTTD}}), parses

@@ -40,10 +40,21 @@ genConfig <- function(
 .getCacheFile <- function(name) {
     # create_time is a column in the DF returned by bfcquery. It is resolved
     # in the context of the DF inside dplyr::arrange.
-    return(dplyr::arrange(
+    hits <- dplyr::arrange(
         bfcquery(.getCache(), name, field = c("rname")),
         dplyr::desc(create_time)
-    )[1, "rpath"][[1]])
+    )
+    if (nrow(hits) == 0L) {
+        # Indexing an empty data.frame with [1, ] used to silently yield NA
+        # here, which downstream callers then fed into readLines()/file()
+        # etc. as an invalid path, producing a cryptic low-level error
+        # instead of pointing at the real problem (nothing cached yet).
+        stop("No cached file named '", name, "' found in the local ",
+             "BiocFileCache. Run the corresponding download*()/build*() ",
+             "function with rerun = TRUE once to populate the cache.",
+             call. = FALSE)
+    }
+    hits[1, "rpath"][[1]]
 }
 
 .downloadFile <- function(url, name, verbose = FALSE) {

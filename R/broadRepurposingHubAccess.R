@@ -292,13 +292,19 @@ buildBroadRepurposingHubDb <- function(rerun = FALSE, config = genConfig()) {
 #'   \code{ids} (character vector).
 #' @param brhDbPath character(1) path to the Repurposing Hub SQLite, e.g.
 #'   from \code{\link{buildBroadRepurposingHubDb}}.
+#' @param fields \code{"core"} (default) or \code{"all"} - both return
+#'   every \code{broad_interactions} column, since (unlike the REST-backed
+#'   sources) there is no larger raw payload to opt into - or a character
+#'   vector of column names to keep (\code{QueryIDs} is always retained).
+#'   See \code{\link{listDrugTargetFields}}.
 #' @return A \code{data.frame} with columns \code{QueryIDs},
 #'   \code{target_gene}, \code{pert_iname}, \code{clinical_phase},
 #'   \code{moa}, \code{disease_area}, \code{indication}, \code{broad_id},
 #'   \code{qc_incompatible}, \code{purity}, \code{vendor},
 #'   \code{catalog_no}, \code{vendor_name}, \code{expected_mass},
 #'   \code{smiles}, \code{InChIKey}, \code{pubchem_cid},
-#'   \code{deprecated_broad_id}.
+#'   \code{deprecated_broad_id} (with the default \code{fields = "core"}),
+#'   or a subset when \code{fields} requests specific columns.
 #' @examples
 #' \donttest{
 #'   dbPath <- buildBroadRepurposingHubDb()
@@ -307,10 +313,11 @@ buildBroadRepurposingHubDb <- function(rerun = FALSE, config = genConfig()) {
 #'   broadRepurposingHubAnnot(list(molType = "cmp", idType = "name",
 #'                                 ids = "pemigatinib"), dbPath)
 #' }
-#' @seealso \code{\link{buildBroadRepurposingHubDb}}, \code{\link{ttdTargetAnnot}}
+#' @seealso \code{\link{buildBroadRepurposingHubDb}}, \code{\link{ttdTargetAnnot}},
+#'   \code{\link{listDrugTargetFields}}
 #' @export
 broadRepurposingHubAnnot <- function(queryBy = list(molType = NULL, idType = NULL, ids = NULL),
-                                     brhDbPath) {
+                                     brhDbPath, fields = "core") {
     if (any(names(queryBy) != c("molType", "idType", "ids"))) {
         stop(
             "All three list components in 'queryBy' (named: 'molType',",
@@ -370,5 +377,21 @@ broadRepurposingHubAnnot <- function(queryBy = list(molType = NULL, idType = NUL
         stringsAsFactors = FALSE
     )
     rownames(out) <- NULL
-    out
+    .dtiSelectFields(out, fields, .dtiBroadAllCols)
 }
+
+#' Documented column list for \code{listDrugTargetFields("broad")}
+#'
+#' Unlike the REST-backed sources' \code{fields = "all"} (ChEMBL,
+#' PubChem, DGIdb, Open Targets), \code{broad_interactions} is a single
+#' flat local SQLite table built entirely by
+#' \code{\link{buildBroadRepurposingHubDb}} (see there), so this is an
+#' exact list, not a best-effort one, and \code{fields = "core"} and
+#' \code{fields = "all"} are equivalent for
+#' \code{\link{broadRepurposingHubAnnot}}.
+#' @keywords internal
+.dtiBroadAllCols <- c("QueryIDs", "target_gene", "pert_iname", "clinical_phase",
+                      "moa", "disease_area", "indication", "broad_id",
+                      "qc_incompatible", "purity", "vendor", "catalog_no",
+                      "vendor_name", "expected_mass", "smiles", "InChIKey",
+                      "pubchem_cid", "deprecated_broad_id")

@@ -324,7 +324,7 @@ that local database repeatedly. This mirrors ChEMBL's local-SQLite option
 (see the [Supplement]) - build once, query many times.
 
 ```{r ttd_build, eval=TRUE}
-ttdDbPath <- buildTtdDb(rerun = FALSE)  # builds once, reuses the cached file afterward
+ttdDbPath <- buildTtdDb(rerun = TRUE)  # first build must fetch; rerun = FALSE reuses the cache afterward
 ```
 
 Native identifiers for `ttdTargetAnnot()`: for target &rarr; drug, a
@@ -334,22 +334,75 @@ UniProt accession `"P11362"` other sources use), or TTD's own
 **TargetID** (`idType = "ttd_target_id"`); for drug &rarr; target, a
 **drug name** or TTD's own **DrugID** (`idType = "ttd_drug_id"`).
 
+The result's `Uniprot_acc` column carries a resolved UniProt accession
+where available (via the package's UniProt REST scaffold, keyed on
+`GeneName`, not on string-mangling the mnemonic) - check the paired
+`uniprot_source` column before trusting it: `"resolved"` means it
+worked, `"TTD_missing"` means TTD itself had no usable ID for that
+target at all (overwhelmingly family/pathway-level "targets" with no
+single accession by construction, e.g. "Fibroblast growth factor
+receptor (FGFR)" rather than the single-protein "FGFR1"), and
+`"unresolved"`/`"resolution_failed"` mean resolution was attempted but
+failed - a real gene symbol with no UniProt mapping, or a transient
+UniProt outage, respectively.
+
 ```{r ttd_target2drug, eval=TRUE}
 ttd_t2d <- ttdTargetAnnot(
     list(molType = "protein", idType = "symbol", ids = "FGFR1"), ttdDbPath)
-head(ttd_t2d[, c("DrugName", "Highest_status", "MOA")])
+head(ttd_t2d[, c("DrugName", "Highest_status", "MOA", "Uniprot_acc", "molecule_type")])
 ```
 
 ```{r ttd_drug2target, eval=TRUE}
 ttd_d2t <- ttdTargetAnnot(
     list(molType = "cmp", idType = "name", ids = "Pemigatinib"), ttdDbPath)
-ttd_d2t[, c("GeneName", "Highest_status", "MOA")]
+ttd_d2t[, c("GeneName", "Highest_status", "MOA", "PubChem_CID", "Indication")]
+```
+
+Note `Indication` packs *every* disease Pemigatinib is associated with,
+each with its own clinical status (e.g. approved for cholangiocarcinoma
+but only Phase 2 for bladder cancer) - richer than the single
+`Highest_status` column, which only ever reflects the drug's single
+most-advanced status across all diseases combined.
+
+`molecule_type` is a derived classification - TTD's own `DRUGTYPE` field
+where available, a SMILES-presence/name heuristic otherwise (see
+`?buildTtdDb`) - not an authoritative structural determination. Useful
+for filtering before a downstream cheminformatics step (e.g. keep only
+`"small molecule"` rows before computing descriptors), but not something
+to trust for anything decision-critical without checking `Smiles`
+directly.
+
+Like the four REST-backed sources, `ttdTargetAnnot()` supports
+`fields = "core"/"all"/<vector>` (see [Requesting Additional Fields]) -
+though since `ttd_interactions` is one flat local table with nothing
+larger to opt into, `"core"` and `"all"` return the same full column set
+here; the option mainly exists to narrow down to a specific subset:
+
+```{r ttd_fields, eval=TRUE}
+listDrugTargetFields("ttd")
+ttdTargetAnnot(
+    list(molType = "protein", idType = "symbol", ids = "FGFR1"), ttdDbPath,
+    fields = c("DrugName", "CAS", "ChEBI_ID"))[1:3, ]
+```
+
+Every downloaded TTD file's own release stamp (version and date - TTD
+does not always move these together across files, see `?buildTtdDb`) is
+attached to `ttdTargetAnnot()`'s result as `attr(result, "ttd_release")`:
+
+```{r ttd_release, eval=TRUE}
+attr(ttd_t2d, "ttd_release")
 ```
 
 **Distribution note:** `buildTtdDb()` only ever downloads TTD's own files
 into your local cache and builds the SQLite there - the package itself
 ships no TTD data (TTD's license permits academic use but has no explicit
-redistribution grant).
+redistribution grant). The cross-matching columns (`PubChem_CID`,
+`PubChem_SID`, `CAS`, `ChEBI_ID`) are TTD's own; this release's
+cross-matching file does not carry `ChEMBL_ID`, `DrugBank_ID`, or
+`InChIKey` at all (confirmed by reading the raw file, not just its
+header) - joining to those needs a separate hop through
+`getUnichemMapping()`/`buildUnichemDb()` via `PubChem_CID`, not this
+function.
 
 ## Broad Repurposing Hub (CLUE)
 
@@ -361,7 +414,7 @@ downloaded once and assembled into a small local SQLite via
 that local database repeatedly.
 
 ```{r broad_build, eval=TRUE}
-brhDbPath <- buildBroadRepurposingHubDb(rerun = FALSE)  # builds once, reuses the cached file afterward
+brhDbPath <- buildBroadRepurposingHubDb(rerun = TRUE)  # first build must fetch; rerun = FALSE reuses the cache afterward
 ```
 
 Native identifiers for `broadRepurposingHubAnnot()`: for target &rarr; drug,
@@ -411,7 +464,7 @@ query-many pattern as TTD and the Repurposing Hub, just sourced from
 REST plus one small file instead of pure flat files.
 
 ```{r gtopdb_build, eval=TRUE}
-gtoPdbDbPath <- buildGtoPdbDb(rerun = FALSE)  # builds once, reuses the cached file afterward
+gtoPdbDbPath <- buildGtoPdbDb(rerun = TRUE)  # first build must fetch; rerun = FALSE reuses the cache afterward
 ```
 
 Native identifiers for `gtoPdbTargetAnnot()`: for target &rarr; drug, a

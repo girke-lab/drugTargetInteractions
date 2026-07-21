@@ -66,7 +66,12 @@ progress, and why a source was skipped.}
 
 \item{...}{additional arguments passed through to each dispatched
 source function (e.g. \code{expand} for
-\code{\link{getOpenTargetsDrugTarget}}).}
+\code{\link{getOpenTargetsDrugTarget}}, or \code{fields} - supported
+by every dispatchable source - to request \code{"core"}/\code{"all"}
+columns or a specific subset; passed identically to every source
+named in \code{sources}, so mixing sources whose column sets differ
+is only useful with \code{fields = "core"}/\code{"all"} or a
+subset common to all of them).}
 }
 \value{
 A named list, one element (a \code{data.frame}) per source

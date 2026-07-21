@@ -16,11 +16,12 @@ accepted for consistency with the rest of the package's API.}
 }
 \value{
 A named list of local file paths: \code{targets}, \code{drugs},
-  \code{mapping}.
+  \code{mapping}, \code{crossmatch}, \code{drugDisease}.
 }
 \description{
 Downloads (or reuses previously cached copies of) the TTD target,
-drug and drug-target-mapping flat files via the package's existing
+drug, drug-target-mapping, drug cross-matching and drug-disease
+indication flat files via the package's existing
 \code{.downloadFile()}/BiocFileCache infrastructure - the same
 mechanism \code{downloadChemblDb()} and \code{downloadUniChem()} use.
 Files land in the local BiocFileCache (see \code{.getCache()},

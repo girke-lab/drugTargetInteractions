@@ -6,7 +6,8 @@
 \usage{
 ttdTargetAnnot(
   queryBy = list(molType = NULL, idType = NULL, ids = NULL),
-  ttdDbPath
+  ttdDbPath,
+  fields = "core"
 )
 }
 \arguments{
@@ -15,12 +16,25 @@ ttdTargetAnnot(
 
 \item{ttdDbPath}{character(1) path to the TTD SQLite, e.g. from
 \code{\link{buildTtdDb}}.}
+
+\item{fields}{\code{"core"} (default) or \code{"all"} - both return
+every \code{ttd_interactions} column, since (unlike the REST-backed
+sources) there is no larger raw payload to opt into - or a character
+vector of column names to keep (\code{QueryIDs} is always retained).
+See \code{\link{listDrugTargetFields}}.}
 }
 \value{
 A \code{data.frame} with columns \code{QueryIDs},
   \code{TargetID}, \code{GeneName}, \code{Uniprot}, \code{TargetType},
   \code{DrugID}, \code{DrugName}, \code{Smiles}, \code{Highest_status},
-  \code{MOA}.
+  \code{MOA}, \code{Uniprot_acc}, \code{uniprot_source},
+  \code{molecule_type}, \code{PubChem_CID}, \code{PubChem_SID},
+  \code{CAS}, \code{ChEBI_ID}, \code{Indication} (with the default
+  \code{fields = "core"}), or a subset when \code{fields} requests
+  specific columns. Also carries \code{attr(result, "ttd_release")}, a
+  data.frame of every source TTD file's own \code{(file, version,
+  date)} release stamp (see \code{\link{buildTtdDb}}); \code{NULL} for
+  a \code{ttdDbPath} built before this attribute was added.
 }
 \description{
 Queries the local TTD SQLite built by \code{\link{buildTtdDb}}, using
@@ -42,12 +56,18 @@ bookkeeping).
 }
 Symbol/name lookups are case-insensitive; ID lookups
 (\code{"uniprot"}, \code{"ttd_target_id"}, \code{"ttd_drug_id"}) are
-exact-match. Note: TTD's \code{"uniprot"} field is the UniProt
+exact-match. Note: TTD's \code{"uniprot"} field (and the \code{col}
+used for \code{idType = "uniprot"} lookups here) is the UniProt
 *mnemonic entry name* (e.g. \code{"FGFR1_HUMAN"}), NOT the accession
 number (e.g. \code{"P11362"}) used by the package's ChEMBL-SQL side
 (\code{\link{drugTargetAnnot}}) - a real cross-source naming
-inconsistency, not a bug; convert accession -> mnemonic upstream if
-chaining the two.
+inconsistency confirmed to persist even in TTD's own dedicated UniProt
+file, not a bug; the separate \code{Uniprot_acc} column carries a
+resolved accession where available (see \code{\link{buildTtdDb}} for
+how, and its \code{uniprot_source} sibling column for why a given row
+may still be \code{NA}), so query by \code{idType = "uniprot"} still
+needs the mnemonic, but downstream joins to other sources can use
+\code{Uniprot_acc} directly.
 }
 \examples{
 \donttest{
@@ -59,5 +79,6 @@ chaining the two.
 }
 }
 \seealso{
-\code{\link{buildTtdDb}}, \code{\link{drugTargetAnnot}}
+\code{\link{buildTtdDb}}, \code{\link{drugTargetAnnot}},
+  \code{\link{listDrugTargetFields}}
 }

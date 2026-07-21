@@ -417,43 +417,61 @@
 #' List the fields available from a drug-target source under \code{fields = "all"}
 #'
 #' A quick reference for what \code{getChemblDrugTarget()},
-#' \code{getPubchemDrugTarget()}, \code{getDgidbDrugTarget()} and
-#' \code{getOpenTargetsDrugTarget()} can return when called with
-#' \code{fields = "all"} (or requested individually via
-#' \code{fields = c(...)}). By default this returns a documented,
-#' best-effort list with no network call; pass \code{queryBy} to instead
-#' run a live single-query probe through the matching source function and
-#' report the columns it actually returned (slower, but exact for that
-#' query's shape - useful since some fields only appear for certain
-#' record types, e.g. protein-family ChEMBL targets vs single proteins).
+#' \code{getPubchemDrugTarget()}, \code{getDgidbDrugTarget()},
+#' \code{getOpenTargetsDrugTarget()}, \code{ttdTargetAnnot()},
+#' \code{broadRepurposingHubAnnot()} and \code{gtoPdbTargetAnnot()} can
+#' return when called with \code{fields = "all"} (or requested
+#' individually via \code{fields = c(...)}). By default this returns a
+#' documented list with no network/database call; pass \code{queryBy} to
+#' instead run a live single-query probe through the matching source
+#' function and report the columns it actually returned (slower, but
+#' exact for that query's shape - useful since some fields only appear
+#' for certain record types, e.g. protein-family ChEMBL targets vs single
+#' proteins; for \code{"ttd"}/\code{"broad"}/\code{"gtopdb"} this is
+#' exact rather than best-effort either way, see
+#' \code{\link{ttdTargetAnnot}} et al.). The local-SQLite sources
+#' (\code{"ttd"}, \code{"broad"}, \code{"gtopdb"}) additionally require
+#' their database path (\code{ttdDbPath}, \code{brhDbPath},
+#' \code{gtoPdbDbPath} respectively) passed via \code{...} when
+#' \code{queryBy} is supplied.
 #'
 #' @param source character(1); one of \code{"chembl"}, \code{"pubchem"},
-#'   \code{"dgidb"}, \code{"opentargets"}.
+#'   \code{"dgidb"}, \code{"opentargets"}, \code{"ttd"}, \code{"broad"},
+#'   \code{"gtopdb"}.
 #' @param queryBy optional \code{queryBy} list (see
 #'   \code{\link{getChemblDrugTarget}}) to probe live instead of returning
 #'   the static documented list.
 #' @param ... additional arguments passed to the source function when
-#'   \code{queryBy} is supplied (e.g. \code{verbose}).
+#'   \code{queryBy} is supplied (e.g. \code{verbose}, or the local-SQLite
+#'   sources' database path).
 #' @return character vector of column names.
 #' @examples
 #' listDrugTargetFields("chembl")
+#' listDrugTargetFields("ttd")
 #' @seealso \code{\link{getChemblDrugTarget}}, \code{\link{getPubchemDrugTarget}},
-#'   \code{\link{getDgidbDrugTarget}}, \code{\link{getOpenTargetsDrugTarget}}
+#'   \code{\link{getDgidbDrugTarget}}, \code{\link{getOpenTargetsDrugTarget}},
+#'   \code{\link{ttdTargetAnnot}}, \code{\link{broadRepurposingHubAnnot}},
+#'   \code{\link{gtoPdbTargetAnnot}}
 #' @export
-listDrugTargetFields <- function(source = c("chembl", "pubchem", "dgidb", "opentargets"),
+listDrugTargetFields <- function(source = c("chembl", "pubchem", "dgidb", "opentargets",
+                                            "ttd", "broad", "gtopdb"),
                                  queryBy = NULL, ...) {
     source <- match.arg(source)
     if (!is.null(queryBy)) {
         fn <- switch(source, chembl = getChemblDrugTarget,
                      pubchem = getPubchemDrugTarget, dgidb = getDgidbDrugTarget,
-                     opentargets = getOpenTargetsDrugTarget)
+                     opentargets = getOpenTargetsDrugTarget, ttd = ttdTargetAnnot,
+                     broad = broadRepurposingHubAnnot, gtopdb = gtoPdbTargetAnnot)
         return(names(fn(queryBy, fields = "all", ...)))
     }
     switch(source,
         chembl      = .dtiChemblAllCols,
         pubchem     = .dtiPubchemAllCols,
         dgidb       = .dtiDgidbAllCols,
-        opentargets = .dtiOpenTargetsAllCols)
+        opentargets = .dtiOpenTargetsAllCols,
+        ttd         = .dtiTtdAllCols,
+        broad       = .dtiBroadAllCols,
+        gtopdb      = .dtiGtoPdbAllCols)
 }
 
 #' List the fields available from a bioassay source under \code{fields = "all"}

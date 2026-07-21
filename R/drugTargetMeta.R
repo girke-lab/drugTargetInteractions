@@ -360,7 +360,12 @@
 #'   progress, and why a source was skipped.
 #' @param ... additional arguments passed through to each dispatched
 #'   source function (e.g. \code{expand} for
-#'   \code{\link{getOpenTargetsDrugTarget}}).
+#'   \code{\link{getOpenTargetsDrugTarget}}, or \code{fields} - supported
+#'   by every dispatchable source - to request \code{"core"}/\code{"all"}
+#'   columns or a specific subset; passed identically to every source
+#'   named in \code{sources}, so mixing sources whose column sets differ
+#'   is only useful with \code{fields = "core"}/\code{"all"} or a
+#'   subset common to all of them).
 #' @return A named list, one element (a \code{data.frame}) per source
 #'   that returned a result. \code{attr(result, "resolved")} holds the
 #'   per-source ID-resolution vectors (named by the original
@@ -439,17 +444,17 @@ queryDrugTargets <- function(queryBy = list(molType = NULL, idType = NULL, ids =
                 ttd         = {
                     if (is.null(ttdDbPath))
                         stop("'ttd' requires ttdDbPath (see buildTtdDb()).")
-                    ttdTargetAnnot(qb, ttdDbPath)
+                    ttdTargetAnnot(qb, ttdDbPath, ...)
                 },
                 broad       = {
                     if (is.null(brhDbPath))
                         stop("'broad' requires brhDbPath (see buildBroadRepurposingHubDb()).")
-                    broadRepurposingHubAnnot(qb, brhDbPath)
+                    broadRepurposingHubAnnot(qb, brhDbPath, ...)
                 },
                 gtopdb      = {
                     if (is.null(gtoPdbDbPath))
                         stop("'gtopdb' requires gtoPdbDbPath (see buildGtoPdbDb()).")
-                    gtoPdbTargetAnnot(qb, gtoPdbDbPath)
+                    gtoPdbTargetAnnot(qb, gtoPdbDbPath, ...)
                 })
         }, error = function(e) {
             if (verbose) message("queryDrugTargets: source '", src, "' failed: ",

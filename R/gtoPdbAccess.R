@@ -271,11 +271,18 @@ buildGtoPdbDb <- function(rerun = FALSE, config = genConfig()) {
 #'   \code{ids} (character vector).
 #' @param gtoPdbDbPath character(1) path to the GtoPdb SQLite, e.g. from
 #'   \code{\link{buildGtoPdbDb}}.
+#' @param fields \code{"core"} (default) or \code{"all"} - both return
+#'   every \code{gtp_interactions} column, since (unlike the REST-backed
+#'   sources) there is no larger raw payload to opt into - or a character
+#'   vector of column names to keep (\code{QueryIDs} is always retained).
+#'   See \code{\link{listDrugTargetFields}}.
 #' @return A \code{data.frame} with columns \code{QueryIDs},
 #'   \code{target_gene}, \code{targetId}, \code{targetName}, \code{species},
 #'   \code{primaryTarget}, \code{ligandId}, \code{ligandName}, \code{type},
 #'   \code{action}, \code{affinity}, \code{affinityParameter},
-#'   \code{selectivity}, \code{refIds}.
+#'   \code{selectivity}, \code{refIds} (with the default
+#'   \code{fields = "core"}), or a subset when \code{fields} requests
+#'   specific columns.
 #' @examples
 #' \donttest{
 #'   dbPath <- buildGtoPdbDb()
@@ -285,10 +292,10 @@ buildGtoPdbDb <- function(rerun = FALSE, config = genConfig()) {
 #'                          ids = "pemigatinib"), dbPath)
 #' }
 #' @seealso \code{\link{buildGtoPdbDb}}, \code{\link{ttdTargetAnnot}},
-#'   \code{\link{broadRepurposingHubAnnot}}
+#'   \code{\link{broadRepurposingHubAnnot}}, \code{\link{listDrugTargetFields}}
 #' @export
 gtoPdbTargetAnnot <- function(queryBy = list(molType = NULL, idType = NULL, ids = NULL),
-                              gtoPdbDbPath) {
+                              gtoPdbDbPath, fields = "core") {
     if (any(names(queryBy) != c("molType", "idType", "ids"))) {
         stop(
             "All three list components in 'queryBy' (named: 'molType',",
@@ -350,5 +357,19 @@ gtoPdbTargetAnnot <- function(queryBy = list(molType = NULL, idType = NULL, ids 
         stringsAsFactors = FALSE
     )
     rownames(out) <- NULL
-    out
+    .dtiSelectFields(out, fields, .dtiGtoPdbAllCols)
 }
+
+#' Documented column list for \code{listDrugTargetFields("gtopdb")}
+#'
+#' Unlike the REST-backed sources' \code{fields = "all"} (ChEMBL,
+#' PubChem, DGIdb, Open Targets), \code{gtp_interactions} is a single
+#' flat local SQLite table built entirely by \code{\link{buildGtoPdbDb}}
+#' (see there), so this is an exact list, not a best-effort one, and
+#' \code{fields = "core"} and \code{fields = "all"} are equivalent for
+#' \code{\link{gtoPdbTargetAnnot}}.
+#' @keywords internal
+.dtiGtoPdbAllCols <- c("QueryIDs", "target_gene", "targetId", "targetName",
+                       "species", "primaryTarget", "ligandId", "ligandName",
+                       "type", "action", "affinity", "affinityParameter",
+                       "selectivity", "refIds")

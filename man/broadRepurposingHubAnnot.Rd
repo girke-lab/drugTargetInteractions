@@ -6,7 +6,8 @@
 \usage{
 broadRepurposingHubAnnot(
   queryBy = list(molType = NULL, idType = NULL, ids = NULL),
-  brhDbPath
+  brhDbPath,
+  fields = "core"
 )
 }
 \arguments{
@@ -15,6 +16,12 @@ broadRepurposingHubAnnot(
 
 \item{brhDbPath}{character(1) path to the Repurposing Hub SQLite, e.g.
 from \code{\link{buildBroadRepurposingHubDb}}.}
+
+\item{fields}{\code{"core"} (default) or \code{"all"} - both return
+every \code{broad_interactions} column, since (unlike the REST-backed
+sources) there is no larger raw payload to opt into - or a character
+vector of column names to keep (\code{QueryIDs} is always retained).
+See \code{\link{listDrugTargetFields}}.}
 }
 \value{
 A \code{data.frame} with columns \code{QueryIDs},
@@ -23,7 +30,8 @@ A \code{data.frame} with columns \code{QueryIDs},
   \code{qc_incompatible}, \code{purity}, \code{vendor},
   \code{catalog_no}, \code{vendor_name}, \code{expected_mass},
   \code{smiles}, \code{InChIKey}, \code{pubchem_cid},
-  \code{deprecated_broad_id}.
+  \code{deprecated_broad_id} (with the default \code{fields = "core"}),
+  or a subset when \code{fields} requests specific columns.
 }
 \description{
 Queries the local Repurposing Hub SQLite built by
@@ -59,5 +67,6 @@ via a gene-side query.
 }
 }
 \seealso{
-\code{\link{buildBroadRepurposingHubDb}}, \code{\link{ttdTargetAnnot}}
+\code{\link{buildBroadRepurposingHubDb}}, \code{\link{ttdTargetAnnot}},
+  \code{\link{listDrugTargetFields}}
 }
