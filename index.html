@@ -1959,7 +1959,7 @@ function toggle_visibility(id1) {
 
 <h1 class="title toc-ignore">drugTargetInteractions: Mining the Druggable Genome</h1>
 <p class="author-name">Authors: Kevin Horan, Brandon Le, Brendan Gongol, Desmond Cairo, Mohammad Afsharinia, Tandis Salem, Dan Evans, Nicholas Schork and Thomas Girke</p>
-<h4 class="date">Last update: 19 July, 2026</h4>
+<h4 class="date">Last update: 21 July, 2026</h4>
 
 </div>
 
@@ -2293,34 +2293,94 @@ since GraphQL only returns fields a query explicitly asks for.</p>
 a small local SQLite via <code>buildTtdDb()</code>; <code>ttdTargetAnnot()</code> then queries
 that local database repeatedly. This mirrors ChEMBL’s local-SQLite option
 (see the <a href="#supplement">Supplement</a>) - build once, query many times.</p>
-<pre class="r"><code>ttdDbPath &lt;- buildTtdDb(rerun = FALSE)  # builds once, reuses the cached file afterward</code></pre>
+<pre class="r"><code>ttdDbPath &lt;- buildTtdDb(rerun = TRUE)  # first build must fetch; rerun = FALSE reuses the cache afterward</code></pre>
 <p>Native identifiers for <code>ttdTargetAnnot()</code>: for target → drug, a
 <strong>gene symbol</strong> (<code>idType = &quot;symbol&quot;</code>), a <strong>UniProt mnemonic entry name</strong>
 such as <code>&quot;FGFR1_HUMAN&quot;</code> (<code>idType = &quot;uniprot&quot;</code> - note this is <em>not</em> the
 UniProt accession <code>&quot;P11362&quot;</code> other sources use), or TTD’s own
 <strong>TargetID</strong> (<code>idType = &quot;ttd_target_id&quot;</code>); for drug → target, a
 <strong>drug name</strong> or TTD’s own <strong>DrugID</strong> (<code>idType = &quot;ttd_drug_id&quot;</code>).</p>
+<p>The result’s <code>Uniprot_acc</code> column carries a resolved UniProt accession
+where available (via the package’s UniProt REST scaffold, keyed on
+<code>GeneName</code>, not on string-mangling the mnemonic) - check the paired
+<code>uniprot_source</code> column before trusting it: <code>&quot;resolved&quot;</code> means it
+worked, <code>&quot;TTD_missing&quot;</code> means TTD itself had no usable ID for that
+target at all (overwhelmingly family/pathway-level “targets” with no
+single accession by construction, e.g. “Fibroblast growth factor
+receptor (FGFR)” rather than the single-protein “FGFR1”), and
+<code>&quot;unresolved&quot;</code>/<code>&quot;resolution_failed&quot;</code> mean resolution was attempted but
+failed - a real gene symbol with no UniProt mapping, or a transient
+UniProt outage, respectively.</p>
 <pre class="r"><code>ttd_t2d &lt;- ttdTargetAnnot(
     list(molType = &quot;protein&quot;, idType = &quot;symbol&quot;, ids = &quot;FGFR1&quot;), ttdDbPath)
-head(ttd_t2d[, c(&quot;DrugName&quot;, &quot;Highest_status&quot;, &quot;MOA&quot;)])</code></pre>
-<pre><code>##                 DrugName Highest_status       MOA
-## 1                KW-2449        Phase 1         .
-## 2                MK-2461      Phase 1/2 Inhibitor
-## 3 Anti-FGFR1 mab program  Investigative         .
-## 4             SAR-106881  Investigative   Agonist
-## 5            Romiplostim       Approved Inhibitor
-## 6                 E-3810        Phase 3 Inhibitor</code></pre>
+head(ttd_t2d[, c(&quot;DrugName&quot;, &quot;Highest_status&quot;, &quot;MOA&quot;, &quot;Uniprot_acc&quot;, &quot;molecule_type&quot;)])</code></pre>
+<pre><code>##                 DrugName Highest_status       MOA Uniprot_acc  molecule_type
+## 1                KW-2449        Phase 1      &lt;NA&gt;      P11362 small molecule
+## 2                MK-2461      Phase 1/2 Inhibitor      P11362 small molecule
+## 3 Anti-FGFR1 mab program  Investigative      &lt;NA&gt;      P11362       antibody
+## 4             SAR-106881  Investigative   Agonist      P11362          other
+## 5            Romiplostim       Approved Inhibitor      P11362 small molecule
+## 6                 E-3810        Phase 3 Inhibitor      P11362 small molecule</code></pre>
 <pre class="r"><code>ttd_d2t &lt;- ttdTargetAnnot(
     list(molType = &quot;cmp&quot;, idType = &quot;name&quot;, ids = &quot;Pemigatinib&quot;), ttdDbPath)
-ttd_d2t[, c(&quot;GeneName&quot;, &quot;Highest_status&quot;, &quot;MOA&quot;)]</code></pre>
-<pre><code>##   GeneName Highest_status       MOA
-## 1    FGFR2       Approved Inhibitor
-## 2    FGFR3       Approved Inhibitor
-## 3    FGFR1       Approved Inhibitor</code></pre>
+ttd_d2t[, c(&quot;GeneName&quot;, &quot;Highest_status&quot;, &quot;MOA&quot;, &quot;PubChem_CID&quot;, &quot;Indication&quot;)]</code></pre>
+<pre><code>##   GeneName Highest_status       MOA PubChem_CID
+## 1    FGFR1       Approved Inhibitor    86705695
+## 2    FGFR3       Approved Inhibitor    86705695
+## 3    FGFR2       Approved Inhibitor    86705695
+##                                                                                                            Indication
+## 1 Cholangiocarcinoma [2C12.10]: Approved; Myeloproliferative syndrome [2A22]: Phase 2; Bladder cancer [2C94]: Phase 2
+## 2 Cholangiocarcinoma [2C12.10]: Approved; Myeloproliferative syndrome [2A22]: Phase 2; Bladder cancer [2C94]: Phase 2
+## 3 Cholangiocarcinoma [2C12.10]: Approved; Myeloproliferative syndrome [2A22]: Phase 2; Bladder cancer [2C94]: Phase 2</code></pre>
+<p>Note <code>Indication</code> packs <em>every</em> disease Pemigatinib is associated with,
+each with its own clinical status (e.g. approved for cholangiocarcinoma
+but only Phase 2 for bladder cancer) - richer than the single
+<code>Highest_status</code> column, which only ever reflects the drug’s single
+most-advanced status across all diseases combined.</p>
+<p><code>molecule_type</code> is a derived classification - TTD’s own <code>DRUGTYPE</code> field
+where available, a SMILES-presence/name heuristic otherwise (see
+<code>?buildTtdDb</code>) - not an authoritative structural determination. Useful
+for filtering before a downstream cheminformatics step (e.g. keep only
+<code>&quot;small molecule&quot;</code> rows before computing descriptors), but not something
+to trust for anything decision-critical without checking <code>Smiles</code>
+directly.</p>
+<p>Like the four REST-backed sources, <code>ttdTargetAnnot()</code> supports
+<code>fields = &quot;core&quot;/&quot;all&quot;/&lt;vector&gt;</code> (see <a href="#requesting-additional-fields">Requesting Additional Fields</a>) -
+though since <code>ttd_interactions</code> is one flat local table with nothing
+larger to opt into, <code>&quot;core&quot;</code> and <code>&quot;all&quot;</code> return the same full column set
+here; the option mainly exists to narrow down to a specific subset:</p>
+<pre class="r"><code>listDrugTargetFields(&quot;ttd&quot;)</code></pre>
+<pre><code>##  [1] &quot;QueryIDs&quot;       &quot;TargetID&quot;       &quot;GeneName&quot;       &quot;Uniprot&quot;        &quot;TargetType&quot;    
+##  [6] &quot;DrugID&quot;         &quot;DrugName&quot;       &quot;Smiles&quot;         &quot;Highest_status&quot; &quot;MOA&quot;           
+## [11] &quot;Uniprot_acc&quot;    &quot;uniprot_source&quot; &quot;molecule_type&quot;  &quot;PubChem_CID&quot;    &quot;PubChem_SID&quot;   
+## [16] &quot;CAS&quot;            &quot;ChEBI_ID&quot;       &quot;Indication&quot;</code></pre>
+<pre class="r"><code>ttdTargetAnnot(
+    list(molType = &quot;protein&quot;, idType = &quot;symbol&quot;, ids = &quot;FGFR1&quot;), ttdDbPath,
+    fields = c(&quot;DrugName&quot;, &quot;CAS&quot;, &quot;ChEBI_ID&quot;))[1:3, ]</code></pre>
+<pre><code>##   QueryIDs               DrugName         CAS    ChEBI_ID
+## 1    FGFR1                KW-2449 841258-76-2 CHEBI:91441
+## 2    FGFR1                MK-2461 917879-39-1        &lt;NA&gt;
+## 3    FGFR1 Anti-FGFR1 mab program        &lt;NA&gt;        &lt;NA&gt;</code></pre>
+<p>Every downloaded TTD file’s own release stamp (version and date - TTD
+does not always move these together across files, see <code>?buildTtdDb</code>) is
+attached to <code>ttdTargetAnnot()</code>’s result as <code>attr(result, &quot;ttd_release&quot;)</code>:</p>
+<pre class="r"><code>attr(ttd_t2d, &quot;ttd_release&quot;)</code></pre>
+<pre><code>##          file version       date
+## 1     targets 10.1.01 2024.01.10
+## 2       drugs 10.1.01 2024.01.10
+## 3     mapping    &lt;NA&gt;       &lt;NA&gt;
+## 4  crossmatch 10.1.01 2024.01.10
+## 5 drugDisease 10.1.01 2024.03.30</code></pre>
 <p><strong>Distribution note:</strong> <code>buildTtdDb()</code> only ever downloads TTD’s own files
 into your local cache and builds the SQLite there - the package itself
 ships no TTD data (TTD’s license permits academic use but has no explicit
-redistribution grant).</p>
+redistribution grant). The cross-matching columns (<code>PubChem_CID</code>,
+<code>PubChem_SID</code>, <code>CAS</code>, <code>ChEBI_ID</code>) are TTD’s own; this release’s
+cross-matching file does not carry <code>ChEMBL_ID</code>, <code>DrugBank_ID</code>, or
+<code>InChIKey</code> at all (confirmed by reading the raw file, not just its
+header) - joining to those needs a separate hop through
+<code>getUnichemMapping()</code>/<code>buildUnichemDb()</code> via <code>PubChem_CID</code>, not this
+function.</p>
 </div>
 <div id="broad-repurposing-hub-clue" class="section level2" number="3.6">
 <h2><span class="header-section-number">3.6</span> Broad Repurposing Hub (CLUE)</h2>
@@ -2330,7 +2390,7 @@ flat TSV files (drug-level and physical-sample-level annotation) are
 downloaded once and assembled into a small local SQLite via
 <code>buildBroadRepurposingHubDb()</code>; <code>broadRepurposingHubAnnot()</code> then queries
 that local database repeatedly.</p>
-<pre class="r"><code>brhDbPath &lt;- buildBroadRepurposingHubDb(rerun = FALSE)  # builds once, reuses the cached file afterward</code></pre>
+<pre class="r"><code>brhDbPath &lt;- buildBroadRepurposingHubDb(rerun = TRUE)  # first build must fetch; rerun = FALSE reuses the cache afterward</code></pre>
 <p>Native identifiers for <code>broadRepurposingHubAnnot()</code>: for target → drug,
 a <strong>gene symbol</strong> (<code>idType = &quot;symbol&quot;</code> - the Repurposing Hub only exposes
 gene symbols, no accession system of its own); for drug → target, a
@@ -2379,7 +2439,7 @@ small bulk flat file GtoPdb separately publishes for target-ID-to-HGNC
 mapping, assembled into a small local SQLite - the same build-once,
 query-many pattern as TTD and the Repurposing Hub, just sourced from
 REST plus one small file instead of pure flat files.</p>
-<pre class="r"><code>gtoPdbDbPath &lt;- buildGtoPdbDb(rerun = FALSE)  # builds once, reuses the cached file afterward</code></pre>
+<pre class="r"><code>gtoPdbDbPath &lt;- buildGtoPdbDb(rerun = TRUE)  # first build must fetch; rerun = FALSE reuses the cache afterward</code></pre>
 <p>Native identifiers for <code>gtoPdbTargetAnnot()</code>: for target → drug, a
 <strong>gene symbol</strong> (<code>idType = &quot;symbol&quot;</code>) or GtoPdb’s own <strong>target ID</strong>
 (<code>idType = &quot;gtp_target_id&quot;</code>); for drug → target, a <strong>ligand name</strong>
@@ -2624,10 +2684,8 @@ sapply(res_ensembl, nrow)</code></pre>
 res_all_live &lt;- queryDrugTargets(
     list(molType = &quot;gene&quot;, idType = &quot;symbol&quot;, ids = &quot;FGFR1&quot;),
     sources = c(&quot;chembl&quot;, &quot;dgidb&quot;, &quot;opentargets&quot;, &quot;ttd&quot;, &quot;broad&quot;, &quot;gtopdb&quot;),
-    ttdDbPath = ttdDbPath, brhDbPath = brhDbPath, gtoPdbDbPath = gtoPdbDbPath)</code></pre>
-<pre><code>## Waiting 2s for retry backoff ■■■■■■■■■■■■■■■</code></pre>
-<pre><code>## Waiting 2s for retry backoff ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■</code></pre>
-<pre class="r"><code>sapply(res_all_live, nrow)</code></pre>
+    ttdDbPath = ttdDbPath, brhDbPath = brhDbPath, gtoPdbDbPath = gtoPdbDbPath)
+sapply(res_all_live, nrow)</code></pre>
 <pre><code>##      chembl       dgidb opentargets         ttd       broad      gtopdb 
 ##          26         143          94          37         187          47</code></pre>
 <p>Starting from a <em>compound</em> identifier that needs the UniChem SQLite works
