@@ -27,11 +27,14 @@ no Repurposing Hub data is bundled with or downloaded by the package
 itself until this is called explicitly.
 }
 \details{
-If this fails with a certificate verification error, see the note in
-this file's header comment (\code{broadRepurposingHubAccess.R}):
-\code{repo-hub.broadinstitute.org} has occasionally served an
-incomplete TLS certificate chain, a server-side issue unrelated to
-this function.
+\code{repo-hub.broadinstitute.org} has been observed to serve an
+incomplete TLS certificate chain (see this file's header comment) -
+if the first download attempt fails for any reason, this function
+retries once with a CA bundle extended to include the one
+legitimate, publicly-issued intermediate certificate the server
+itself omits (\code{.brhWithSupplementalCa()}); a genuine failure
+(network down, file moved, etc.) still surfaces as an error after
+that retry.
 }
 \examples{
 \donttest{

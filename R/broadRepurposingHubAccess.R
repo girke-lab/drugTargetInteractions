@@ -46,14 +46,19 @@
 ##  that changes the filename suffix will need .brhEndpoints() updated by
 ##  hand - there is no discovery mechanism for the current filename.
 ##
-##  Known operational caveat, unrelated to this code: as of this writing
-##  repo-hub.broadinstitute.org's TLS certificate chain is served without
-##  its InCommon intermediate certificate, which can cause certificate
-##  verification failures on some machines/OSes whose trust store hasn't
-##  independently cached that intermediate (most browsers chase the AIA
-##  "CA Issuers" URL automatically; curl/libcurl/R's default download
-##  methods generally do not). This is a server-side misconfiguration -
-##  do not "fix" it by disabling certificate verification here.
+##  Known operational caveat: as of this writing repo-hub.broadinstitute.org's
+##  TLS certificate chain is served without its InCommon intermediate
+##  certificate, which can cause certificate verification failures on
+##  machines/OSes whose trust store hasn't independently cached that
+##  intermediate (most browsers chase the AIA "CA Issuers" URL
+##  automatically; curl/libcurl/R's default download methods generally
+##  do not). This is a server-side misconfiguration, not something to
+##  paper over by disabling verification - so downloadBroadRepurposingHub()
+##  instead retries once, on any download failure, with a CA bundle
+##  extended to include *only* that one legitimate, publicly-issued
+##  intermediate (see .brhWithSupplementalCa() below) - full chain
+##  verification still happens, it just has the one certificate Broad's
+##  own server should have sent but doesn't.
 ## =====================================================================
 
 
@@ -68,6 +73,95 @@
         drug   = "https://repo-hub.broadinstitute.org/public/data/repo-drug-annotation-20200324.txt",
         sample = "https://repo-hub.broadinstitute.org/public/data/repo-sample-annotation-20240610.txt"
     )
+}
+
+## InCommon RSA OV SSL CA 3 - the intermediate repo-hub.broadinstitute.org
+## fails to send during its TLS handshake (see file header). Retrieved
+## once from the cert's own "CA Issuers" AIA URI
+## (http://crt.sectigo.com/InCommonRSAOVSSLCA3.crt) and embedded here so
+## no extra live network call is needed just to work around this.
+.brhIncommonIntermediatePem <- "-----BEGIN CERTIFICATE-----
+MIIGIzCCBAugAwIBAgIRAJa22zsNXLm6Xd6KrItt/ncwDQYJKoZIhvcNAQEMBQAw
+XzELMAkGA1UEBhMCR0IxGDAWBgNVBAoTD1NlY3RpZ28gTGltaXRlZDE2MDQGA1UE
+AxMtU2VjdGlnbyBQdWJsaWMgU2VydmVyIEF1dGhlbnRpY2F0aW9uIFJvb3QgUjQ2
+MB4XDTI1MTEwNjAwMDAwMFoXDTM1MTEwNTIzNTk1OVowSDELMAkGA1UEBhMCVVMx
+FjAUBgNVBAoTDUluQ29tbW9uLCBMTEMxITAfBgNVBAMTGEluQ29tbW9uIFJTQSBP
+ViBTU0wgQ0EgMzCCAaIwDQYJKoZIhvcNAQEBBQADggGPADCCAYoCggGBAInzD7j/
+Ja1OZOvyIIe2hFOdDrois8Iiuyh+RtSKaKyQAvSRdG1b0Iz+fxOZaNPlM2RCTa9N
+Ar/bs9Tts4RXTDCuLJfCPPwbRtSZMvBrZVpcPU3xVBbTUHTsYZ+SmlzB+qIwEJV6
+TU8vEsdqosCwA/iOXewiRmUf5FxU2WoU4nD8iVFhu/p6h6YmI+AgswZ4lwZdNKW5
+9cTvpuY8VefEWHuwvSQlzekLLBqiFJhlCu8dNrBsahT07sjMHVZVHU8Biss3bX04
+FTzkDzv5eZ/U2LFA0rV2QzLpeLtIsMsXhlrEmuT4g6cbJJ3ZfWGHX77jnCIczshi
+taD1BiTA9PRv9JWW6xQ+cGfHRMyHWTBNhdQI22N9UO65R+6ddwEWupViEGRUuO/O
+ZbTtBSkoEBejHBfI3/BnnhLpKXTGC5N20om7nQ2UqOcgOpewiE9P+DnMrnUsqp9e
+IS6NgkCCCuhS6eoHS3DwJouIK1T5CE/4xSrEuU0QTFRJfyqlIaMbKMe+awIDAQAB
+o4IBbzCCAWswHwYDVR0jBBgwFoAUVnNYZJX5khqwEioEYnmhQBWIIUkwHQYDVR0O
+BBYEFNoiNz/l03Ta2Xk+0XJt1ZNLIDevMA4GA1UdDwEB/wQEAwIBhjASBgNVHRMB
+Af8ECDAGAQH/AgEAMBMGA1UdJQQMMAoGCCsGAQUFBwMBMBMGA1UdIAQMMAowCAYG
+Z4EMAQICMFQGA1UdHwRNMEswSaBHoEWGQ2h0dHA6Ly9jcmwuc2VjdGlnby5jb20v
+U2VjdGlnb1B1YmxpY1NlcnZlckF1dGhlbnRpY2F0aW9uUm9vdFI0Ni5jcmwwgYQG
+CCsGAQUFBwEBBHgwdjBPBggrBgEFBQcwAoZDaHR0cDovL2NydC5zZWN0aWdvLmNv
+bS9TZWN0aWdvUHVibGljU2VydmVyQXV0aGVudGljYXRpb25Sb290UjQ2LnA3YzAj
+BggrBgEFBQcwAYYXaHR0cDovL29jc3Auc2VjdGlnby5jb20wDQYJKoZIhvcNAQEM
+BQADggIBADoIPZD+zZzMmsZaUIc4WiV5NwHbB5nnmvSaDas20GSsyRiSnQVUwCT6
+RzJJhPGJnoIHL7uYyjZDnYrB4MOL/1c0g+7BFmDY+0/csUwdHlouTOrj17T3nyrR
+JjEg3/bY16ojl91ji4g4XbvB7L2tKkK2kF+dcIECRbcw+vE2gLSv7wcl78+m0jjb
+3nw8Z+bs/R/W7C8kn+6bfgRrI2NGhd2wnJ579xMLUoodj/L2sXokw0/jiDrWgGAd
+MijIVvVFSTaI08/8LReuluxbFCvftNBwiBVZm7UMV3hwZ97dqW+Tq4+Lh9GrbnO/
+tMMSVSib+KKRMDYh5HGfjmmW9UTmaTL23oP7XPNuuOwqy0Z4RGqMWd8JYvNe0XFw
+7rs73SJJN3zccKZvznDSaCzJBCjT3i3JrbbSW1cZKn0RFHhkFZmtP63HiXAo+G0n
+Z7C/INTWdQcy9tJ/tYfC/ZVjap7R2C8s7XO2PR3oBvATgaRFIPF7q7+kyN0qmwfl
+7Kt0O+dFw88fvjKfMIMQtnNqY7bWpGWg0XstM1L4kwi1FFNElCjFJR3rN5kpf5n1
+7LqhsLc296cnFIwf/Yu9FaPkOJiGga6FewBTGqcWj8lL2KgHn95hdky0FzgIKRYw
+loK8Ee0Y9wee43mVaHEdRD11fUQZYXsnXIFFtVXsIFH43LTiYfgN
+-----END CERTIFICATE-----
+"
+
+## Candidate default CA bundle file locations across common platforms -
+## used only as a *base* to append the missing intermediate to, never
+## as a replacement for the OS's own trust decisions. The first one
+## that exists is used; if none exist (unrecognized platform, or a
+## macOS build that verifies via Keychain rather than a PEM file),
+## .brhWithSupplementalCa() runs its expression unmodified rather than
+## guessing further, so the plain code path's exact behavior is the
+## only possible fallback - never a weaker one.
+.brhSystemCaBundleCandidates <- function() {
+    c(
+        Sys.getenv("CURL_CA_BUNDLE", NA_character_),
+        Sys.getenv("SSL_CERT_FILE", NA_character_),
+        "/etc/ssl/certs/ca-certificates.crt",   # Debian/Ubuntu
+        "/etc/pki/tls/certs/ca-bundle.crt",     # RHEL/Fedora/CentOS
+        "/etc/ssl/cert.pem",                    # Alpine; some macOS
+        "/usr/local/etc/openssl/cert.pem",      # Homebrew OpenSSL, Intel Mac
+        "/opt/homebrew/etc/openssl@3/cert.pem"  # Homebrew OpenSSL, Apple Silicon
+    )
+}
+
+#' Retry an expression with a supplemental CA bundle
+#'
+#' Runs \code{expr} with \code{CURL_CA_BUNDLE} pointed at [system default
+#' bundle + the missing InCommon intermediate], restoring the prior
+#' value afterward. Falls back to running \code{expr} completely
+#' unmodified if no base bundle can be located - this only ever *adds*
+#' one legitimate, publicly-issued certificate on top of whatever the
+#' platform already trusts; it never disables or weakens verification.
+#' @keywords internal
+.brhWithSupplementalCa <- function(expr) {
+    candidates <- .brhSystemCaBundleCandidates()
+    hits <- candidates[!is.na(candidates) & nzchar(candidates) & file.exists(candidates)]
+    if (length(hits) == 0L) return(expr)
+    base <- hits[1]
+
+    tmp <- tempfile(fileext = ".pem")
+    writeLines(c(readLines(base, warn = FALSE), .brhIncommonIntermediatePem), tmp)
+
+    old <- Sys.getenv("CURL_CA_BUNDLE", unset = NA_character_)
+    Sys.setenv(CURL_CA_BUNDLE = tmp)
+    on.exit({
+        if (is.na(old)) Sys.unsetenv("CURL_CA_BUNDLE") else Sys.setenv(CURL_CA_BUNDLE = old)
+        unlink(tmp)
+    })
+    expr
 }
 
 #' Parse a Repurposing Hub flat file: skip the "!Key\\tValue" metadata
@@ -110,11 +204,14 @@
 #' no Repurposing Hub data is bundled with or downloaded by the package
 #' itself until this is called explicitly.
 #'
-#' If this fails with a certificate verification error, see the note in
-#' this file's header comment (\code{broadRepurposingHubAccess.R}):
-#' \code{repo-hub.broadinstitute.org} has occasionally served an
-#' incomplete TLS certificate chain, a server-side issue unrelated to
-#' this function.
+#' \code{repo-hub.broadinstitute.org} has been observed to serve an
+#' incomplete TLS certificate chain (see this file's header comment) -
+#' if the first download attempt fails for any reason, this function
+#' retries once with a CA bundle extended to include the one
+#' legitimate, publicly-issued intermediate certificate the server
+#' itself omits (\code{.brhWithSupplementalCa()}); a genuine failure
+#' (network down, file moved, etc.) still surfaces as an error after
+#' that retry.
 #'
 #' @param rerun logical(1); if \code{TRUE} (default), check for updates
 #'   and (re)download as needed; if \code{FALSE}, use whatever is
@@ -136,7 +233,10 @@ downloadBroadRepurposingHub <- function(rerun = TRUE, config = genConfig()) {
     for (nm in names(ep)) {
         fname <- basename(ep[[nm]])
         if (rerun) {
-            paths[[nm]] <- .downloadFile(ep[[nm]], fname)
+            paths[[nm]] <- tryCatch(
+                .downloadFile(ep[[nm]], fname),
+                error = function(e) .brhWithSupplementalCa(.downloadFile(ep[[nm]], fname))
+            )
         } else {
             paths[[nm]] <- .getCacheFile(fname)
         }
