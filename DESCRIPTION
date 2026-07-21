@@ -1,7 +1,7 @@
 Package: drugTargetInteractions
 Type: Package
 Title: drugTargetInteractions: Mining the Druggable Genome
-Version: 1.21.2
+Version: 1.21.3
 Date: 2026-07-13
 Authors@R: c(
     person("Thomas", "Girke", email="thomas.girke@ucr.edu", role=c("cre", "aut"), comment=c(ORCID="0000-0003-0710-3777")),
