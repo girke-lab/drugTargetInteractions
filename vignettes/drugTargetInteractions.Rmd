@@ -413,7 +413,7 @@ downloaded once and assembled into a small local SQLite via
 `buildBroadRepurposingHubDb()`; `broadRepurposingHubAnnot()` then queries
 that local database repeatedly.
 
-```{r broad_build, eval=TRUE}
+```{r broad_build, eval=TRUE, warning=FALSE, message=FALSE}
 brhDbPath <- buildBroadRepurposingHubDb(rerun = TRUE)  # first build must fetch; rerun = FALSE reuses the cache afterward
 ```
 
