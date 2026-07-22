@@ -1959,7 +1959,7 @@ function toggle_visibility(id1) {
 
 <h1 class="title toc-ignore">drugTargetInteractions: Mining the Druggable Genome</h1>
 <p class="author-name">Authors: Kevin Horan, Brandon Le, Brendan Gongol, Desmond Cairo, Mohammad Afsharinia, Tandis Salem, Dan Evans, Nicholas Schork and Thomas Girke</p>
-<h4 class="date">Last update: 21 July, 2026</h4>
+<h4 class="date">Last update: 22 July, 2026</h4>
 
 </div>
 
@@ -2157,6 +2157,154 @@ piece in more detail.</p>
 that source’s <em>native</em> identifier types directly. <code>queryDrugTargets()</code>
 (see <a href="#cross-source-queries">Cross-Source Queries</a>) builds on top of these by resolving other
 identifier types first.</p>
+<p>The table below is a quick-reference cheat sheet for every valid
+<code>queryBy = list(molType, idType, ids)</code> combination accepted by these
+per-source functions - each row corresponds to one working call, with a
+real, live-tested example value for <code>ids</code>. Full detail on each source
+follows in the subsections below.</p>
+<div class='horizontal-scroll'><table>
+<colgroup>
+<col width="31%" />
+<col width="21%" />
+<col width="18%" />
+<col width="28%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Function</th>
+<th><code>molType</code></th>
+<th><code>idType</code></th>
+<th>Example <code>ids</code></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>getChemblDrugTarget()</code></td>
+<td><code>&quot;protein&quot;</code></td>
+<td><code>&quot;Uniprot&quot;</code></td>
+<td><code>&quot;P11362&quot;</code> (FGFR1)</td>
+</tr>
+<tr class="even">
+<td><code>getChemblDrugTarget()</code></td>
+<td><code>&quot;cmp&quot;</code></td>
+<td><code>&quot;chembl_id&quot;</code></td>
+<td><code>&quot;CHEMBL25&quot;</code> (aspirin)</td>
+</tr>
+<tr class="odd">
+<td><code>getDgidbDrugTarget()</code></td>
+<td><code>&quot;gene&quot;</code></td>
+<td><code>&quot;symbol&quot;</code></td>
+<td><code>&quot;FGFR1&quot;</code></td>
+</tr>
+<tr class="even">
+<td><code>getDgidbDrugTarget()</code></td>
+<td><code>&quot;cmp&quot;</code></td>
+<td><code>&quot;name&quot;</code></td>
+<td><code>&quot;imatinib&quot;</code></td>
+</tr>
+<tr class="odd">
+<td><code>getOpenTargetsDrugTarget()</code></td>
+<td><code>&quot;gene&quot;</code></td>
+<td><code>&quot;symbol&quot;</code></td>
+<td><code>&quot;FGFR1&quot;</code></td>
+</tr>
+<tr class="even">
+<td><code>getOpenTargetsDrugTarget()</code></td>
+<td><code>&quot;cmp&quot;</code></td>
+<td><code>&quot;name&quot;</code></td>
+<td><code>&quot;aspirin&quot;</code></td>
+</tr>
+<tr class="odd">
+<td><code>getPubchemDrugTarget()</code></td>
+<td><code>&quot;gene&quot;</code></td>
+<td><code>&quot;symbol&quot;</code></td>
+<td><code>&quot;KLB&quot;</code></td>
+</tr>
+<tr class="even">
+<td><code>getPubchemDrugTarget()</code></td>
+<td><code>&quot;cmp&quot;</code></td>
+<td><code>&quot;name&quot;</code></td>
+<td><code>&quot;aspirin&quot;</code></td>
+</tr>
+<tr class="odd">
+<td><code>ttdTargetAnnot()</code></td>
+<td><code>&quot;protein&quot;</code></td>
+<td><code>&quot;symbol&quot;</code></td>
+<td><code>&quot;FGFR1&quot;</code></td>
+</tr>
+<tr class="even">
+<td><code>ttdTargetAnnot()</code></td>
+<td><code>&quot;protein&quot;</code></td>
+<td><code>&quot;uniprot&quot;</code></td>
+<td><code>&quot;FGFR1_HUMAN&quot;</code> (mnemonic, not accession)</td>
+</tr>
+<tr class="odd">
+<td><code>ttdTargetAnnot()</code></td>
+<td><code>&quot;protein&quot;</code></td>
+<td><code>&quot;ttd_target_id&quot;</code></td>
+<td><code>&quot;T47101&quot;</code></td>
+</tr>
+<tr class="even">
+<td><code>ttdTargetAnnot()</code></td>
+<td><code>&quot;cmp&quot;</code></td>
+<td><code>&quot;name&quot;</code></td>
+<td><code>&quot;Pemigatinib&quot;</code></td>
+</tr>
+<tr class="odd">
+<td><code>ttdTargetAnnot()</code></td>
+<td><code>&quot;cmp&quot;</code></td>
+<td><code>&quot;ttd_drug_id&quot;</code></td>
+<td><code>&quot;D0O6UY&quot;</code></td>
+</tr>
+<tr class="even">
+<td><code>broadRepurposingHubAnnot()</code></td>
+<td><code>&quot;protein&quot;</code>/<code>&quot;gene&quot;</code></td>
+<td><code>&quot;symbol&quot;</code></td>
+<td><code>&quot;FGFR1&quot;</code></td>
+</tr>
+<tr class="odd">
+<td><code>broadRepurposingHubAnnot()</code></td>
+<td><code>&quot;cmp&quot;</code></td>
+<td><code>&quot;name&quot;</code></td>
+<td><code>&quot;erdafitinib&quot;</code></td>
+</tr>
+<tr class="even">
+<td><code>broadRepurposingHubAnnot()</code></td>
+<td><code>&quot;cmp&quot;</code></td>
+<td><code>&quot;broad_id&quot;</code></td>
+<td><code>&quot;BRD-K84868168-001-01-0&quot;</code></td>
+</tr>
+<tr class="odd">
+<td><code>gtoPdbTargetAnnot()</code></td>
+<td><code>&quot;protein&quot;</code>/<code>&quot;gene&quot;</code></td>
+<td><code>&quot;symbol&quot;</code></td>
+<td><code>&quot;FGFR1&quot;</code></td>
+</tr>
+<tr class="even">
+<td><code>gtoPdbTargetAnnot()</code></td>
+<td><code>&quot;protein&quot;</code>/<code>&quot;gene&quot;</code></td>
+<td><code>&quot;gtp_target_id&quot;</code></td>
+<td><code>&quot;1808&quot;</code></td>
+</tr>
+<tr class="odd">
+<td><code>gtoPdbTargetAnnot()</code></td>
+<td><code>&quot;cmp&quot;</code></td>
+<td><code>&quot;name&quot;</code></td>
+<td><code>&quot;pemigatinib&quot;</code></td>
+</tr>
+<tr class="even">
+<td><code>gtoPdbTargetAnnot()</code></td>
+<td><code>&quot;cmp&quot;</code></td>
+<td><code>&quot;gtp_ligand_id&quot;</code></td>
+<td><code>&quot;9767&quot;</code> (pemigatinib)</td>
+</tr>
+</tbody>
+</table></div>
+<p><code>ids</code> accepts a vector of more than one value for every row above; a
+single example is shown here for brevity. <code>getChemblBioassay()</code> and
+<code>getPubchemDrugTarget()</code>’s bioassay-track sibling functions (see
+<a href="#bioassay-queries">Bioassay Queries</a>) accept the same <code>molType</code>/<code>idType</code> combinations as
+their annotation counterparts in this table.</p>
 <div id="chembl" class="section level2" number="3.1">
 <h2><span class="header-section-number">3.1</span> ChEMBL</h2>
 <p>ChEMBL <span class="citation">(<a href="#ref-Gaulton2012-dv" role="doc-biblioref">Gaulton et al. 2012</a>; <a href="#ref-Bento2014-ry" role="doc-biblioref">Bento et al. 2014</a>)</span> is queried live through its REST
@@ -2654,12 +2802,8 @@ hand-coded per database) - <code>&quot;chembl&quot;</code>, <code>&quot;pubchem&
 ## reuses whatever was built, regardless of which day that was.
 unichemDbPath &lt;- buildUnichemDb()</code></pre>
 <pre class="r"><code>unichemDbPath &lt;- buildUnichemDb(rerun = FALSE)
-getUnichemMapping(&quot;CHEMBL25&quot;, from = &quot;chembl&quot;, to = &quot;pubchem&quot;, unichemDbPath)   # aspirin -&gt; CID</code></pre>
-<pre><code>##       From   To
-## 1 CHEMBL25 2244</code></pre>
-<pre class="r"><code>getUnichemMapping(&quot;CHEMBL25&quot;, from = &quot;chembl&quot;, to = &quot;drugbank&quot;, unichemDbPath) # aspirin -&gt; DrugBank ID</code></pre>
-<pre><code>##       From      To
-## 1 CHEMBL25 DB00945</code></pre>
+getUnichemMapping(&quot;CHEMBL25&quot;, from = &quot;chembl&quot;, to = &quot;pubchem&quot;, unichemDbPath)   # aspirin -&gt; CID
+getUnichemMapping(&quot;CHEMBL25&quot;, from = &quot;chembl&quot;, to = &quot;drugbank&quot;, unichemDbPath) # aspirin -&gt; DrugBank ID</code></pre>
 <p>Unlike UniProt’s or Ensembl’s REST APIs, UniChem’s own live per-compound
 API does not support batch queries and was found to be intermittently
 unreliable for even single lookups - the local-SQLite approach exists
@@ -2675,10 +2819,76 @@ build is a real, deliberate operation (not something to trigger silently),
 <h2><span class="header-section-number">6.1</span> Querying One or All Sources</h2>
 <p><code>queryDrugTargets()</code> resolves <code>queryBy$ids</code> to whatever native identifier
 each requested <code>sources</code> entry needs, then dispatches. <code>queryBy$idType</code>
-uses the same canonical vocabulary as the translation layer above -
-<code>&quot;symbol&quot;</code>/<code>&quot;uniprot&quot;</code>/<code>&quot;ensembl&quot;</code> for genes, <code>&quot;name&quot;</code>/<code>&quot;chembl_id&quot;</code>/
-<code>&quot;pubchem_id&quot;</code>/<code>&quot;drugbank_id&quot;</code>/<code>&quot;chebi_id&quot;</code> for compounds - not each
-source’s own native type.</p>
+uses the same canonical vocabulary as the translation layer above - not
+each source’s own native type (see the table in <a href="#data-sources-in-detail">Data Sources in Detail</a>
+for those):</p>
+<div class='horizontal-scroll'><table>
+<colgroup>
+<col width="32%" />
+<col width="26%" />
+<col width="40%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th><code>molType</code></th>
+<th><code>idType</code></th>
+<th>Example <code>ids</code></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>&quot;gene&quot;</code>/<code>&quot;protein&quot;</code></td>
+<td><code>&quot;symbol&quot;</code></td>
+<td><code>&quot;FGFR1&quot;</code></td>
+</tr>
+<tr class="even">
+<td><code>&quot;gene&quot;</code>/<code>&quot;protein&quot;</code></td>
+<td><code>&quot;uniprot&quot;</code></td>
+<td><code>&quot;P11362&quot;</code> (FGFR1)</td>
+</tr>
+<tr class="odd">
+<td><code>&quot;gene&quot;</code>/<code>&quot;protein&quot;</code></td>
+<td><code>&quot;ensembl&quot;</code></td>
+<td><code>&quot;ENSG00000077782&quot;</code> (FGFR1)</td>
+</tr>
+<tr class="even">
+<td><code>&quot;cmp&quot;</code></td>
+<td><code>&quot;name&quot;</code></td>
+<td><code>&quot;aspirin&quot;</code></td>
+</tr>
+<tr class="odd">
+<td><code>&quot;cmp&quot;</code></td>
+<td><code>&quot;chembl_id&quot;</code></td>
+<td><code>&quot;CHEMBL25&quot;</code> (aspirin)</td>
+</tr>
+<tr class="even">
+<td><code>&quot;cmp&quot;</code></td>
+<td><code>&quot;pubchem_id&quot;</code></td>
+<td>PubChem CID</td>
+</tr>
+<tr class="odd">
+<td><code>&quot;cmp&quot;</code></td>
+<td><code>&quot;drugbank_id&quot;</code></td>
+<td><code>&quot;DB00945&quot;</code> (aspirin)</td>
+</tr>
+<tr class="even">
+<td><code>&quot;cmp&quot;</code></td>
+<td><code>&quot;chebi_id&quot;</code></td>
+<td>ChEBI ID</td>
+</tr>
+</tbody>
+</table></div>
+<p>Compound-side resolution needs a local UniChem SQLite (<code>unichemDbPath</code>,
+see <a href="#compound-ids">Compound IDs</a>) for most <code>idType != to</code> combinations, except three
+zero-network-database shortcuts: <code>idType</code>/<code>to</code> already identical (a
+passthrough, including <code>&quot;name&quot;</code> -&gt; <code>&quot;name&quot;</code>), <code>&quot;chembl_id&quot;</code> -&gt; <code>&quot;name&quot;</code>
+(direct via <code>getChemblMolecule()</code>), and <code>&quot;name&quot;</code> -&gt; <code>&quot;pubchem_id&quot;</code>
+(direct via PubChem’s own name search). Every other combination needs
+it, including <code>&quot;name&quot;</code> -&gt; any structured type <em>other than</em>
+<code>&quot;pubchem_id&quot;</code> (an extra hop past the PubChem CID) and any structured
+type <em>other than</em> <code>&quot;chembl_id&quot;</code> -&gt; <code>&quot;name&quot;</code> (an extra hop through a
+ChEMBL ID first). Gene/protein-side resolution never needs a local
+database - it always goes through UniProt’s REST API.</p>
 <pre class="r"><code>res_one &lt;- queryDrugTargets(
     list(molType = &quot;gene&quot;, idType = &quot;symbol&quot;, ids = &quot;FGFR1&quot;), sources = &quot;chembl&quot;)
 names(res_one)</code></pre>
@@ -2707,9 +2917,6 @@ the same way once one has been built:</p>
     list(molType = &quot;cmp&quot;, idType = &quot;drugbank_id&quot;, ids = &quot;DB00945&quot;),  # aspirin
     sources = &quot;chembl&quot;, unichemDbPath = unichemDbPath)
 res_drugbank$chembl[, c(&quot;QueryIDs&quot;, &quot;UniProt_ID&quot;, &quot;Organism&quot;)]</code></pre>
-<pre><code>##   QueryIDs UniProt_ID     Organism
-## 1 CHEMBL25     P35354 Homo sapiens
-## 2 CHEMBL25     P23219 Homo sapiens</code></pre>
 <p>A source that a query resolved nothing for, or whose own call failed (e.g.
 a required local database path was not supplied), simply contributes no
 element to the result list rather than raising an error - set
@@ -2961,7 +3168,7 @@ cmpIdMapping(outfile = &quot;cmp_ids.rds&quot;, rerun = TRUE)</code></pre>
 <div id="session-info" class="section level1" number="9">
 <h1><span class="header-section-number">9</span> Session Info</h1>
 <pre class="r"><code>sessionInfo()</code></pre>
-<pre><code>## R Under development (unstable) (2026-06-15 r90156)
+<pre><code>## R version 4.6.0 (2026-04-24)
 ## Platform: x86_64-pc-linux-gnu
 ## Running under: Debian GNU/Linux 12 (bookworm)
 ## 
@@ -2982,27 +3189,27 @@ cmpIdMapping(outfile = &quot;cmp_ids.rds&quot;, rerun = TRUE)</code></pre>
 ## [1] stats     graphics  grDevices utils     datasets  methods   base     
 ## 
 ## other attached packages:
-## [1] drugTargetInteractions_1.21.3 BiocStyle_2.41.0             
+## [1] drugTargetInteractions_1.21.4 BiocStyle_2.41.0             
 ## 
 ## loaded via a namespace (and not attached):
 ##   [1] tidyselect_1.2.1            dplyr_1.2.1                 blob_1.3.0                 
 ##   [4] filelock_1.0.3              Biostrings_2.81.5           bitops_1.0-9               
 ##   [7] lazyeval_0.2.3              fastmap_1.2.0               RCurl_1.98-1.19            
-##  [10] BiocFileCache_3.3.0         GenomicAlignments_1.49.1    XML_3.99-0.23              
+##  [10] BiocFileCache_3.3.0         GenomicAlignments_1.49.0    XML_3.99-0.23              
 ##  [13] digest_0.6.39               lifecycle_1.0.5             ProtGenerics_1.45.0        
 ##  [16] KEGGREST_1.53.1             RSQLite_3.53.3              magrittr_2.0.5             
-##  [19] compiler_4.7.0              rlang_1.3.0                 sass_0.4.10                
-##  [22] progress_1.2.3              tools_4.7.0                 yaml_2.3.12                
+##  [19] compiler_4.6.0              rlang_1.3.0                 sass_0.4.10                
+##  [22] progress_1.2.3              tools_4.6.0                 yaml_2.3.12                
 ##  [25] rtracklayer_1.73.0          knitr_1.51                  prettyunits_1.2.0          
 ##  [28] S4Arrays_1.13.0             bit_4.6.0                   curl_7.1.0                 
 ##  [31] DelayedArray_0.39.3         abind_1.4-8                 BiocParallel_1.47.0        
-##  [34] withr_3.0.3                 purrr_1.2.2                 BiocGenerics_0.59.10       
-##  [37] grid_4.7.0                  stats4_4.7.0                biomaRt_2.69.0             
+##  [34] withr_3.0.3                 purrr_1.2.2                 BiocGenerics_0.59.9        
+##  [37] grid_4.6.0                  stats4_4.6.0                biomaRt_2.69.0             
 ##  [40] SummarizedExperiment_1.43.0 cli_3.6.6                   rmarkdown_2.31             
 ##  [43] crayon_1.5.3                generics_0.1.4              otel_0.2.0                 
 ##  [46] httr_1.4.8                  rjson_0.2.23                BiocBaseUtils_1.15.1       
 ##  [49] readxl_1.5.0                DBI_1.3.0                   cachem_1.1.0               
-##  [52] stringr_1.6.0               parallel_4.7.0              AnnotationDbi_1.75.0       
+##  [52] stringr_1.6.0               parallel_4.6.0              AnnotationDbi_1.75.0       
 ##  [55] cellranger_1.1.0            AnnotationFilter_1.37.0     BiocManager_1.30.27        
 ##  [58] XVector_0.53.0              restfulr_0.0.17             matrixStats_1.5.0          
 ##  [61] vctrs_0.7.3                 Matrix_1.7-5                jsonlite_2.0.0             
@@ -3010,14 +3217,14 @@ cmpIdMapping(outfile = &quot;cmp_ids.rds&quot;, rerun = TRUE)</code></pre>
 ##  [67] S4Vectors_0.51.5            bit64_4.8.2                 ensembldb_2.37.3           
 ##  [70] GenomicFeatures_1.65.0      jquerylib_0.1.4             glue_1.8.1                 
 ##  [73] codetools_0.2-20            stringi_1.8.7               GenomeInfoDb_1.49.1        
-##  [76] GenomicRanges_1.65.1        BiocIO_1.23.3               UCSC.utils_1.9.0           
+##  [76] GenomicRanges_1.65.0        BiocIO_1.23.3               UCSC.utils_1.9.0           
 ##  [79] tibble_3.3.1                pillar_1.11.1               rappdirs_0.3.4             
 ##  [82] htmltools_0.5.9             Seqinfo_1.3.0               R6_2.6.1                   
-##  [85] dbplyr_2.6.0                httr2_1.3.0                 evaluate_1.0.5             
-##  [88] Biobase_2.73.1              lattice_0.22-9              cigarillo_1.3.1            
+##  [85] dbplyr_2.6.0                httr2_1.2.3                 evaluate_1.0.5             
+##  [88] Biobase_2.73.1              lattice_0.22-9              cigarillo_1.3.0            
 ##  [91] png_0.1-9                   Rsamtools_2.29.0            memoise_2.0.1              
 ##  [94] bslib_0.11.0                rjsoncons_1.3.3             SparseArray_1.13.2         
-##  [97] xfun_0.60                   MatrixGenerics_1.25.0       UniProt.ws_2.53.0          
+##  [97] xfun_0.59                   MatrixGenerics_1.25.0       UniProt.ws_2.53.0          
 ## [100] pkgconfig_2.0.3</code></pre>
 </div>
 <div id="references" class="section level1 unnumbered">
