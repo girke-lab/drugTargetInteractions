@@ -26,12 +26,22 @@ See \code{\link{listDrugTargetFields}}.}
 \value{
 A \code{data.frame} with columns \code{QueryIDs},
   \code{target_gene}, \code{pert_iname}, \code{clinical_phase},
-  \code{moa}, \code{disease_area}, \code{indication}, \code{broad_id},
-  \code{qc_incompatible}, \code{purity}, \code{vendor},
-  \code{catalog_no}, \code{vendor_name}, \code{expected_mass},
-  \code{smiles}, \code{InChIKey}, \code{pubchem_cid},
-  \code{deprecated_broad_id} (with the default \code{fields = "core"}),
-  or a subset when \code{fields} requests specific columns.
+  \code{moa}, \code{disease_area}, \code{indication}, \code{smiles},
+  \code{InChIKey}, \code{pubchem_cid}, \code{structure_ambiguous}
+  (with the default \code{fields = "core"}), or a subset when
+  \code{fields} requests specific columns. \code{structure_ambiguous
+  = TRUE} means \code{pert_iname} covers more than one distinct
+  structure for that row (packed \code{"; "}-joined into
+  \code{smiles}/\code{InChIKey}/\code{pubchem_cid}, aligned segment-
+  by-segment across the three columns) - a real name collision in
+  the source data (different salts/stereoisomers sharing a display
+  name), not a parsing artifact; structure-sensitive work should key
+  on \code{InChIKey}, not \code{pert_iname}, for those rows. Sample-
+  level fields (\code{purity}, \code{vendor}, \code{catalog_no},
+  \code{qc_incompatible}, \code{expected_mass},
+  \code{deprecated_broad_id}) moved to \code{broad_samples} in the
+  same SQLite file - query it directly (keyed on \code{broad_id})
+  for that data; it is not returned here.
 }
 \description{
 Queries the local Repurposing Hub SQLite built by
@@ -56,6 +66,22 @@ A drug with no listed target still has one row with
 \code{target_gene = NA} (see \code{\link{.brhExplodeTargets}}), so it
 remains reachable by name/broad_id even though it can never surface
 via a gene-side query.
+}
+\details{
+\code{idType = "broad_id"} does not query \code{broad_interactions}
+directly - since the 2026-07-22 two-table split (see
+\code{\link{buildBroadRepurposingHubDb}}), \code{broad_id} lives only
+in \code{broad_samples}. Each queried \code{broad_id} is first
+resolved to its compound name(s) there, then dispatched exactly like
+an \code{idType = "name"} lookup, with \code{QueryIDs} kept tagged to
+the original \code{broad_id} rather than the resolved name. A
+\code{broad_id} resolves to exactly one compound in the overwhelming
+majority of cases; a small number (10 as of the 2025-08-18 release)
+resolve to more than one due to genuine naming inconsistencies in
+Broad's own source file (e.g. \code{"prednisolone acetate"} vs.
+\code{"prednisolone-acetate"} sharing one \code{broad_id}) - handled
+as a real one-to-many resolution (all matching compounds' full
+target sets are returned) rather than collapsed to one or errored on.
 }
 \examples{
 \donttest{

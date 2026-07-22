@@ -57,6 +57,46 @@ genConfig <- function(
     hits[1, "rpath"][[1]]
 }
 
+#' Assert that a data.frame is unique on a given key (combination of
+#' columns), stopping with an actionable error naming the offending
+#' key value(s) if not.
+#'
+#' Exists to convert a pre-join grain assumption ("this lookup table is
+#' keyed on TargetID, so merging it in can't multiply rows") from a
+#' comment - which can silently go stale as source data evolves - into
+#' an enforced invariant that fails loudly at build time instead of
+#' quietly inflating results. Written after the Broad Repurposing Hub
+#' fan-out bug (2026-07-22): a `sample[!duplicated(sample), ]`-style
+#' dedup deduplicated whole rows, not the join key, so repeat QC/purity
+#' readings for one physical sample silently survived and multiplied
+#' every drug-target row for that sample's compound (up to 175x for one
+#' case) once merged in. Intended for use in every local-SQLite
+#' builder (`buildTtdDb()`, `buildBroadRepurposingHubDb()`,
+#' `buildGtoPdbDb()`, `buildUnichemDb()`) immediately after any
+#' pre-join reduction that assumes uniqueness on a key.
+#'
+#' @param df data.frame to check.
+#' @param keycols character vector of column names in \code{df} that
+#'   together should form a unique key.
+#' @param dfName character(1) label used in the error message;
+#'   defaults to the deparsed \code{df} argument.
+#' @return \code{df}, invisibly, unchanged - so this can be dropped
+#'   into a pipeline purely for its side effect.
+#' @keywords internal
+.assertUniqueKey <- function(df, keycols, dfName = deparse(substitute(df))) {
+    ## sep is U+0001 (invisible in source), not "" - so e.g. c("A","BC")
+    ## and c("AB","C") can't collide into the same pasted key.
+    keyVals <- do.call(paste, c(df[keycols], sep =""))
+    dup <- duplicated(keyVals)
+    if (any(dup)) {
+        offenders <- unique(keyVals[dup])
+        stop(dfName, " is not unique on key (", paste(keycols, collapse = ", "),
+             ") - ", length(offenders), " duplicate key value(s), e.g.: ",
+             paste(utils::head(offenders, 3), collapse = " | "), call. = FALSE)
+    }
+    invisible(df)
+}
+
 .downloadFile <- function(url, name, verbose = FALSE) {
     bfc <- .getCache()
     rid <- bfcquery(bfc, name, "rname")$rid

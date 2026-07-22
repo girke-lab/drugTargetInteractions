@@ -442,14 +442,28 @@ there - the package itself ships no Repurposing Hub data. Its license is
 more restrictive than TTD's: the source files explicitly state they are
 "provided for non-commercial use only."
 
-**Known operational caveat:** `repo-hub.broadinstitute.org` has been
-observed serving an incomplete TLS certificate chain (missing the
-InCommon intermediate certificate). Browsers usually mask this by
-auto-fetching the missing intermediate; `curl`/R's default download
-methods generally do not, so `downloadBroadRepurposingHub()` may fail with
-a certificate verification error on some machines until the Broad
-Institute fixes their server configuration. This is a server-side issue,
-not something this package works around.
+**Two tables, not one:** unlike TTD, the Repurposing Hub's sample-level
+file has a genuinely different grain than a drug-target edge - one
+compound routinely has several physical samples/lots. `broad_interactions`
+(what `broadRepurposingHubAnnot()` returns above) is kept strictly at
+one row per `(pert_iname, target_gene)`; physical-sample/QC metadata
+(purity, vendor, catalog number, etc.) lives separately in
+`broad_samples`, queryable directly by `broad_id`. A `structure_ambiguous`
+column flags the rare case (~2% of compounds) where one `pert_iname`
+display name actually covers more than one distinct chemical structure
+(different salts/stereoisomers) - `smiles`/`InChIKey`/`pubchem_cid` are
+then `"; "`-joined rather than picking one arbitrarily; structure-sensitive
+work should key on `InChIKey`, not name, for those rows.
+
+**Known operational caveat, worked around automatically:**
+`repo-hub.broadinstitute.org` has been observed serving an incomplete TLS
+certificate chain (missing the InCommon intermediate certificate).
+Browsers usually mask this by auto-fetching the missing intermediate;
+`curl`/R's default download methods generally do not. This is a
+server-side issue, not something fixable at the source - but
+`downloadBroadRepurposingHub()` now retries automatically with a CA
+bundle extended to include the one missing (legitimate, publicly-issued)
+certificate, so a plain call should succeed regardless.
 
 ## GtoPdb (IUPHAR/BPS Guide to PHARMACOLOGY)
 

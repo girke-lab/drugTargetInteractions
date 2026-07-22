@@ -26,20 +26,60 @@ character(1) local file path to the SQLite database.
 }
 \description{
 Downloads the Repurposing Hub flat files (see
-\code{\link{downloadBroadRepurposingHub}}), explodes the drug table's
-multi-gene \code{target} column (one row per gene -
-\code{\link{.brhExplodeTargets}}), left-joins in the sample-level
-annotation (vendor/purity/structure), and writes a single
-denormalized, indexed \code{broad_interactions} table to a local
-SQLite file - the Repurposing Hub's target-drug relationship is as
-flat as TTD's, so the same one-table shape applies (see
-\code{\link{buildTtdDb}}). The file is cached via BiocFileCache under
-a name that includes the source files' own \code{"!File_date"} (e.g.
-\code{broad_repurposing_20250818.db}), so rebuilding is a no-op until
-the Hub actually republishes. As with \code{\link{buildTtdDb}}, the
-package itself never ships or redistributes this file - it is built
-into the caller's own local cache the first time this is run.
+\code{\link{downloadBroadRepurposingHub}}) and writes **two** tables
+to a local SQLite file, each kept at its own true grain rather than
+flattened into one (see "Two-table design" below):
+\code{broad_interactions} (one row per \code{(pert_iname,
+target_gene)} drug-target edge) and \code{broad_samples} (physical-
+sample/QC metadata, one or more rows per \code{broad_id}). The file
+is cached via BiocFileCache under a name that includes the source
+files' own \code{"!File_date"} (e.g. \code{broad_repurposing_20250818.db}),
+so rebuilding is a no-op until the Hub actually republishes. As with
+\code{\link{buildTtdDb}}, the package itself never ships or
+redistributes this file - it is built into the caller's own local
+cache the first time this is run.
 }
+\section{Two-table design (2026-07-22)}{
+
+Originally a single flat \code{broad_interactions} table, mirroring
+\code{\link{buildTtdDb}}'s one-table shape - but unlike TTD, the
+Repurposing Hub's sample-level file (\code{sample}, one row per
+physical vial/lot, \code{broad_id}) genuinely has a *different*
+grain than the drug-target edge the interaction table is meant to
+represent: a single compound (\code{pert_iname}) routinely has
+several physical samples (verified live: 67% of compounds have more
+than one \code{broad_id}, up to 8), and each sample can itself carry
+several repeat QC/purity readings. A one-table design merging
+\code{sample} straight into the exploded target table (via
+\code{pert_iname}, deduplicated only by
+\code{sample[!duplicated(sample), ]}, which drops exact duplicate
+*rows*, not duplicate *join keys*) confirmed to multiply rows in
+practice - a real, shipped bug: 3.57x overall row inflation
+(17,996 true drug-target edges vs. 64,336 rows), with one
+compound-target pair duplicated 175x, driven by repeat purity
+readings for a single \code{broad_id} that survived the row-level
+dedup untouched. Fixed by never merging \code{sample} into the
+interaction table at all: \code{broad_interactions} draws its
+compound-level structure fields from
+\code{\link{.brhCompoundStructure}} instead (a proper one-row-per-
+compound reduction of \code{sample}, packing the rare cases where a
+name genuinely covers multiple structures rather than picking one
+arbitrarily), and everything else \code{sample} carries (purity,
+vendor, catalog_no, \code{qc_incompatible}, etc.) - which was never
+actually a property of a drug-target edge to begin with, only of a
+physical vial - moves to \code{broad_samples}, kept at its own
+natural grain. \code{broad_interactions}' grain is asserted, not
+just assumed, via \code{\link{.assertUniqueKey}} immediately after
+the reduction, so a future Repurposing Hub release that breaks this
+assumption fails the build loudly instead of silently reinflating
+results. \code{idType = "broad_id"} queries
+(\code{\link{broadRepurposingHubAnnot}}) now resolve \code{broad_id
+-> pert_iname} via \code{broad_samples} first, then dispatch into
+\code{broad_interactions} - which, given the 67% multi-sample rate,
+is also a correctness improvement for that query path, not just a
+side effect of the split.
+}
+
 \examples{
 \donttest{
   dbPath <- buildBroadRepurposingHubDb()

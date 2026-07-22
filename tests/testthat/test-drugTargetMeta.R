@@ -272,10 +272,8 @@ test_that("queryDrugTargets returns an empty list when nothing resolves for the 
         broad = data.frame(
             QueryIDs = "FGFR1", target_gene = "FGFR1", pert_iname = "pemigatinib",
             clinical_phase = "Launched", moa = "fgfr inhibitor", disease_area = NA,
-            indication = NA, broad_id = "BRD-K00104124-001-01-9", qc_incompatible = 0,
-            purity = 95, vendor = "MedChemEx", catalog_no = "x", vendor_name = "x",
-            expected_mass = 1, smiles = "x", InChIKey = "x", pubchem_cid = "1",
-            deprecated_broad_id = NA, stringsAsFactors = FALSE),
+            indication = NA, smiles = "x", InChIKey = "x", pubchem_cid = "1",
+            structure_ambiguous = FALSE, stringsAsFactors = FALSE),
         gtopdb = data.frame(
             QueryIDs = "FGFR1", target_gene = "FGFR1", targetId = 1808L,
             targetName = "fibroblast growth factor receptor 1", species = "Human",

@@ -272,6 +272,75 @@ downloadBroadRepurposingHub <- function(rerun = TRUE, config = genConfig()) {
 }
 
 
+#' Derive a compound-level (one row per \code{pert_iname}) structure
+#' lookup from the sample table: \code{smiles}/\code{InChIKey}/
+#' \code{pubchem_cid}.
+#'
+#' \code{sample} is one row per physical sample (\code{broad_id}), not
+#' one row per compound - a compound with several samples/lots
+#' otherwise fans out any merge keyed on \code{pert_iname} (confirmed
+#' live, 2026-07-22: this was the root cause of a real bug, see
+#' \code{\link{buildBroadRepurposingHubDb}}). The overwhelming majority
+#' of compounds (verified live: ~98%) have exactly one structure across
+#' all their samples, collapsing to a single row with no ambiguity.
+#' Before comparing structures across samples, incomplete records (any
+#' of the three columns \code{NA}) are dropped whenever at least one
+#' complete record exists for that compound - a sample missing e.g.
+#' \code{InChIKey} while another sample of the same compound has it
+#' fully populated is missing metadata, not a second structure
+#' (confirmed live: naively comparing raw distinct combinations flagged
+#' 312 compounds as multi-structure, but 182 of those were exactly this
+#' NA-driven false positive - only ~130-132 are genuinely
+#' multi-structure once complete records are preferred). Of those, a
+#' small minority (~2% of all compounds, as of the 2025-08-18 release)
+#' have a \code{pert_iname} display name that actually covers more than
+#' one distinct structure - different salt forms or stereoisomers
+#' sharing one name, a real property of the source data, not a parsing
+#' artifact. For those, every distinct structure is packed into one
+#' \code{"; "}-joined string per column (same convention as
+#' \code{ttdAccess.R}'s \code{Indication} packing), with the i-th
+#' segment aligned across all three columns so a value from one
+#' structure is never paired with another's, and
+#' \code{structure_ambiguous} is set \code{TRUE} - callers doing
+#' structure-sensitive work should treat \code{pert_iname} as a display
+#' label hiding real chemical multiplicity for those rows, not a
+#' checkable molecule identity; the honest key there is
+#' \code{InChIKey}, not name.
+#' @keywords internal
+.brhCompoundStructure <- function(sample) {
+    structCols <- c("smiles", "InChIKey", "pubchem_cid")
+    distinct <- unique(sample[, c("pert_iname", structCols)])
+    grouped <- split(distinct[structCols], distinct$pert_iname)
+    out <- do.call(rbind, lapply(names(grouped), function(nm) {
+        d <- grouped[[nm]]
+        if (nrow(d) > 1L) {
+            ## Prefer complete-case rows over incomplete ones first -
+            ## a sample missing e.g. InChIKey while another sample of
+            ## the same compound has it fully populated is missing
+            ## metadata, not a second structure (confirmed live:
+            ## 182/312 of the naive multi-combo count was exactly this
+            ## NA-driven false positive; only 130-132 are genuinely
+            ## multi-structure once complete rows are preferred).
+            complete <- d[stats::complete.cases(d), , drop = FALSE]
+            if (nrow(complete) >= 1L) d <- unique(complete)
+        }
+        if (nrow(d) == 1L) {
+            data.frame(pert_iname = nm, smiles = d$smiles, InChIKey = d$InChIKey,
+                      pubchem_cid = d$pubchem_cid, structure_ambiguous = FALSE,
+                      stringsAsFactors = FALSE)
+        } else {
+            data.frame(pert_iname = nm,
+                      smiles      = paste(d$smiles, collapse = "; "),
+                      InChIKey    = paste(d$InChIKey, collapse = "; "),
+                      pubchem_cid = paste(d$pubchem_cid, collapse = "; "),
+                      structure_ambiguous = TRUE, stringsAsFactors = FALSE)
+        }
+    }))
+    rownames(out) <- NULL
+    out
+}
+
+
 ## ---------------------------------------------------------------------
 ## Build (or reuse) a local SQLite, versioned from the raw files' own
 ## embedded "!File_date" - mirrors buildTtdDb()'s pattern of caching one
@@ -282,19 +351,57 @@ downloadBroadRepurposingHub <- function(rerun = TRUE, config = genConfig()) {
 #' drug-target annotations
 #'
 #' Downloads the Repurposing Hub flat files (see
-#' \code{\link{downloadBroadRepurposingHub}}), explodes the drug table's
-#' multi-gene \code{target} column (one row per gene -
-#' \code{\link{.brhExplodeTargets}}), left-joins in the sample-level
-#' annotation (vendor/purity/structure), and writes a single
-#' denormalized, indexed \code{broad_interactions} table to a local
-#' SQLite file - the Repurposing Hub's target-drug relationship is as
-#' flat as TTD's, so the same one-table shape applies (see
-#' \code{\link{buildTtdDb}}). The file is cached via BiocFileCache under
-#' a name that includes the source files' own \code{"!File_date"} (e.g.
-#' \code{broad_repurposing_20250818.db}), so rebuilding is a no-op until
-#' the Hub actually republishes. As with \code{\link{buildTtdDb}}, the
-#' package itself never ships or redistributes this file - it is built
-#' into the caller's own local cache the first time this is run.
+#' \code{\link{downloadBroadRepurposingHub}}) and writes **two** tables
+#' to a local SQLite file, each kept at its own true grain rather than
+#' flattened into one (see "Two-table design" below):
+#' \code{broad_interactions} (one row per \code{(pert_iname,
+#' target_gene)} drug-target edge) and \code{broad_samples} (physical-
+#' sample/QC metadata, one or more rows per \code{broad_id}). The file
+#' is cached via BiocFileCache under a name that includes the source
+#' files' own \code{"!File_date"} (e.g. \code{broad_repurposing_20250818.db}),
+#' so rebuilding is a no-op until the Hub actually republishes. As with
+#' \code{\link{buildTtdDb}}, the package itself never ships or
+#' redistributes this file - it is built into the caller's own local
+#' cache the first time this is run.
+#'
+#' @section Two-table design (2026-07-22):
+#' Originally a single flat \code{broad_interactions} table, mirroring
+#' \code{\link{buildTtdDb}}'s one-table shape - but unlike TTD, the
+#' Repurposing Hub's sample-level file (\code{sample}, one row per
+#' physical vial/lot, \code{broad_id}) genuinely has a *different*
+#' grain than the drug-target edge the interaction table is meant to
+#' represent: a single compound (\code{pert_iname}) routinely has
+#' several physical samples (verified live: 67% of compounds have more
+#' than one \code{broad_id}, up to 8), and each sample can itself carry
+#' several repeat QC/purity readings. A one-table design merging
+#' \code{sample} straight into the exploded target table (via
+#' \code{pert_iname}, deduplicated only by
+#' \code{sample[!duplicated(sample), ]}, which drops exact duplicate
+#' *rows*, not duplicate *join keys*) confirmed to multiply rows in
+#' practice - a real, shipped bug: 3.57x overall row inflation
+#' (17,996 true drug-target edges vs. 64,336 rows), with one
+#' compound-target pair duplicated 175x, driven by repeat purity
+#' readings for a single \code{broad_id} that survived the row-level
+#' dedup untouched. Fixed by never merging \code{sample} into the
+#' interaction table at all: \code{broad_interactions} draws its
+#' compound-level structure fields from
+#' \code{\link{.brhCompoundStructure}} instead (a proper one-row-per-
+#' compound reduction of \code{sample}, packing the rare cases where a
+#' name genuinely covers multiple structures rather than picking one
+#' arbitrarily), and everything else \code{sample} carries (purity,
+#' vendor, catalog_no, \code{qc_incompatible}, etc.) - which was never
+#' actually a property of a drug-target edge to begin with, only of a
+#' physical vial - moves to \code{broad_samples}, kept at its own
+#' natural grain. \code{broad_interactions}' grain is asserted, not
+#' just assumed, via \code{\link{.assertUniqueKey}} immediately after
+#' the reduction, so a future Repurposing Hub release that breaks this
+#' assumption fails the build loudly instead of silently reinflating
+#' results. \code{idType = "broad_id"} queries
+#' (\code{\link{broadRepurposingHubAnnot}}) now resolve \code{broad_id
+#' -> pert_iname} via \code{broad_samples} first, then dispatch into
+#' \code{broad_interactions} - which, given the 67% multi-sample rate,
+#' is also a correctness improvement for that query path, not just a
+#' side effect of the split.
 #'
 #' @param rerun logical(1); passed to
 #'   \code{\link{downloadBroadRepurposingHub}}, and also controls whether
@@ -334,22 +441,42 @@ buildBroadRepurposingHubDb <- function(rerun = FALSE, config = genConfig()) {
     }
 
     sample <- .brhReadTable(paths$sample)
-    sample <- sample[!duplicated(sample), ]
 
-    exploded <- .brhExplodeTargets(drug)
-    interactions <- merge(exploded, sample, by = "pert_iname", all.x = TRUE)
+    ## broad_interactions: one row per (pert_iname, target_gene) drug-
+    ## target edge - see "Two-table design" above for why structure
+    ## comes from a compound-level reduction of `sample`
+    ## (.brhCompoundStructure()) rather than a raw merge against it.
+    structure <- .brhCompoundStructure(sample)
+    exploded  <- .brhExplodeTargets(drug)
+    interactions <- merge(exploded, structure, by = "pert_iname", all.x = TRUE)
     interactions <- interactions[, c("target_gene", "pert_iname", "clinical_phase",
-                                     "moa", "disease_area", "indication", "broad_id",
-                                     "qc_incompatible", "purity", "vendor", "catalog_no",
-                                     "vendor_name", "expected_mass", "smiles", "InChIKey",
-                                     "pubchem_cid", "deprecated_broad_id")]
+                                     "moa", "disease_area", "indication",
+                                     "smiles", "InChIKey", "pubchem_cid",
+                                     "structure_ambiguous")]
+    .assertUniqueKey(interactions, c("pert_iname", "target_gene"), "broad_interactions")
+
+    ## broad_samples: physical-sample/QC-level metadata (purity, vendor,
+    ## etc. - never actually a property of a drug-target edge), kept at
+    ## its own natural grain rather than forced to one row per broad_id
+    ## - a broad_id can legitimately have several rows here (e.g.
+    ## repeat purity checks on the same vial), which is faithful to the
+    ## source data, not a bug, since this table is never merged back
+    ## into broad_interactions. Used to resolve idType="broad_id"
+    ## queries (broadRepurposingHubAnnot()) and as a QC reference table
+    ## in its own right.
+    samples <- sample[, c("broad_id", "pert_iname", "qc_incompatible", "purity",
+                          "vendor", "catalog_no", "vendor_name", "expected_mass",
+                          "deprecated_broad_id")]
+    samples <- samples[!duplicated(samples), ]
 
     tmpDb <- tempfile(fileext = ".db")
     con <- dbConnect(SQLite(), tmpDb)
     dbWriteTable(con, "broad_interactions", interactions, overwrite = TRUE)
-    dbExecute(con, "CREATE INDEX idx_brh_target   ON broad_interactions (target_gene)")
-    dbExecute(con, "CREATE INDEX idx_brh_pert     ON broad_interactions (pert_iname)")
-    dbExecute(con, "CREATE INDEX idx_brh_broad_id ON broad_interactions (broad_id)")
+    dbWriteTable(con, "broad_samples", samples, overwrite = TRUE)
+    dbExecute(con, "CREATE INDEX idx_brh_target    ON broad_interactions (target_gene)")
+    dbExecute(con, "CREATE INDEX idx_brh_pert      ON broad_interactions (pert_iname)")
+    dbExecute(con, "CREATE INDEX idx_brhs_broad_id ON broad_samples (broad_id)")
+    dbExecute(con, "CREATE INDEX idx_brhs_pert     ON broad_samples (pert_iname)")
     dbDisconnect(con)
 
     bfc <- .getCache()
@@ -388,6 +515,21 @@ buildBroadRepurposingHubDb <- function(rerun = FALSE, config = genConfig()) {
 #' remains reachable by name/broad_id even though it can never surface
 #' via a gene-side query.
 #'
+#' \code{idType = "broad_id"} does not query \code{broad_interactions}
+#' directly - since the 2026-07-22 two-table split (see
+#' \code{\link{buildBroadRepurposingHubDb}}), \code{broad_id} lives only
+#' in \code{broad_samples}. Each queried \code{broad_id} is first
+#' resolved to its compound name(s) there, then dispatched exactly like
+#' an \code{idType = "name"} lookup, with \code{QueryIDs} kept tagged to
+#' the original \code{broad_id} rather than the resolved name. A
+#' \code{broad_id} resolves to exactly one compound in the overwhelming
+#' majority of cases; a small number (10 as of the 2025-08-18 release)
+#' resolve to more than one due to genuine naming inconsistencies in
+#' Broad's own source file (e.g. \code{"prednisolone acetate"} vs.
+#' \code{"prednisolone-acetate"} sharing one \code{broad_id}) - handled
+#' as a real one-to-many resolution (all matching compounds' full
+#' target sets are returned) rather than collapsed to one or errored on.
+#'
 #' @param queryBy list with components \code{molType}, \code{idType},
 #'   \code{ids} (character vector).
 #' @param brhDbPath character(1) path to the Repurposing Hub SQLite, e.g.
@@ -399,12 +541,22 @@ buildBroadRepurposingHubDb <- function(rerun = FALSE, config = genConfig()) {
 #'   See \code{\link{listDrugTargetFields}}.
 #' @return A \code{data.frame} with columns \code{QueryIDs},
 #'   \code{target_gene}, \code{pert_iname}, \code{clinical_phase},
-#'   \code{moa}, \code{disease_area}, \code{indication}, \code{broad_id},
-#'   \code{qc_incompatible}, \code{purity}, \code{vendor},
-#'   \code{catalog_no}, \code{vendor_name}, \code{expected_mass},
-#'   \code{smiles}, \code{InChIKey}, \code{pubchem_cid},
-#'   \code{deprecated_broad_id} (with the default \code{fields = "core"}),
-#'   or a subset when \code{fields} requests specific columns.
+#'   \code{moa}, \code{disease_area}, \code{indication}, \code{smiles},
+#'   \code{InChIKey}, \code{pubchem_cid}, \code{structure_ambiguous}
+#'   (with the default \code{fields = "core"}), or a subset when
+#'   \code{fields} requests specific columns. \code{structure_ambiguous
+#'   = TRUE} means \code{pert_iname} covers more than one distinct
+#'   structure for that row (packed \code{"; "}-joined into
+#'   \code{smiles}/\code{InChIKey}/\code{pubchem_cid}, aligned segment-
+#'   by-segment across the three columns) - a real name collision in
+#'   the source data (different salts/stereoisomers sharing a display
+#'   name), not a parsing artifact; structure-sensitive work should key
+#'   on \code{InChIKey}, not \code{pert_iname}, for those rows. Sample-
+#'   level fields (\code{purity}, \code{vendor}, \code{catalog_no},
+#'   \code{qc_incompatible}, \code{expected_mass},
+#'   \code{deprecated_broad_id}) moved to \code{broad_samples} in the
+#'   same SQLite file - query it directly (keyed on \code{broad_id})
+#'   for that data; it is not returned here.
 #' @examples
 #' \donttest{
 #'   dbPath <- buildBroadRepurposingHubDb()
@@ -438,33 +590,58 @@ broadRepurposingHubAnnot <- function(queryBy = list(molType = NULL, idType = NUL
     } else if (queryBy$molType == "cmp") {
         switch(queryBy$idType,
                name     = "pert_iname",
-               broad_id = "broad_id",
+               broad_id = "pert_iname",
                stop("idType for molType='cmp' must be one of: ",
                     "'name', 'broad_id'"))
     } else {
         stop("molType must be 'protein'/'gene' or 'cmp'")
     }
 
-    caseInsensitive <- queryBy$idType %in% c("symbol", "name")
-    ids <- if (caseInsensitive) toupper(queryBy$ids) else queryBy$ids
-    idvec <- paste0("('", paste(gsub("'", "''", ids, fixed = TRUE), collapse = "', '"), "')")
-    colExpr <- if (caseInsensitive) paste0("UPPER(", col, ")") else col
-
     con <- dbConnect(SQLite(), brhDbPath)
     on.exit(dbDisconnect(con))
-    query <- paste0("SELECT * FROM broad_interactions WHERE ", colExpr, " IN ", idvec)
-    resultDF <- dbGetQuery(con, query)
+
+    if (queryBy$idType == "broad_id") {
+        ## broad_id lives only in broad_samples since the two-table
+        ## split - resolve to compound name(s) first (exact-match, not
+        ## case-folded), then dispatch like a "name" lookup below, but
+        ## build index_list from the ORIGINAL broad_id tokens via this
+        ## resolution map rather than direct token comparison.
+        rIdvec <- paste0("('", paste(gsub("'", "''", queryBy$ids, fixed = TRUE), collapse = "', '"), "')")
+        resolveMap <- dbGetQuery(con, paste0(
+            "SELECT broad_id, pert_iname FROM broad_samples WHERE broad_id IN ", rIdvec))
+        lookupNames <- unique(resolveMap$pert_iname)
+    } else {
+        lookupNames <- queryBy$ids
+    }
+
+    caseInsensitive <- TRUE
+    ids <- toupper(lookupNames)
+    resultDF <- if (length(ids) == 0L) {
+        ## no broad_id resolved to anything - still need a correctly-
+        ## typed 0-row frame so downstream NA-padding works the same
+        ## as any other all-miss query.
+        dbGetQuery(con, "SELECT * FROM broad_interactions LIMIT 0")
+    } else {
+        idvec <- paste0("('", paste(gsub("'", "''", ids, fixed = TRUE), collapse = "', '"), "')")
+        colExpr <- paste0("UPPER(", col, ")")
+        dbGetQuery(con, paste0("SELECT * FROM broad_interactions WHERE ", colExpr, " IN ", idvec))
+    }
 
     ## Tag every row with the original query token it matched, and NA-pad
     ## any query ID that matched nothing - mirrors ttdTargetAnnot()'s
     ## QueryIDs convention exactly (same Inf-index trick: an unmatched ID
     ## gets rowid Inf, and indexing a data.frame with Inf yields a row of
     ## NAs).
-    cmpFun <- if (caseInsensitive) toupper else identity
-    index_list <- lapply(
-        queryBy$ids,
-        function(x) which(cmpFun(resultDF[[col]]) %in% cmpFun(x))
-    )
+    cmpFun <- toupper
+    index_list <- if (queryBy$idType == "broad_id") {
+        lapply(queryBy$ids, function(origId) {
+            resolvedNames <- resolveMap$pert_iname[resolveMap$broad_id == origId]
+            if (length(resolvedNames) == 0L) return(integer(0))
+            which(cmpFun(resultDF[[col]]) %in% cmpFun(resolvedNames))
+        })
+    } else {
+        lapply(queryBy$ids, function(x) which(cmpFun(resultDF[[col]]) %in% cmpFun(x)))
+    }
     names(index_list) <- queryBy$ids
     index_list[vapply(index_list, length, integer(1)) == 0] <- Inf
     index_df <- data.frame(
@@ -491,7 +668,5 @@ broadRepurposingHubAnnot <- function(queryBy = list(molType = NULL, idType = NUL
 #' \code{\link{broadRepurposingHubAnnot}}.
 #' @keywords internal
 .dtiBroadAllCols <- c("QueryIDs", "target_gene", "pert_iname", "clinical_phase",
-                      "moa", "disease_area", "indication", "broad_id",
-                      "qc_incompatible", "purity", "vendor", "catalog_no",
-                      "vendor_name", "expected_mass", "smiles", "InChIKey",
-                      "pubchem_cid", "deprecated_broad_id")
+                      "moa", "disease_area", "indication", "smiles", "InChIKey",
+                      "pubchem_cid", "structure_ambiguous")
