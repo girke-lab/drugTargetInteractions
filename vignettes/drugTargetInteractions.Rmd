@@ -196,6 +196,41 @@ that source's *native* identifier types directly. `queryDrugTargets()`
 (see [Cross-Source Queries]) builds on top of these by resolving other
 identifier types first.
 
+The table below is a quick-reference cheat sheet for every valid
+`queryBy = list(molType, idType, ids)` combination accepted by these
+per-source functions - each row corresponds to one working call, with a
+real, live-tested example value for `ids`. Full detail on each source
+follows in the subsections below.
+
+| Function                       | `molType`           | `idType`         | Example `ids`               |
+|---------------------------------|----------------------|-------------------|------------------------------|
+| `getChemblDrugTarget()`         | `"protein"`          | `"Uniprot"`       | `"P11362"` (FGFR1)          |
+| `getChemblDrugTarget()`         | `"cmp"`              | `"chembl_id"`     | `"CHEMBL25"` (aspirin)      |
+| `getDgidbDrugTarget()`          | `"gene"`             | `"symbol"`        | `"FGFR1"`                   |
+| `getDgidbDrugTarget()`          | `"cmp"`              | `"name"`          | `"imatinib"`                |
+| `getOpenTargetsDrugTarget()`    | `"gene"`             | `"symbol"`        | `"FGFR1"`                   |
+| `getOpenTargetsDrugTarget()`    | `"cmp"`              | `"name"`          | `"aspirin"`                 |
+| `getPubchemDrugTarget()`        | `"gene"`             | `"symbol"`        | `"KLB"`                     |
+| `getPubchemDrugTarget()`        | `"cmp"`              | `"name"`          | `"aspirin"`                 |
+| `ttdTargetAnnot()`              | `"protein"`          | `"symbol"`        | `"FGFR1"`                   |
+| `ttdTargetAnnot()`              | `"protein"`          | `"uniprot"`       | `"FGFR1_HUMAN"` (mnemonic, not accession) |
+| `ttdTargetAnnot()`              | `"protein"`          | `"ttd_target_id"` | `"T47101"`                  |
+| `ttdTargetAnnot()`              | `"cmp"`              | `"name"`          | `"Pemigatinib"`             |
+| `ttdTargetAnnot()`              | `"cmp"`              | `"ttd_drug_id"`   | `"D0O6UY"`                  |
+| `broadRepurposingHubAnnot()`    | `"protein"`/`"gene"` | `"symbol"`        | `"FGFR1"`                   |
+| `broadRepurposingHubAnnot()`    | `"cmp"`              | `"name"`          | `"erdafitinib"`             |
+| `broadRepurposingHubAnnot()`    | `"cmp"`              | `"broad_id"`      | `"BRD-K84868168-001-01-0"`  |
+| `gtoPdbTargetAnnot()`           | `"protein"`/`"gene"` | `"symbol"`        | `"FGFR1"`                   |
+| `gtoPdbTargetAnnot()`           | `"protein"`/`"gene"` | `"gtp_target_id"` | `"1808"`                    |
+| `gtoPdbTargetAnnot()`           | `"cmp"`              | `"name"`          | `"pemigatinib"`             |
+| `gtoPdbTargetAnnot()`           | `"cmp"`              | `"gtp_ligand_id"` | `"9767"` (pemigatinib)      |
+
+`ids` accepts a vector of more than one value for every row above; a
+single example is shown here for brevity. `getChemblBioassay()` and
+`getPubchemDrugTarget()`'s bioassay-track sibling functions (see
+[Bioassay Queries]) accept the same `molType`/`idType` combinations as
+their annotation counterparts in this table.
+
 ## ChEMBL
 
 ChEMBL [@Gaulton2012-dv; @Bento2014-ry] is queried live through its REST
@@ -674,10 +709,32 @@ build is a real, deliberate operation (not something to trigger silently),
 
 `queryDrugTargets()` resolves `queryBy$ids` to whatever native identifier
 each requested `sources` entry needs, then dispatches. `queryBy$idType`
-uses the same canonical vocabulary as the translation layer above -
-`"symbol"`/`"uniprot"`/`"ensembl"` for genes, `"name"`/`"chembl_id"`/
-`"pubchem_id"`/`"drugbank_id"`/`"chebi_id"` for compounds - not each
-source's own native type.
+uses the same canonical vocabulary as the translation layer above - not
+each source's own native type (see the table in [Data Sources in Detail]
+for those):
+
+| `molType`            | `idType`        | Example `ids`             |
+|-----------------------|-------------------|-----------------------------|
+| `"gene"`/`"protein"`  | `"symbol"`        | `"FGFR1"`                  |
+| `"gene"`/`"protein"`  | `"uniprot"`       | `"P11362"` (FGFR1)         |
+| `"gene"`/`"protein"`  | `"ensembl"`       | `"ENSG00000077782"` (FGFR1)|
+| `"cmp"`               | `"name"`          | `"aspirin"`                |
+| `"cmp"`               | `"chembl_id"`     | `"CHEMBL25"` (aspirin)     |
+| `"cmp"`               | `"pubchem_id"`    | PubChem CID                |
+| `"cmp"`               | `"drugbank_id"`   | `"DB00945"` (aspirin)      |
+| `"cmp"`               | `"chebi_id"`      | ChEBI ID                   |
+
+Compound-side resolution needs a local UniChem SQLite (`unichemDbPath`,
+see [Compound IDs]) for most `idType != to` combinations, except three
+zero-network-database shortcuts: `idType`/`to` already identical (a
+passthrough, including `"name"` -> `"name"`), `"chembl_id"` -> `"name"`
+(direct via `getChemblMolecule()`), and `"name"` -> `"pubchem_id"`
+(direct via PubChem's own name search). Every other combination needs
+it, including `"name"` -> any structured type *other than*
+`"pubchem_id"` (an extra hop past the PubChem CID) and any structured
+type *other than* `"chembl_id"` -> `"name"` (an extra hop through a
+ChEMBL ID first). Gene/protein-side resolution never needs a local
+database - it always goes through UniProt's REST API.
 
 ```{r meta_one_source, eval=TRUE}
 res_one <- queryDrugTargets(
