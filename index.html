@@ -2391,54 +2391,6 @@ downloaded once and assembled into a small local SQLite via
 <code>buildBroadRepurposingHubDb()</code>; <code>broadRepurposingHubAnnot()</code> then queries
 that local database repeatedly.</p>
 <pre class="r"><code>brhDbPath &lt;- buildBroadRepurposingHubDb(rerun = TRUE)  # first build must fetch; rerun = FALSE reuses the cache afterward</code></pre>
-<pre><code>## Error while performing HEAD request.
-##    Proceeding without cache information.</code></pre>
-<pre><code>## Warning: download failed
-##   web resource path: &#39;https://repo-hub.broadinstitute.org/public/data/repo-drug-annotation-20200324.txt&#39;
-##   local file path: &#39;~/.cache/drugTargetInteractions/file732c65270629&#39;
-##   reason: Failed to perform HTTP request.
-## Caused by error in `curl::curl_fetch_disk()`:
-## ! SSL peer certificate or SSH remote key was not OK [repo-hub.broadinstitute.org]:
-## SSL certificate problem: unable to get local issuer certificate</code></pre>
-<pre><code>## Warning: bfcdownload() failed
-##   rid: BFC122
-##   file: &#39;https://repo-hub.broadinstitute.org/public/data/repo-drug-annotation-20200324.txt&#39;
-##   reason: download failed</code></pre>
-<pre><code>## Warning: download failed
-##   web resource path: &#39;https://repo-hub.broadinstitute.org/public/data/repo-drug-annotation-20200324.txt&#39;
-##   local file path: &#39;~/.cache/drugTargetInteractions/file732c71b9f78d&#39;
-##   reason: Failed to perform HTTP request.
-## Caused by error in `curl::curl_fetch_disk()`:
-## ! SSL peer certificate or SSH remote key was not OK [repo-hub.broadinstitute.org]:
-## SSL certificate problem: unable to get local issuer certificate</code></pre>
-<pre><code>## Warning: bfcdownload() failed
-##   rid: BFC122
-##   file: &#39;https://repo-hub.broadinstitute.org/public/data/repo-drug-annotation-20200324.txt&#39;
-##   reason: download failed</code></pre>
-<pre><code>## Error while performing HEAD request.
-##    Proceeding without cache information.</code></pre>
-<pre><code>## Warning: download failed
-##   web resource path: &#39;https://repo-hub.broadinstitute.org/public/data/repo-sample-annotation-20240610.txt&#39;
-##   local file path: &#39;~/.cache/drugTargetInteractions/file732c6d657422&#39;
-##   reason: Failed to perform HTTP request.
-## Caused by error in `curl::curl_fetch_disk()`:
-## ! SSL peer certificate or SSH remote key was not OK [repo-hub.broadinstitute.org]:
-## SSL certificate problem: unable to get local issuer certificate</code></pre>
-<pre><code>## Warning: bfcdownload() failed
-##   rid: BFC124
-##   file: &#39;https://repo-hub.broadinstitute.org/public/data/repo-sample-annotation-20240610.txt&#39;
-##   reason: download failed</code></pre>
-<pre><code>## Warning: download failed
-##   web resource path: &#39;https://repo-hub.broadinstitute.org/public/data/repo-sample-annotation-20240610.txt&#39;
-##   local file path: &#39;~/.cache/drugTargetInteractions/file732c14d1e0fd&#39;
-##   reason: Failed to perform HTTP request.
-## Caused by error in `curl::curl_fetch_disk()`:
-## ! SSL peer certificate or SSH remote key was not OK [repo-hub.broadinstitute.org]:
-## SSL certificate problem: unable to get local issuer certificate</code></pre>
-<pre><code>## Warning: bfcdownload() failed
-##   rid: BFC124
-##   file: &#39;https://repo-hub.broadinstitute.org/public/data/repo-sample-annotation-20240610.txt&#39;
-##   reason: download failed</code></pre>
 <p>Native identifiers for <code>broadRepurposingHubAnnot()</code>: for target → drug,
 a <strong>gene symbol</strong> (<code>idType = &quot;symbol&quot;</code> - the Repurposing Hub only exposes
 gene symbols, no accession system of its own); for drug → target, a
