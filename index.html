@@ -2391,6 +2391,54 @@ downloaded once and assembled into a small local SQLite via
 <code>buildBroadRepurposingHubDb()</code>; <code>broadRepurposingHubAnnot()</code> then queries
 that local database repeatedly.</p>
 <pre class="r"><code>brhDbPath &lt;- buildBroadRepurposingHubDb(rerun = TRUE)  # first build must fetch; rerun = FALSE reuses the cache afterward</code></pre>
+<pre><code>## Error while performing HEAD request.
+##    Proceeding without cache information.</code></pre>
+<pre><code>## Warning: download failed
+##   web resource path: &#39;https://repo-hub.broadinstitute.org/public/data/repo-drug-annotation-20200324.txt&#39;
+##   local file path: &#39;~/.cache/drugTargetInteractions/file732c65270629&#39;
+##   reason: Failed to perform HTTP request.
+## Caused by error in `curl::curl_fetch_disk()`:
+## ! SSL peer certificate or SSH remote key was not OK [repo-hub.broadinstitute.org]:
+## SSL certificate problem: unable to get local issuer certificate</code></pre>
+<pre><code>## Warning: bfcdownload() failed
+##   rid: BFC122
+##   file: &#39;https://repo-hub.broadinstitute.org/public/data/repo-drug-annotation-20200324.txt&#39;
+##   reason: download failed</code></pre>
+<pre><code>## Warning: download failed
+##   web resource path: &#39;https://repo-hub.broadinstitute.org/public/data/repo-drug-annotation-20200324.txt&#39;
+##   local file path: &#39;~/.cache/drugTargetInteractions/file732c71b9f78d&#39;
+##   reason: Failed to perform HTTP request.
+## Caused by error in `curl::curl_fetch_disk()`:
+## ! SSL peer certificate or SSH remote key was not OK [repo-hub.broadinstitute.org]:
+## SSL certificate problem: unable to get local issuer certificate</code></pre>
+<pre><code>## Warning: bfcdownload() failed
+##   rid: BFC122
+##   file: &#39;https://repo-hub.broadinstitute.org/public/data/repo-drug-annotation-20200324.txt&#39;
+##   reason: download failed</code></pre>
+<pre><code>## Error while performing HEAD request.
+##    Proceeding without cache information.</code></pre>
+<pre><code>## Warning: download failed
+##   web resource path: &#39;https://repo-hub.broadinstitute.org/public/data/repo-sample-annotation-20240610.txt&#39;
+##   local file path: &#39;~/.cache/drugTargetInteractions/file732c6d657422&#39;
+##   reason: Failed to perform HTTP request.
+## Caused by error in `curl::curl_fetch_disk()`:
+## ! SSL peer certificate or SSH remote key was not OK [repo-hub.broadinstitute.org]:
+## SSL certificate problem: unable to get local issuer certificate</code></pre>
+<pre><code>## Warning: bfcdownload() failed
+##   rid: BFC124
+##   file: &#39;https://repo-hub.broadinstitute.org/public/data/repo-sample-annotation-20240610.txt&#39;
+##   reason: download failed</code></pre>
+<pre><code>## Warning: download failed
+##   web resource path: &#39;https://repo-hub.broadinstitute.org/public/data/repo-sample-annotation-20240610.txt&#39;
+##   local file path: &#39;~/.cache/drugTargetInteractions/file732c14d1e0fd&#39;
+##   reason: Failed to perform HTTP request.
+## Caused by error in `curl::curl_fetch_disk()`:
+## ! SSL peer certificate or SSH remote key was not OK [repo-hub.broadinstitute.org]:
+## SSL certificate problem: unable to get local issuer certificate</code></pre>
+<pre><code>## Warning: bfcdownload() failed
+##   rid: BFC124
+##   file: &#39;https://repo-hub.broadinstitute.org/public/data/repo-sample-annotation-20240610.txt&#39;
+##   reason: download failed</code></pre>
 <p>Native identifiers for <code>broadRepurposingHubAnnot()</code>: for target → drug,
 a <strong>gene symbol</strong> (<code>idType = &quot;symbol&quot;</code> - the Repurposing Hub only exposes
 gene symbols, no accession system of its own); for drug → target, a
@@ -2400,13 +2448,13 @@ Hub’s own lower-case <code>pert_iname</code>) or a specific physical sample/ba
 <pre class="r"><code>broad_t2d &lt;- broadRepurposingHubAnnot(
     list(molType = &quot;protein&quot;, idType = &quot;symbol&quot;, ids = &quot;FGFR1&quot;), brhDbPath)
 head(broad_t2d[, c(&quot;pert_iname&quot;, &quot;clinical_phase&quot;, &quot;moa&quot;)])</code></pre>
-<pre><code>##   pert_iname  clinical_phase                              moa
-## 1    AZD4547 Phase 2/Phase 3                   FGFR inhibitor
-## 2    AZD4547 Phase 2/Phase 3                   FGFR inhibitor
-## 3    AZD4547 Phase 2/Phase 3                   FGFR inhibitor
-## 4   brivanib         Phase 3 FGFR inhibitor | VEGFR inhibitor
-## 5   brivanib         Phase 3 FGFR inhibitor | VEGFR inhibitor
-## 6   brivanib         Phase 3 FGFR inhibitor | VEGFR inhibitor</code></pre>
+<pre><code>##           pert_iname  clinical_phase                                                        moa
+## 1            AZD4547 Phase 2/Phase 3                                             FGFR inhibitor
+## 2           brivanib         Phase 3                           FGFR inhibitor | VEGFR inhibitor
+## 3 brivanib-alaninate         Phase 3                           FGFR inhibitor | VEGFR inhibitor
+## 4         CH-5183284         Phase 2                         fibroblast growth factor inhibitor
+## 5         danusertib         Phase 2 Aurora kinase inhibitor | growth factor receptor inhibitor
+## 6       derazantinib         Phase 2                                  tyrosine kinase inhibitor</code></pre>
 <pre class="r"><code>broad_d2t &lt;- broadRepurposingHubAnnot(
     list(molType = &quot;cmp&quot;, idType = &quot;name&quot;, ids = &quot;pemigatinib&quot;), brhDbPath)
 broad_d2t[, c(&quot;target_gene&quot;, &quot;clinical_phase&quot;, &quot;moa&quot;)]</code></pre>
@@ -2419,14 +2467,27 @@ the Repurposing Hub’s own files into your local cache and builds the SQLite
 there - the package itself ships no Repurposing Hub data. Its license is
 more restrictive than TTD’s: the source files explicitly state they are
 “provided for non-commercial use only.”</p>
-<p><strong>Known operational caveat:</strong> <code>repo-hub.broadinstitute.org</code> has been
-observed serving an incomplete TLS certificate chain (missing the
-InCommon intermediate certificate). Browsers usually mask this by
-auto-fetching the missing intermediate; <code>curl</code>/R’s default download
-methods generally do not, so <code>downloadBroadRepurposingHub()</code> may fail with
-a certificate verification error on some machines until the Broad
-Institute fixes their server configuration. This is a server-side issue,
-not something this package works around.</p>
+<p><strong>Two tables, not one:</strong> unlike TTD, the Repurposing Hub’s sample-level
+file has a genuinely different grain than a drug-target edge - one
+compound routinely has several physical samples/lots. <code>broad_interactions</code>
+(what <code>broadRepurposingHubAnnot()</code> returns above) is kept strictly at
+one row per <code>(pert_iname, target_gene)</code>; physical-sample/QC metadata
+(purity, vendor, catalog number, etc.) lives separately in
+<code>broad_samples</code>, queryable directly by <code>broad_id</code>. A <code>structure_ambiguous</code>
+column flags the rare case (~2% of compounds) where one <code>pert_iname</code>
+display name actually covers more than one distinct chemical structure
+(different salts/stereoisomers) - <code>smiles</code>/<code>InChIKey</code>/<code>pubchem_cid</code> are
+then <code>&quot;; &quot;</code>-joined rather than picking one arbitrarily; structure-sensitive
+work should key on <code>InChIKey</code>, not name, for those rows.</p>
+<p><strong>Known operational caveat, worked around automatically:</strong>
+<code>repo-hub.broadinstitute.org</code> has been observed serving an incomplete TLS
+certificate chain (missing the InCommon intermediate certificate).
+Browsers usually mask this by auto-fetching the missing intermediate;
+<code>curl</code>/R’s default download methods generally do not. This is a
+server-side issue, not something fixable at the source - but
+<code>downloadBroadRepurposingHub()</code> now retries automatically with a CA
+bundle extended to include the one missing (legitimate, publicly-issued)
+certificate, so a plain call should succeed regardless.</p>
 </div>
 <div id="gtopdb-iupharbps-guide-to-pharmacology" class="section level2" number="3.7">
 <h2><span class="header-section-number">3.7</span> GtoPdb (IUPHAR/BPS Guide to PHARMACOLOGY)</h2>
@@ -2687,7 +2748,7 @@ res_all_live &lt;- queryDrugTargets(
     ttdDbPath = ttdDbPath, brhDbPath = brhDbPath, gtoPdbDbPath = gtoPdbDbPath)
 sapply(res_all_live, nrow)</code></pre>
 <pre><code>##      chembl       dgidb opentargets         ttd       broad      gtopdb 
-##          26         143          94          37         187          47</code></pre>
+##          26         143          94          37          37          47</code></pre>
 <p>Starting from a <em>compound</em> identifier that needs the UniChem SQLite works
 the same way once one has been built:</p>
 <pre class="r"><code>res_drugbank &lt;- queryDrugTargets(
@@ -2778,7 +2839,7 @@ mapping each source’s own column names to this shared vocabulary:</p>
 table(combined$source)</code></pre>
 <pre><code>## 
 ## Broad Repurposing Hub                ChEMBL                 DGIdb                GtoPdb 
-##                   187                    26                   143                    47 
+##                    37                    26                   143                    47 
 ##           OpenTargets                   TTD 
 ##                    94                    37</code></pre>
 <pre class="r"><code>head(combined)</code></pre>
@@ -2969,42 +3030,43 @@ cmpIdMapping(outfile = &quot;cmp_ids.rds&quot;, rerun = TRUE)</code></pre>
 ## [1] stats     graphics  grDevices utils     datasets  methods   base     
 ## 
 ## other attached packages:
-## [1] drugTargetInteractions_1.21.2 BiocStyle_2.41.0             
+## [1] drugTargetInteractions_1.21.3 BiocStyle_2.41.0             
 ## 
 ## loaded via a namespace (and not attached):
-##  [1] tidyselect_1.2.1            dplyr_1.2.1                 blob_1.3.0                 
-##  [4] filelock_1.0.3              Biostrings_2.81.5           bitops_1.0-9               
-##  [7] lazyeval_0.2.3              fastmap_1.2.0               RCurl_1.98-1.19            
-## [10] BiocFileCache_3.3.0         GenomicAlignments_1.49.1    XML_3.99-0.23              
-## [13] digest_0.6.39               lifecycle_1.0.5             ProtGenerics_1.45.0        
-## [16] KEGGREST_1.53.1             RSQLite_3.53.3              magrittr_2.0.5             
-## [19] compiler_4.7.0              rlang_1.3.0                 sass_0.4.10                
-## [22] progress_1.2.3              tools_4.7.0                 yaml_2.3.12                
-## [25] rtracklayer_1.73.0          knitr_1.51                  prettyunits_1.2.0          
-## [28] S4Arrays_1.13.0             bit_4.6.0                   curl_7.1.0                 
-## [31] DelayedArray_0.39.3         abind_1.4-8                 BiocParallel_1.47.0        
-## [34] withr_3.0.3                 purrr_1.2.2                 BiocGenerics_0.59.10       
-## [37] grid_4.7.0                  stats4_4.7.0                biomaRt_2.69.0             
-## [40] SummarizedExperiment_1.43.0 cli_3.6.6                   rmarkdown_2.31             
-## [43] crayon_1.5.3                generics_0.1.4              otel_0.2.0                 
-## [46] httr_1.4.8                  rjson_0.2.23                BiocBaseUtils_1.15.1       
-## [49] DBI_1.3.0                   cachem_1.1.0                stringr_1.6.0              
-## [52] parallel_4.7.0              AnnotationDbi_1.75.0        AnnotationFilter_1.37.0    
-## [55] BiocManager_1.30.27         XVector_0.53.0              restfulr_0.0.17            
-## [58] matrixStats_1.5.0           vctrs_0.7.3                 Matrix_1.7-5               
-## [61] jsonlite_2.0.0              bookdown_0.47               IRanges_2.47.2             
-## [64] hms_1.1.4                   S4Vectors_0.51.5            bit64_4.8.2                
-## [67] ensembldb_2.37.3            GenomicFeatures_1.65.0      jquerylib_0.1.4            
-## [70] glue_1.8.1                  codetools_0.2-20            stringi_1.8.7              
-## [73] GenomeInfoDb_1.49.1         GenomicRanges_1.65.1        BiocIO_1.23.3              
-## [76] UCSC.utils_1.9.0            tibble_3.3.1                pillar_1.11.1              
-## [79] rappdirs_0.3.4              htmltools_0.5.9             Seqinfo_1.3.0              
-## [82] R6_2.6.1                    dbplyr_2.6.0                httr2_1.3.0                
-## [85] evaluate_1.0.5              Biobase_2.73.1              lattice_0.22-9             
-## [88] cigarillo_1.3.1             png_0.1-9                   Rsamtools_2.29.0           
-## [91] memoise_2.0.1               bslib_0.11.0                rjsoncons_1.3.3            
-## [94] SparseArray_1.13.2          xfun_0.60                   MatrixGenerics_1.25.0      
-## [97] UniProt.ws_2.53.0           pkgconfig_2.0.3</code></pre>
+##   [1] tidyselect_1.2.1            dplyr_1.2.1                 blob_1.3.0                 
+##   [4] filelock_1.0.3              Biostrings_2.81.5           bitops_1.0-9               
+##   [7] lazyeval_0.2.3              fastmap_1.2.0               RCurl_1.98-1.19            
+##  [10] BiocFileCache_3.3.0         GenomicAlignments_1.49.1    XML_3.99-0.23              
+##  [13] digest_0.6.39               lifecycle_1.0.5             ProtGenerics_1.45.0        
+##  [16] KEGGREST_1.53.1             RSQLite_3.53.3              magrittr_2.0.5             
+##  [19] compiler_4.7.0              rlang_1.3.0                 sass_0.4.10                
+##  [22] progress_1.2.3              tools_4.7.0                 yaml_2.3.12                
+##  [25] rtracklayer_1.73.0          knitr_1.51                  prettyunits_1.2.0          
+##  [28] S4Arrays_1.13.0             bit_4.6.0                   curl_7.1.0                 
+##  [31] DelayedArray_0.39.3         abind_1.4-8                 BiocParallel_1.47.0        
+##  [34] withr_3.0.3                 purrr_1.2.2                 BiocGenerics_0.59.10       
+##  [37] grid_4.7.0                  stats4_4.7.0                biomaRt_2.69.0             
+##  [40] SummarizedExperiment_1.43.0 cli_3.6.6                   rmarkdown_2.31             
+##  [43] crayon_1.5.3                generics_0.1.4              otel_0.2.0                 
+##  [46] httr_1.4.8                  rjson_0.2.23                BiocBaseUtils_1.15.1       
+##  [49] readxl_1.5.0                DBI_1.3.0                   cachem_1.1.0               
+##  [52] stringr_1.6.0               parallel_4.7.0              AnnotationDbi_1.75.0       
+##  [55] cellranger_1.1.0            AnnotationFilter_1.37.0     BiocManager_1.30.27        
+##  [58] XVector_0.53.0              restfulr_0.0.17             matrixStats_1.5.0          
+##  [61] vctrs_0.7.3                 Matrix_1.7-5                jsonlite_2.0.0             
+##  [64] bookdown_0.47               IRanges_2.47.2              hms_1.1.4                  
+##  [67] S4Vectors_0.51.5            bit64_4.8.2                 ensembldb_2.37.3           
+##  [70] GenomicFeatures_1.65.0      jquerylib_0.1.4             glue_1.8.1                 
+##  [73] codetools_0.2-20            stringi_1.8.7               GenomeInfoDb_1.49.1        
+##  [76] GenomicRanges_1.65.1        BiocIO_1.23.3               UCSC.utils_1.9.0           
+##  [79] tibble_3.3.1                pillar_1.11.1               rappdirs_0.3.4             
+##  [82] htmltools_0.5.9             Seqinfo_1.3.0               R6_2.6.1                   
+##  [85] dbplyr_2.6.0                httr2_1.3.0                 evaluate_1.0.5             
+##  [88] Biobase_2.73.1              lattice_0.22-9              cigarillo_1.3.1            
+##  [91] png_0.1-9                   Rsamtools_2.29.0            memoise_2.0.1              
+##  [94] bslib_0.11.0                rjsoncons_1.3.3             SparseArray_1.13.2         
+##  [97] xfun_0.60                   MatrixGenerics_1.25.0       UniProt.ws_2.53.0          
+## [100] pkgconfig_2.0.3</code></pre>
 </div>
 <div id="references" class="section level1 unnumbered">
 <h1>References</h1>
