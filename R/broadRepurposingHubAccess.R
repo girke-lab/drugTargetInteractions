@@ -234,7 +234,7 @@ downloadBroadRepurposingHub <- function(rerun = TRUE, config = genConfig()) {
         fname <- basename(ep[[nm]])
         if (rerun) {
             paths[[nm]] <- tryCatch(
-                .downloadFile(ep[[nm]], fname),
+                suppressWarnings(.downloadFile(ep[[nm]], fname)),
                 error = function(e) .brhWithSupplementalCa(.downloadFile(ep[[nm]], fname))
             )
         } else {
