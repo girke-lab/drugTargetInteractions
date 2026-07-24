@@ -66,7 +66,7 @@ this function targets the v4 schema in which rows are of type
 \code{ClinicalTargetFromTarget} (fields \code{maxClinicalStage},
 \code{drug}, \code{diseases}) and mechanism data lives under
 \code{drug.mechanismsOfAction.rows}. If Open Targets changes these
-names, update \code{\link{.dtiDrugSelection}}.
+names, update \code{.dtiDrugSelection}.
 }
 \examples{
 \donttest{

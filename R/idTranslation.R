@@ -59,6 +59,7 @@
 
 #' Submit a UniProt ID mapping job
 #' @keywords internal
+#' @noRd
 .dtiUniprotSubmitJob <- function(ids, from, to, taxId = NULL) {
     url <- paste0(.dtiEndpoints()$uniprot, "/idmapping/run")
     body <- list(from = from, to = to, ids = paste(unique(ids), collapse = ","))
@@ -82,8 +83,9 @@
 #' results page instead of the status payload - confirmed live to hang
 #' forever otherwise, since \code{jobStatus} is then never present to
 #' detect. Redirect-following is disabled explicitly for this request
-#' only (not changed package-wide in \code{\link{.dtiApiGET}}).
+#' only (not changed package-wide in \code{.dtiApiGET}).
 #' @keywords internal
+#' @noRd
 .dtiUniprotPollJob <- function(jobId, pollInterval = 1, maxWait = 120) {
     url <- paste0(.dtiEndpoints()$uniprot, "/idmapping/status/", jobId)
     waited <- 0
@@ -123,6 +125,7 @@
 #' turns \code{"FINISHED"} where the results endpoint can still 404 once
 #' before succeeding.
 #' @keywords internal
+#' @noRd
 .dtiUniprotFetchResults <- function(jobId, pageSize = 500L) {
     url <- paste0(.dtiEndpoints()$uniprot, "/idmapping/results/", jobId)
     acc <- list()
@@ -154,6 +157,7 @@
 
 #' Tidy a UniProt ID mapping job's raw results into a data.frame
 #' @keywords internal
+#' @noRd
 .dtiUniprotParseResults <- function(results) {
     cols <- c("From", "To")
     empty <- as.data.frame(stats::setNames(
@@ -250,12 +254,14 @@ getUniprotMapping <- function(ids, from, to, taxId = 9606L, pollInterval = 1,
 
 #' Column order for tidy Ensembl homology rows
 #' @keywords internal
+#' @noRd
 .dtiEnsemblHomologyCols <- c("query_gene", "homolog_id", "homolog_protein_id",
                              "homolog_species", "type", "taxonomy_level",
                              "perc_id", "perc_pos")
 
 #' Empty Ensembl homology data.frame with the canonical columns
 #' @keywords internal
+#' @noRd
 .dtiEmptyEnsemblHomology <- function() {
     as.data.frame(stats::setNames(
         replicate(length(.dtiEnsemblHomologyCols), character(0), simplify = FALSE),
@@ -267,6 +273,7 @@ getUniprotMapping <- function(ids, from, to, taxId = 9606L, pollInterval = 1,
 #' Shared by \code{\link{getEnsemblParalogs}} and
 #' \code{\link{getEnsemblOrthologs}}, which only differ in \code{type}.
 #' @keywords internal
+#' @noRd
 .dtiEnsemblHomologyFetch <- function(gene, species = "human",
                                      type = c("paralogues", "orthologues"),
                                      targetSpecies = NULL, condensed = FALSE,

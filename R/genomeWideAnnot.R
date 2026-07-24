@@ -52,6 +52,7 @@
 #' as a maintenance task - check availability first via
 #' \url{https://storage.googleapis.com/public-download-files?prefix=hgnc/archive/archive/quarterly/tsv/hgnc_complete_set_}.
 #' @keywords internal
+#' @noRd
 .hgncPinnedQuarterlyFile <- "hgnc_complete_set_2026-04-01.txt"
 
 #' Download (and cache) an HGNC complete-gene-set TSV snapshot
@@ -61,7 +62,7 @@
 #'   \url{https://storage.googleapis.com/public-download-files/hgnc/archive/archive/quarterly/tsv/})
 #'   to reproduce a particular snapshot. \code{NULL} (default) uses the
 #'   package's pinned quarterly snapshot (see
-#'   \code{\link{.hgncPinnedQuarterlyFile}}) - fixed across package
+#'   \code{.hgncPinnedQuarterlyFile}) - fixed across package
 #'   versions so results stay reproducible; the pin is updated as a
 #'   package maintenance task, not a user setting.
 #' @param current logical(1); if \code{TRUE}, ignore \code{archiveFile}
@@ -262,6 +263,7 @@ normalizeGeneSymbols <- function(symbols, symbolMap = NULL, hgncTable = NULL) {
 
 #' Explode an HGNC gene table's list-column into one row per (gene, id)
 #' @keywords internal
+#' @noRd
 .hgncExplode <- function(hgncTable, col) {
     ids <- hgncTable[[col]]
     n <- lengths(ids)

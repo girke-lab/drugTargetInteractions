@@ -78,6 +78,7 @@
 
 #' Endpoint registry for TTD flat files
 #' @keywords internal
+#' @noRd
 .ttdEndpoints <- function() {
     list(
         base        = "https://ttd.idrblab.cn/files/download",
@@ -103,6 +104,7 @@
 #'   (e.g. \code{"10.1.01"}/\code{"2024.01.10"}), or \code{NA} for either
 #'   if not found.
 #' @keywords internal
+#' @noRd
 .ttdRelease <- function(path) {
     if (grepl("\\.xlsx$", path, ignore.case = TRUE))
         return(list(version = NA_character_, date = NA_character_))
@@ -119,6 +121,7 @@
 
 #' @rdname dot-ttdRelease
 #' @keywords internal
+#' @noRd
 .ttdVersion <- function(path) .ttdRelease(path)$version
 
 
@@ -189,6 +192,7 @@ downloadTTD <- function(rerun = TRUE, config = genConfig()) {
 
 #' Long (id, field, value) table for one TTD flat file
 #' @keywords internal
+#' @noRd
 .ttdReadLong <- function(path, idPrefix) {
     lines <- readLines(path, warn = FALSE, encoding = "UTF-8")
     parts <- strsplit(lines, "\t", fixed = TRUE)
@@ -205,6 +209,7 @@ downloadTTD <- function(rerun = TRUE, config = genConfig()) {
 
 #' First-value-wins lookup for a single field of a long table
 #' @keywords internal
+#' @noRd
 .ttdFieldLookup <- function(long, field) {
     sub <- long[long$field == field, c("id", "value")]
     sub[!duplicated(sub$id), ]
@@ -212,6 +217,7 @@ downloadTTD <- function(rerun = TRUE, config = genConfig()) {
 
 #' Parse P1-01 into one row per TargetID (GeneName, Uniprot, TargetType)
 #' @keywords internal
+#' @noRd
 .ttdParseTargets <- function(path) {
     long <- .ttdReadLong(path, "T")
     gene <- .ttdFieldLookup(long, "GENENAME")
@@ -230,6 +236,7 @@ downloadTTD <- function(rerun = TRUE, config = genConfig()) {
 #' this collapses them to a global DrugID -> DrugName lookup (first name
 #' wins), independent of which target(s) the drug maps to.
 #' @keywords internal
+#' @noRd
 .ttdParseTargetDrugNames <- function(path) {
     lines <- readLines(path, warn = FALSE, encoding = "UTF-8")
     lines <- grep("\tDRUGINFO\t", lines, value = TRUE, fixed = TRUE)
@@ -245,6 +252,7 @@ downloadTTD <- function(rerun = TRUE, config = genConfig()) {
 
 #' Parse P1-02's DRUGSMIL (canonical SMILES) field into a lookup
 #' @keywords internal
+#' @noRd
 .ttdParseDrugSmiles <- function(path) {
     long <- .ttdReadLong(path, "D")
     sm <- .ttdFieldLookup(long, "DRUGSMIL")
@@ -260,11 +268,12 @@ downloadTTD <- function(rerun = TRUE, config = genConfig()) {
 #' distinct raw strings (\code{"Antibody"}, \code{"Antibody "} with a
 #' trailing space, \code{"Monoclonal antibody"}, \code{"Monoclonal
 #' Antibody"}, ...), and only ~70\% of drugs have it at all (29901/42939
-#' in the pinned release). \code{\link{.ttdMoleculeType}} uses this as
+#' in the pinned release). \code{.ttdMoleculeType} uses this as
 #' its primary signal, normalized down to the 4 requested buckets, and
 #' falls back to the SMILES-presence/name heuristic only for the ~30\%
 #' of drugs with no \code{DRUGTYPE} value.
 #' @keywords internal
+#' @noRd
 .ttdParseDrugType <- function(path) {
     long <- .ttdReadLong(path, "D")
     dt <- .ttdFieldLookup(long, "DRUGTYPE")
@@ -296,6 +305,7 @@ downloadTTD <- function(rerun = TRUE, config = genConfig()) {
 #' because it costs nothing extra from the same file - nothing in this
 #' package is built on it.
 #' @keywords internal
+#' @noRd
 .ttdParseDrugXref <- function(path) {
     long  <- .ttdReadLong(path, "D")
     cid   <- .ttdFieldLookup(long, "PUBCHCID")
@@ -334,6 +344,7 @@ downloadTTD <- function(rerun = TRUE, config = genConfig()) {
 #' \code{"ICD-11: "} prefix is stripped and the sentinels normalized to
 #' \code{NA}.
 #' @keywords internal
+#' @noRd
 .ttdParseDrugIndications <- function(path) {
     lines <- readLines(path, warn = FALSE, encoding = "UTF-8")
     parts <- strsplit(lines, "\t", fixed = TRUE)
@@ -377,6 +388,7 @@ downloadTTD <- function(rerun = TRUE, config = genConfig()) {
 #' separately-packed columns, so a caller never has to assume positional
 #' alignment across columns to know which status goes with which disease.
 #' @keywords internal
+#' @noRd
 .ttdPackIndications <- function(ind) {
     if (nrow(ind) == 0L)
         return(data.frame(DrugID = character(0), Indication = character(0),
@@ -421,6 +433,7 @@ downloadTTD <- function(rerun = TRUE, config = genConfig()) {
 #'     since it says nothing about actual UniProt coverage).
 #' }
 #' @keywords internal
+#' @noRd
 .ttdResolveUniprotAcc <- function(targets, taxId = 9606L) {
     ttdMissing <- is.na(targets$Uniprot) | targets$Uniprot == "NOUNIPROTAC"
     acc <- rep(NA_character_, nrow(targets))
@@ -449,7 +462,7 @@ downloadTTD <- function(rerun = TRUE, config = genConfig()) {
 #' small-molecule/antibody/antisense/other classifier
 #'
 #' Primary signal is TTD's own \code{DrugType} (\code{DRUGTYPE} field,
-#' see \code{\link{.ttdParseDrugType}}), normalized from its ~80 raw
+#' see \code{.ttdParseDrugType}), normalized from its ~80 raw
 #' strings down to the 4 requested buckets by keyword match, in this
 #' priority order (checked in this sequence so e.g. \code{"Antibody-drug
 #' conjugate"} lands in \code{"antibody"} rather than being missed):
@@ -482,6 +495,7 @@ downloadTTD <- function(rerun = TRUE, config = genConfig()) {
 #' example), which the \code{DrugType}-driven classification defers to
 #' rather than second-guessing.
 #' @keywords internal
+#' @noRd
 .ttdMoleculeType <- function(drugType, smiles, drugName, moa) {
     dt <- trimws(drugType)
     hasType <- !is.na(dt) & nzchar(dt)
@@ -783,6 +797,7 @@ ttdTargetAnnot <- function(queryBy = list(molType = NULL, idType = NULL, ids = N
 #' \code{fields = "core"} and \code{fields = "all"} are equivalent for
 #' \code{\link{ttdTargetAnnot}}.
 #' @keywords internal
+#' @noRd
 .dtiTtdAllCols <- c("QueryIDs", "TargetID", "GeneName", "Uniprot", "TargetType",
                     "DrugID", "DrugName", "Smiles", "Highest_status", "MOA",
                     "Uniprot_acc", "uniprot_source", "molecule_type",

@@ -39,7 +39,7 @@ A single \code{data.frame} with columns \code{columns}, one
 \description{
 Row-binds a small set of canonical columns across whichever sources
 are present in \code{results}, mapping each source's own column names
-to a shared vocabulary (see \code{\link{.dtiCombineColMap}}). This is
+to a shared vocabulary (see \code{.dtiCombineColMap}). This is
 deliberately just column-name alignment and row append - not
 deduplication, not cross-source identity resolution (the same
 compound or target appearing under different native IDs in different
@@ -59,7 +59,7 @@ the Broad Repurposing Hub's \code{moa} (free text, e.g.
 \code{"fgfr inhibitor"}, not a controlled vocabulary) and GtoPdb's
 \code{action} (e.g. \code{"Inhibition"}) are similar. PubChem is not
 one of the
-combinable sources at all (see \code{\link{.dtiMetaSources}}): its
+combinable sources at all (see \code{.dtiMetaSources}): its
 bioactivity data has no mechanism-of-action concept to align to in
 the first place.
 }

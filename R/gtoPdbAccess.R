@@ -58,6 +58,7 @@
 
 #' Endpoint registry for GtoPdb's bulk REST endpoint and HGNC mapping file
 #' @keywords internal
+#' @noRd
 .gtoPdbEndpoints <- function() {
     list(
         interactions = "https://www.guidetopharmacology.org/services/interactions",
@@ -69,6 +70,7 @@
 #' \\code{<sup>}/\\code{<i>}/\\code{<small>} tags, e.g.
 #' \\code{"5-HT<sub>1A</sub> receptor"}) down to plain text.
 #' @keywords internal
+#' @noRd
 .gtoPdbStripHtml <- function(x) {
     gsub("<[^>]+>", "", x)
 }
@@ -76,6 +78,7 @@
 #' Extract GtoPdb's own release version from GtP_to_HGNC_mapping.tsv's
 #' "# GtoPdb Version: X.Y - published: YYYY-MM-DD" first-line comment.
 #' @keywords internal
+#' @noRd
 .gtoPdbVersion <- function(path) {
     hdr <- readLines(path, n = 1L, warn = FALSE, encoding = "UTF-8")
     hit <- regmatches(hdr, regexpr("Version:\\s*[0-9.]+", hdr))
@@ -142,6 +145,7 @@ downloadGtoPdb <- function(rerun = TRUE, config = genConfig()) {
 #' raw file's "IUPHAR ID" column also carries unrelated ligand IDs in
 #' the same numeric space).
 #' @keywords internal
+#' @noRd
 .gtoPdbReadHgncMapping <- function(path) {
     map <- read.delim(path, skip = 1L, sep = "\t", quote = "\"",
                       stringsAsFactors = FALSE, check.names = FALSE)
@@ -369,6 +373,7 @@ gtoPdbTargetAnnot <- function(queryBy = list(molType = NULL, idType = NULL, ids 
 #' \code{fields = "core"} and \code{fields = "all"} are equivalent for
 #' \code{\link{gtoPdbTargetAnnot}}.
 #' @keywords internal
+#' @noRd
 .dtiGtoPdbAllCols <- c("QueryIDs", "target_gene", "targetId", "targetName",
                        "species", "primaryTarget", "ligandId", "ligandName",
                        "type", "action", "affinity", "affinityParameter",

@@ -83,6 +83,7 @@ genConfig <- function(
 #' @return \code{df}, invisibly, unchanged - so this can be dropped
 #'   into a pipeline purely for its side effect.
 #' @keywords internal
+#' @noRd
 .assertUniqueKey <- function(df, keycols, dfName = deparse(substitute(df))) {
     ## sep is U+0001 (invisible in source), not "" - so e.g. c("A","BC")
     ## and c("AB","C") can't collide into the same pasted key.

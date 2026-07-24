@@ -33,7 +33,7 @@ request-line length at ~4KB, which limits a single filter to roughly
 separating commas, eating into that budget) — 200 leaves comfortable
 margin for both short legacy IDs (e.g. \code{"CHEMBL25"}) and longer
 modern ones (e.g. \code{"CHEMBL5291677"}). Requests are also
-client-side throttled (see \code{\link{.dtiApiGET}}) to be a polite
+client-side throttled (see \code{.dtiApiGET}) to be a polite
 API citizen; ChEMBL does not publish a hard rate limit.}
 
 \item{fields}{\code{"core"} (default), \code{"all"}, or a character

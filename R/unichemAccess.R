@@ -85,6 +85,7 @@
 
 #' Endpoint registry for UniChem's bulk table dumps
 #' @keywords internal
+#' @noRd
 .unichemEndpoints <- function() {
     list(
         base      = "https://ftp.ebi.ac.uk/pub/databases/chembl/UniChem/data/table_dumps",
@@ -106,6 +107,7 @@
 #' \code{rerun = FALSE} callers actually mean to ask.
 #' @return character(1) local file path, or \code{NA_character_} if none cached.
 #' @keywords internal
+#' @noRd
 .unichemLatestCachedDb <- function() {
     bfc <- .getCache()
     hits <- bfcquery(bfc, "unichem_", field = "rname")
@@ -183,6 +185,7 @@ downloadUnichemTables <- function(rerun = TRUE, config = genConfig()) {
 #' @param verbose logical(1); if TRUE, message progress per chunk.
 #' @return integer(1) total rows loaded (invisibly).
 #' @keywords internal
+#' @noRd
 .unichemLoadReference <- function(refPath, con, chunkSize = 500000L, verbose = FALSE) {
     f <- gzfile(refPath, "rt")
     on.exit(close(f))
@@ -208,12 +211,13 @@ downloadUnichemTables <- function(rerun = TRUE, config = genConfig()) {
 #' Default anchor sources for \code{\link{buildUnichemDb}}
 #'
 #' Drug/bioactivity-relevant UniChem sources. See
-#' \code{\link{.unichemFilterAndIndex}} for why plain "\code{>=2
+#' \code{.unichemFilterAndIndex} for why plain "\code{>=2
 #' sources}" is not a strict enough filter on its own - live-tested
 #' 2026-07-17: it retained 79.5M of 172M rows, 87% of which came from
 #' just pubchem/surechembl/molport clusters with no connection to any
 #' of these anchor sources at all.
 #' @keywords internal
+#' @noRd
 .unichemAnchorSources <- c("chembl", "drugbank", "chebi", "gtopdb",
                            "drugcentral", "bindingdb", "clinicaltrials")
 
@@ -249,11 +253,12 @@ downloadUnichemTables <- function(rerun = TRUE, config = genConfig()) {
 #' @param minSources integer(1) minimum distinct sources per UCI to keep
 #'   (default 2).
 #' @param anchorSources character vector of UniChem source names (see
-#'   \code{\link{.unichemAnchorSources}} for the default), or \code{NULL}
+#'   \code{.unichemAnchorSources} for the default), or \code{NULL}
 #'   to disable the anchor requirement and keep condition (a) only.
 #' @param verbose logical(1); if TRUE, message progress.
 #' @return invisible(NULL).
 #' @keywords internal
+#' @noRd
 .unichemFilterAndIndex <- function(con, minSources = 2L,
                                    anchorSources = .unichemAnchorSources,
                                    verbose = FALSE) {
@@ -308,7 +313,7 @@ downloadUnichemTables <- function(rerun = TRUE, config = genConfig()) {
 #' build date (UniChem's bulk dumps carry no release-version string the
 #' way TTD's flat files do); \code{rerun = FALSE} reuses \emph{any}
 #' previously-built \code{unichem_*.db} regardless of which day it was
-#' built (see \code{\link{.unichemLatestCachedDb}} - an exact same-day
+#' built (see \code{.unichemLatestCachedDb} - an exact same-day
 #' match would otherwise silently miss yesterday's build and trigger an
 #' unwanted ~hour-long rebuild).
 #'
@@ -321,16 +326,16 @@ downloadUnichemTables <- function(rerun = TRUE, config = genConfig()) {
 #'
 #' @param rerun logical(1); passed to \code{\link{downloadUnichemTables}},
 #'   and also controls whether any existing cached SQLite (see
-#'   \code{\link{.unichemLatestCachedDb}}) is reused (\code{FALSE}) or a
+#'   \code{.unichemLatestCachedDb}) is reused (\code{FALSE}) or a
 #'   fresh one is built (\code{TRUE}).
 #' @param config list as returned by \code{genConfig()}.
 #' @param minSources integer(1) minimum distinct sources per UCI to keep
-#'   (default 2) - see \code{\link{.unichemFilterAndIndex}}.
+#'   (default 2) - see \code{.unichemFilterAndIndex}.
 #' @param anchorSources character vector of UniChem source names a kept
 #'   UCI must reference at least one of, or \code{NULL} to disable this
-#'   requirement (default: \code{\link{.unichemAnchorSources}} - ChEMBL,
+#'   requirement (default: \code{.unichemAnchorSources} - ChEMBL,
 #'   DrugBank, ChEBI, Guide to Pharmacology, DrugCentral, BindingDB,
-#'   ClinicalTrials). See \code{\link{.unichemFilterAndIndex}} for why
+#'   ClinicalTrials). See \code{.unichemFilterAndIndex} for why
 #'   this matters: \code{minSources} alone is not enough to keep the
 #'   table drug-target-relevant.
 #' @param chunkSize integer(1) rows read per batch while loading
@@ -397,6 +402,7 @@ buildUnichemDb <- function(rerun = TRUE, config = genConfig(), minSources = 2L,
 #' not - live-confirmed 2026-07-17), so matching is done via
 #' \code{LOWER(name)} rather than assuming any particular casing.
 #' @keywords internal
+#' @noRd
 .unichemResolveSourceId <- function(x, con) {
     if (grepl("^[0-9]+$", x)) return(as.integer(x))
     hit <- dbGetQuery(con, "SELECT src_id FROM unichem_sources WHERE LOWER(name) = ?",

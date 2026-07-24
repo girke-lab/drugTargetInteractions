@@ -16,19 +16,19 @@ buildUnichemDb(
 \arguments{
 \item{rerun}{logical(1); passed to \code{\link{downloadUnichemTables}},
 and also controls whether any existing cached SQLite (see
-\code{\link{.unichemLatestCachedDb}}) is reused (\code{FALSE}) or a
+\code{.unichemLatestCachedDb}) is reused (\code{FALSE}) or a
 fresh one is built (\code{TRUE}).}
 
 \item{config}{list as returned by \code{genConfig()}.}
 
 \item{minSources}{integer(1) minimum distinct sources per UCI to keep
-(default 2) - see \code{\link{.unichemFilterAndIndex}}.}
+(default 2) - see \code{.unichemFilterAndIndex}.}
 
 \item{anchorSources}{character vector of UniChem source names a kept
 UCI must reference at least one of, or \code{NULL} to disable this
-requirement (default: \code{\link{.unichemAnchorSources}} - ChEMBL,
+requirement (default: \code{.unichemAnchorSources} - ChEMBL,
 DrugBank, ChEBI, Guide to Pharmacology, DrugCentral, BindingDB,
-ClinicalTrials). See \code{\link{.unichemFilterAndIndex}} for why
+ClinicalTrials). See \code{.unichemFilterAndIndex} for why
 this matters: \code{minSources} alone is not enough to keep the
 table drug-target-relevant.}
 
@@ -53,7 +53,7 @@ The file is cached via BiocFileCache under a name that includes the
 build date (UniChem's bulk dumps carry no release-version string the
 way TTD's flat files do); \code{rerun = FALSE} reuses \emph{any}
 previously-built \code{unichem_*.db} regardless of which day it was
-built (see \code{\link{.unichemLatestCachedDb}} - an exact same-day
+built (see \code{.unichemLatestCachedDb} - an exact same-day
 match would otherwise silently miss yesterday's build and trigger an
 unwanted ~hour-long rebuild).
 }

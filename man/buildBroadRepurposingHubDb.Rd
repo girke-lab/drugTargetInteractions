@@ -61,7 +61,7 @@ readings for a single \code{broad_id} that survived the row-level
 dedup untouched. Fixed by never merging \code{sample} into the
 interaction table at all: \code{broad_interactions} draws its
 compound-level structure fields from
-\code{\link{.brhCompoundStructure}} instead (a proper one-row-per-
+\code{.brhCompoundStructure} instead (a proper one-row-per-
 compound reduction of \code{sample}, packing the rare cases where a
 name genuinely covers multiple structures rather than picking one
 arbitrarily), and everything else \code{sample} carries (purity,
@@ -69,7 +69,7 @@ vendor, catalog_no, \code{qc_incompatible}, etc.) - which was never
 actually a property of a drug-target edge to begin with, only of a
 physical vial - moves to \code{broad_samples}, kept at its own
 natural grain. \code{broad_interactions}' grain is asserted, not
-just assumed, via \code{\link{.assertUniqueKey}} immediately after
+just assumed, via \code{.assertUniqueKey} immediately after
 the reduction, so a future Repurposing Hub release that breaks this
 assumption fails the build loudly instead of silently reinflating
 results. \code{idType = "broad_id"} queries

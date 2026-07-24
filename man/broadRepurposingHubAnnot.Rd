@@ -63,7 +63,7 @@ row with all other fields \code{NA}.
 Repurposing Hub's own \code{pert_iname} values are lower-case, unlike
 most other sources in this package); \code{"broad_id"} is exact-match.
 A drug with no listed target still has one row with
-\code{target_gene = NA} (see \code{\link{.brhExplodeTargets}}), so it
+\code{target_gene = NA} (see \code{.brhExplodeTargets}), so it
 remains reachable by name/broad_id even though it can never surface
 via a gene-side query.
 }

@@ -68,6 +68,7 @@
 
 #' Endpoint registry for the Broad Repurposing Hub flat files
 #' @keywords internal
+#' @noRd
 .brhEndpoints <- function() {
     list(
         drug   = "https://repo-hub.broadinstitute.org/public/data/repo-drug-annotation-20200324.txt",
@@ -146,6 +147,7 @@ loK8Ee0Y9wee43mVaHEdRD11fUQZYXsnXIFFtVXsIFH43LTiYfgN
 #' one legitimate, publicly-issued certificate on top of whatever the
 #' platform already trusts; it never disables or weakens verification.
 #' @keywords internal
+#' @noRd
 .brhWithSupplementalCa <- function(expr) {
     candidates <- .brhSystemCaBundleCandidates()
     hits <- candidates[!is.na(candidates) & nzchar(candidates) & file.exists(candidates)]
@@ -175,6 +177,7 @@ loK8Ee0Y9wee43mVaHEdRD11fUQZYXsnXIFFtVXsIFH43LTiYfgN
 #' \code{moa} values), and disabling it would leave stray literal quote
 #' characters in the parsed values.
 #' @keywords internal
+#' @noRd
 .brhReadTable <- function(path) {
     lines <- readLines(path, warn = FALSE, encoding = "UTF-8")
     meta  <- grep("^!", lines)
@@ -255,6 +258,7 @@ downloadBroadRepurposingHub <- function(rerun = TRUE, config = genConfig()) {
 #' remain reachable via drug-name lookup even though they can never
 #' surface via a gene-side query.
 #' @keywords internal
+#' @noRd
 .brhExplodeTargets <- function(drug) {
     genes <- strsplit(drug$target, " | ", fixed = TRUE)
     n <- lengths(genes)
@@ -307,6 +311,7 @@ downloadBroadRepurposingHub <- function(rerun = TRUE, config = genConfig()) {
 #' checkable molecule identity; the honest key there is
 #' \code{InChIKey}, not name.
 #' @keywords internal
+#' @noRd
 .brhCompoundStructure <- function(sample) {
     structCols <- c("smiles", "InChIKey", "pubchem_cid")
     distinct <- unique(sample[, c("pert_iname", structCols)])
@@ -385,7 +390,7 @@ downloadBroadRepurposingHub <- function(rerun = TRUE, config = genConfig()) {
 #' dedup untouched. Fixed by never merging \code{sample} into the
 #' interaction table at all: \code{broad_interactions} draws its
 #' compound-level structure fields from
-#' \code{\link{.brhCompoundStructure}} instead (a proper one-row-per-
+#' \code{.brhCompoundStructure} instead (a proper one-row-per-
 #' compound reduction of \code{sample}, packing the rare cases where a
 #' name genuinely covers multiple structures rather than picking one
 #' arbitrarily), and everything else \code{sample} carries (purity,
@@ -393,7 +398,7 @@ downloadBroadRepurposingHub <- function(rerun = TRUE, config = genConfig()) {
 #' actually a property of a drug-target edge to begin with, only of a
 #' physical vial - moves to \code{broad_samples}, kept at its own
 #' natural grain. \code{broad_interactions}' grain is asserted, not
-#' just assumed, via \code{\link{.assertUniqueKey}} immediately after
+#' just assumed, via \code{.assertUniqueKey} immediately after
 #' the reduction, so a future Repurposing Hub release that breaks this
 #' assumption fails the build loudly instead of silently reinflating
 #' results. \code{idType = "broad_id"} queries
@@ -511,7 +516,7 @@ buildBroadRepurposingHubDb <- function(rerun = FALSE, config = genConfig()) {
 #' Repurposing Hub's own \code{pert_iname} values are lower-case, unlike
 #' most other sources in this package); \code{"broad_id"} is exact-match.
 #' A drug with no listed target still has one row with
-#' \code{target_gene = NA} (see \code{\link{.brhExplodeTargets}}), so it
+#' \code{target_gene = NA} (see \code{.brhExplodeTargets}), so it
 #' remains reachable by name/broad_id even though it can never surface
 #' via a gene-side query.
 #'
@@ -667,6 +672,7 @@ broadRepurposingHubAnnot <- function(queryBy = list(molType = NULL, idType = NUL
 #' \code{fields = "all"} are equivalent for
 #' \code{\link{broadRepurposingHubAnnot}}.
 #' @keywords internal
+#' @noRd
 .dtiBroadAllCols <- c("QueryIDs", "target_gene", "pert_iname", "clinical_phase",
                       "moa", "disease_area", "indication", "smiles", "InChIKey",
                       "pubchem_cid", "structure_ambiguous")

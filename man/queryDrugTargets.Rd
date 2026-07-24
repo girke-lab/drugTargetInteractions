@@ -23,10 +23,10 @@ and \code{ids}. \code{molType} is \code{"gene"} or \code{"protein"}
 (accepted interchangeably) for the target -> drug direction, or
 \code{"cmp"} for drug -> target. \code{idType} is one of
 \code{"symbol"}, \code{"uniprot"}, \code{"ensembl"} for the gene/
-protein side (see \code{\link{.resolveGeneIds}}), or one of
+protein side (see \code{.resolveGeneIds}), or one of
 \code{"name"}, \code{"chembl_id"}, \code{"pubchem_id"},
 \code{"drugbank_id"}, \code{"chebi_id"} for the compound side (see
-\code{\link{.resolveCompoundIds}}) - not each source's own native
+\code{.resolveCompoundIds}) - not each source's own native
 vocabulary, which this function translates to internally.}
 
 \item{sources}{character vector, any of \code{"chembl"},
@@ -54,7 +54,7 @@ rationale as \code{ttdDbPath}.}
 \code{\link{buildUnichemDb}}); required whenever compound-side
 resolution needs it (structured-ID-to-structured-ID or
 structured-ID-to-name translation - see
-\code{\link{.resolveCompoundIds}}). Not built automatically -
+\code{.resolveCompoundIds}). Not built automatically -
 \code{\link{buildUnichemDb}} takes on the order of an hour.}
 
 \item{taxId}{integer(1) NCBI taxonomy ID for gene/protein-side
@@ -77,16 +77,16 @@ subset common to all of them).}
 A named list, one element (a \code{data.frame}) per source
   that returned a result. \code{attr(result, "resolved")} holds the
   per-source ID-resolution vectors (named by the original
-  \code{queryBy$ids}, as returned by \code{\link{.resolveGeneIds}}/
-  \code{\link{.resolveCompoundIds}}) for tracing which input ID led to
+  \code{queryBy$ids}, as returned by \code{.resolveGeneIds}/
+  \code{.resolveCompoundIds}) for tracing which input ID led to
   which rows.
 }
 \description{
 The tying-together piece of the ID-translation layer (see
 \code{idTranslation.R}, \code{unichemAccess.R}): resolves
 \code{queryBy$ids} to whatever native identifier each requested
-source needs (see \code{\link{.resolveGeneIds}}/
-\code{\link{.resolveCompoundIds}} for how), then dispatches to that
+source needs (see \code{.resolveGeneIds}/
+\code{.resolveCompoundIds} for how), then dispatches to that
 source's own bidirectional \emph{annotation} query function
 (\code{\link{getChemblDrugTarget}}, \code{\link{getDgidbDrugTarget}},
 \code{\link{getOpenTargetsDrugTarget}}, \code{\link{ttdTargetAnnot}},

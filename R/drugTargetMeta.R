@@ -60,10 +60,12 @@
 #' using the wrong one for the wrong direction is a 400 Bad Request, not
 #' a graceful empty result.
 #' @keywords internal
+#' @noRd
 .dtiGeneIdTypeMapFrom <- c(symbol = "Gene_Name", uniprot = "UniProtKB_AC-ID",
                            ensembl = "Ensembl")
 #' @rdname dot-dtiGeneIdTypeMapFrom
 #' @keywords internal
+#' @noRd
 .dtiGeneIdTypeMapTo <- c(symbol = "Gene_Name", uniprot = "UniProtKB-Swiss-Prot",
                          ensembl = "Ensembl")
 
@@ -97,6 +99,7 @@
 #'   \code{ids}, with resolved identifiers (or \code{NA} for any \code{id}
 #'   that did not resolve).
 #' @keywords internal
+#' @noRd
 .resolveGeneIds <- function(ids, idType, to, taxId = 9606L, verbose = FALSE) {
     idType <- match.arg(idType, names(.dtiGeneIdTypeMapFrom))
     to <- match.arg(to, names(.dtiGeneIdTypeMapFrom))
@@ -131,6 +134,7 @@
 
 #' Canonical compound idType (excluding \code{"name"}) -> UniChem source name
 #' @keywords internal
+#' @noRd
 .dtiCompoundIdTypeMap <- c(chembl_id = "chembl", pubchem_id = "pubchem",
                            drugbank_id = "drugbank", chebi_id = "chebi")
 
@@ -139,7 +143,7 @@
 #' Canonical vocabulary: \code{"name"} (compound/drug name - unreliable
 #' due to ambiguity, but what most of the 5 drug-target sources accept
 #' natively), plus any structured-ID type in
-#' \code{\link{.dtiCompoundIdTypeMap}} (\code{"chembl_id"},
+#' \code{.dtiCompoundIdTypeMap} (\code{"chembl_id"},
 #' \code{"pubchem_id"}, \code{"drugbank_id"}, \code{"chebi_id"} -
 #' extensible to any source \code{\link{getUnichemMapping}}'s underlying
 #' database carries).
@@ -162,7 +166,7 @@
 #'
 #' @param ids character vector of source identifiers.
 #' @param idType character(1) \code{"name"} or a key of
-#'   \code{\link{.dtiCompoundIdTypeMap}}.
+#'   \code{.dtiCompoundIdTypeMap}.
 #' @param to character(1) same vocabulary - the type to resolve to.
 #' @param unichemDbPath character(1) path to a UniChem SQLite (see
 #'   \code{\link{buildUnichemDb}}); required whenever a structured ID
@@ -172,6 +176,7 @@
 #'   \code{ids}, with resolved identifiers (or \code{NA} for any \code{id}
 #'   that did not resolve).
 #' @keywords internal
+#' @noRd
 .resolveCompoundIds <- function(ids, idType, to, unichemDbPath = NULL, verbose = FALSE) {
     validTypes <- c("name", names(.dtiCompoundIdTypeMap))
     idType <- match.arg(idType, validTypes)
@@ -243,7 +248,7 @@
 #' type every non-ChEMBL source accepts directly - except ChEMBL, which
 #' needs a UniProt accession. Compound side all resolve to a name -
 #' efficient in the common case (a name input is a zero-network
-#' passthrough - see \code{\link{.resolveCompoundIds}}) - except ChEMBL
+#' passthrough - see \code{.resolveCompoundIds}) - except ChEMBL
 #' and Open Targets, which take a ChEMBL ID directly (and, for Open
 #' Targets, still work when handed one under \code{idType = "name"},
 #' since \code{getOpenTargetsDrugTarget()} passes ChEMBL-shaped strings
@@ -259,6 +264,7 @@
 #' and \code{\link{listBioassayFields}} for the bioassay-track
 #' counterpart.
 #' @keywords internal
+#' @noRd
 .dtiMetaSources <- list(
     chembl      = list(gene = "uniprot",  cmp = "chembl_id"),
     dgidb       = list(gene = "symbol",   cmp = "name"),
@@ -270,6 +276,7 @@
 
 #' Build the native \code{queryBy} list a given source's function expects
 #' @keywords internal
+#' @noRd
 .dtiMetaQueryBy <- function(src, isGene, ids) {
     switch(src,
         chembl = if (isGene) list(molType = "protein", idType = "Uniprot", ids = ids)
@@ -292,8 +299,8 @@
 #' The tying-together piece of the ID-translation layer (see
 #' \code{idTranslation.R}, \code{unichemAccess.R}): resolves
 #' \code{queryBy$ids} to whatever native identifier each requested
-#' source needs (see \code{\link{.resolveGeneIds}}/
-#' \code{\link{.resolveCompoundIds}} for how), then dispatches to that
+#' source needs (see \code{.resolveGeneIds}/
+#' \code{.resolveCompoundIds} for how), then dispatches to that
 #' source's own bidirectional \emph{annotation} query function
 #' (\code{\link{getChemblDrugTarget}}, \code{\link{getDgidbDrugTarget}},
 #' \code{\link{getOpenTargetsDrugTarget}}, \code{\link{ttdTargetAnnot}},
@@ -325,10 +332,10 @@
 #'   (accepted interchangeably) for the target -> drug direction, or
 #'   \code{"cmp"} for drug -> target. \code{idType} is one of
 #'   \code{"symbol"}, \code{"uniprot"}, \code{"ensembl"} for the gene/
-#'   protein side (see \code{\link{.resolveGeneIds}}), or one of
+#'   protein side (see \code{.resolveGeneIds}), or one of
 #'   \code{"name"}, \code{"chembl_id"}, \code{"pubchem_id"},
 #'   \code{"drugbank_id"}, \code{"chebi_id"} for the compound side (see
-#'   \code{\link{.resolveCompoundIds}}) - not each source's own native
+#'   \code{.resolveCompoundIds}) - not each source's own native
 #'   vocabulary, which this function translates to internally.
 #' @param sources character vector, any of \code{"chembl"},
 #'   \code{"dgidb"}, \code{"opentargets"}, \code{"ttd"}, \code{"broad"},
@@ -351,7 +358,7 @@
 #'   \code{\link{buildUnichemDb}}); required whenever compound-side
 #'   resolution needs it (structured-ID-to-structured-ID or
 #'   structured-ID-to-name translation - see
-#'   \code{\link{.resolveCompoundIds}}). Not built automatically -
+#'   \code{.resolveCompoundIds}). Not built automatically -
 #'   \code{\link{buildUnichemDb}} takes on the order of an hour.
 #' @param taxId integer(1) NCBI taxonomy ID for gene/protein-side
 #'   resolution (default 9606L = human); passed to
@@ -369,8 +376,8 @@
 #' @return A named list, one element (a \code{data.frame}) per source
 #'   that returned a result. \code{attr(result, "resolved")} holds the
 #'   per-source ID-resolution vectors (named by the original
-#'   \code{queryBy$ids}, as returned by \code{\link{.resolveGeneIds}}/
-#'   \code{\link{.resolveCompoundIds}}) for tracing which input ID led to
+#'   \code{queryBy$ids}, as returned by \code{.resolveGeneIds}/
+#'   \code{.resolveCompoundIds}) for tracing which input ID led to
 #'   which rows.
 #' @examples
 #' \donttest{
@@ -477,9 +484,10 @@ queryDrugTargets <- function(queryBy = list(molType = NULL, idType = NULL, ids =
 
 #' Display name per source, used as a constant \code{source} column value
 #'
-#' PubChem is not included - see \code{\link{.dtiMetaSources}} for why
+#' PubChem is not included - see \code{.dtiMetaSources} for why
 #' it's excluded from this whole annotation-combining layer.
 #' @keywords internal
+#' @noRd
 .dtiCombineSourceLabel <- c(chembl = "ChEMBL", dgidb = "DGIdb",
                             opentargets = "OpenTargets", ttd = "TTD",
                             broad = "Broad Repurposing Hub", gtopdb = "GtoPdb")
@@ -497,8 +505,9 @@ queryDrugTargets <- function(queryBy = list(molType = NULL, idType = NULL, ids =
 #' \code{queryDrugTargets()}'s \code{"resolved"} attribute so it reflects
 #' the user's *original* query token rather than each source's own,
 #' possibly-translated \code{QueryIDs}; source is always a constant, see
-#' \code{\link{.dtiCombineSourceLabel}}, not looked up per row).
+#' \code{.dtiCombineSourceLabel}, not looked up per row).
 #' @keywords internal
+#' @noRd
 .dtiCombineColMap <- list(
     gene_symbol = c(chembl = NA, dgidb = "gene_name",
                     opentargets = "approved_symbol", ttd = "GeneName",
@@ -515,7 +524,7 @@ queryDrugTargets <- function(queryBy = list(molType = NULL, idType = NULL, ids =
 #'
 #' Row-binds a small set of canonical columns across whichever sources
 #' are present in \code{results}, mapping each source's own column names
-#' to a shared vocabulary (see \code{\link{.dtiCombineColMap}}). This is
+#' to a shared vocabulary (see \code{.dtiCombineColMap}). This is
 #' deliberately just column-name alignment and row append - not
 #' deduplication, not cross-source identity resolution (the same
 #' compound or target appearing under different native IDs in different
@@ -534,7 +543,7 @@ queryDrugTargets <- function(queryBy = list(molType = NULL, idType = NULL, ids =
 #' \code{"fgfr inhibitor"}, not a controlled vocabulary) and GtoPdb's
 #' \code{action} (e.g. \code{"Inhibition"}) are similar. PubChem is not
 #' one of the
-#' combinable sources at all (see \code{\link{.dtiMetaSources}}): its
+#' combinable sources at all (see \code{.dtiMetaSources}): its
 #' bioactivity data has no mechanism-of-action concept to align to in
 #' the first place.
 #'
