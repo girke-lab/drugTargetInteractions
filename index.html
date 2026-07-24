@@ -1959,7 +1959,7 @@ function toggle_visibility(id1) {
 
 <h1 class="title toc-ignore">drugTargetInteractions: Mining the Druggable Genome</h1>
 <p class="author-name">Authors: Kevin Horan, Brandon Le, Brendan Gongol, Desmond Cairo, Mohammad Afsharinia, Tandis Salem, Dan Evans, Nicholas Schork and Thomas Girke</p>
-<h4 class="date">Last update: 22 July, 2026</h4>
+<h4 class="date">Last update: 23 July, 2026</h4>
 
 </div>
 
@@ -2802,8 +2802,12 @@ hand-coded per database) - <code>&quot;chembl&quot;</code>, <code>&quot;pubchem&
 ## reuses whatever was built, regardless of which day that was.
 unichemDbPath &lt;- buildUnichemDb()</code></pre>
 <pre class="r"><code>unichemDbPath &lt;- buildUnichemDb(rerun = FALSE)
-getUnichemMapping(&quot;CHEMBL25&quot;, from = &quot;chembl&quot;, to = &quot;pubchem&quot;, unichemDbPath)   # aspirin -&gt; CID
-getUnichemMapping(&quot;CHEMBL25&quot;, from = &quot;chembl&quot;, to = &quot;drugbank&quot;, unichemDbPath) # aspirin -&gt; DrugBank ID</code></pre>
+getUnichemMapping(&quot;CHEMBL25&quot;, from = &quot;chembl&quot;, to = &quot;pubchem&quot;, unichemDbPath)   # aspirin -&gt; CID</code></pre>
+<pre><code>##       From   To
+## 1 CHEMBL25 2244</code></pre>
+<pre class="r"><code>getUnichemMapping(&quot;CHEMBL25&quot;, from = &quot;chembl&quot;, to = &quot;drugbank&quot;, unichemDbPath) # aspirin -&gt; DrugBank ID</code></pre>
+<pre><code>##       From      To
+## 1 CHEMBL25 DB00945</code></pre>
 <p>Unlike UniProt’s or Ensembl’s REST APIs, UniChem’s own live per-compound
 API does not support batch queries and was found to be intermittently
 unreliable for even single lookups - the local-SQLite approach exists
@@ -2917,6 +2921,9 @@ the same way once one has been built:</p>
     list(molType = &quot;cmp&quot;, idType = &quot;drugbank_id&quot;, ids = &quot;DB00945&quot;),  # aspirin
     sources = &quot;chembl&quot;, unichemDbPath = unichemDbPath)
 res_drugbank$chembl[, c(&quot;QueryIDs&quot;, &quot;UniProt_ID&quot;, &quot;Organism&quot;)]</code></pre>
+<pre><code>##   QueryIDs UniProt_ID     Organism
+## 1 CHEMBL25     P35354 Homo sapiens
+## 2 CHEMBL25     P23219 Homo sapiens</code></pre>
 <p>A source that a query resolved nothing for, or whose own call failed (e.g.
 a required local database path was not supplied), simply contributes no
 element to the result list rather than raising an error - set
@@ -3130,9 +3137,60 @@ than the SQLite directly). This remains useful for bulk, offline, or
 very-high-volume ChEMBL querying where the REST API’s batch limits (see
 <a href="#performance-considerations">Performance Considerations</a>) are impractical.</p>
 <pre class="r"><code>config &lt;- genConfig(chemblDbPath = &quot;chembldb.db&quot;)
-downloadChemblDb(rerun = TRUE, config = config)  # downloads the full ChEMBL SQLite (several GB)
-queryBy &lt;- list(molType = &quot;protein&quot;, idType = &quot;UniProt_ID&quot;, ids = &quot;P11362&quot;)
-drugTargetAnnot(queryBy, config = config)</code></pre>
+downloadChemblDb(rerun = TRUE, config = config)  # downloads the full ChEMBL SQLite (several GB)</code></pre>
+<p>The examples below instead point <code>chemblDbPath</code> at the small ChEMBL
+subset shipped with the package (<code>inst/extdata/chembl_sample.db</code>), so
+they run - and are checked - as part of every vignette build rather than
+only being documented. <code>drugTargetAnnot()</code> additionally needs a compound
+ID cross-reference table built once via <code>downloadUniChem()</code>/
+<code>cmpIdMapping()</code> (see <a href="#static-unichem-mirror">Static UniChem Mirror</a> below) - <code>resultsPath</code> is
+pointed at a temp directory here purely to avoid leaving files behind in
+the vignette source tree:</p>
+<pre class="r"><code>config &lt;- genConfig(
+    chemblDbPath = system.file(&quot;extdata&quot;, &quot;chembl_sample.db&quot;, package = &quot;drugTargetInteractions&quot;),
+    resultsPath = tempfile())
+downloadUniChem(config = config, rerun = TRUE)
+cmpIdMapping(config = config, rerun = TRUE)
+t2d &lt;- drugTargetAnnot(
+    list(molType = &quot;protein&quot;, idType = &quot;UniProt_ID&quot;, ids = &quot;P00915&quot;), config = config)
+head(t2d[, c(&quot;Drug_Name&quot;, &quot;MOA&quot;, &quot;Action_Type&quot;, &quot;First_Approval&quot;)])</code></pre>
+<pre><code>##              Drug_Name                            MOA Action_Type First_Approval
+## 1     DICHLORPHENAMIDE Carbonic anhydrase I inhibitor   INHIBITOR           1958
+## 2        ETHOXZOLAMIDE   Carbonic anhydrase inhibitor   INHIBITOR           1982
+## 3        METHAZOLAMIDE Carbonic anhydrase I inhibitor   INHIBITOR           1959
+## 4                 &lt;NA&gt; Carbonic anhydrase I inhibitor   INHIBITOR             NA
+## 5           POLMACOXIB Carbonic anhydrase I inhibitor   INHIBITOR             NA
+## 6 ACETAZOLAMIDE SODIUM Carbonic anhydrase I inhibitor   INHIBITOR           1990</code></pre>
+<pre class="r"><code>d2t &lt;- drugTargetAnnot(
+    list(molType = &quot;cmp&quot;, idType = &quot;chembl_id&quot;, ids = &quot;CHEMBL25&quot;), config = config)  # aspirin
+d2t[, c(&quot;UniProt_ID&quot;, &quot;Organism&quot;, &quot;MOA&quot;)]</code></pre>
+<pre><code>##   UniProt_ID     Organism                      MOA
+## 1     P23219 Homo sapiens Cyclooxygenase inhibitor
+## 2     P35354 Homo sapiens Cyclooxygenase inhibitor</code></pre>
+<p><code>getDrugTarget()</code> queries a pre-generated flat-file export instead of the
+SQLite directly - built once with <code>drugTargetAnnotTable()</code> and re-read on
+every subsequent call, which is faster for repeated querying against the
+same ChEMBL snapshot:</p>
+<pre class="r"><code>annotFile &lt;- tempfile(fileext = &quot;.xls&quot;)
+drugTargetAnnotTable(outfile = annotFile, config = config, rerun = TRUE)
+id_mapping &lt;- c(chembl = &quot;chembl_id&quot;, pubchem = &quot;PubChem_ID&quot;,
+    uniprot = &quot;UniProt_ID&quot;, drugbank = &quot;DrugBank_ID&quot;)
+getDrugTarget(dt_file = annotFile,
+    queryBy = list(molType = &quot;cmp&quot;, idType = &quot;chembl&quot;, ids = &quot;CHEMBL25&quot;),
+    id_mapping = id_mapping)[, c(&quot;pref_name&quot;, &quot;action_type&quot;, &quot;UniProt_ID&quot;, &quot;Organism&quot;)]</code></pre>
+<pre><code>##   pref_name action_type     UniProt_ID                   Organism
+## 1   ASPIRIN   INHIBITOR P23219, P35354 Homo sapiens, Homo sapiens</code></pre>
+<p><code>drugTargetBioactivity()</code> returns the corresponding raw bioassay
+measurements (IC50/Ki/Kd/EC50) from the same local SQLite:</p>
+<pre class="r"><code>ba &lt;- drugTargetBioactivity(
+    list(molType = &quot;protein&quot;, idType = &quot;uniprot&quot;, ids = &quot;P00915&quot;), config = config)
+head(ba[, c(&quot;pref_name&quot;, &quot;standard_type&quot;, &quot;standard_value&quot;, &quot;standard_units&quot;)])</code></pre>
+<pre><code>##       pref_name standard_type standard_value standard_units
+## 1 ACETAMINOPHEN            Ki          10000             nM
+## 2 ACETAMINOPHEN            Ki          10000             nM
+## 3       ASPIRIN          IC50        2710000             nM
+## 4       ASPIRIN            Ki        7530000             nM
+## 5 ACETAMINOPHEN            Ki          10000             nM</code></pre>
 </div>
 <div id="uniprot.ws-based-id-mapping" class="section level2" number="8.2">
 <h2><span class="header-section-number">8.2</span> UniProt.ws-Based ID Mapping</h2>
@@ -3153,8 +3211,77 @@ backward compatibility.</p>
 <pre class="r"><code>queryBy &lt;- list(molType = &quot;gene&quot;, idType = &quot;external_gene_name&quot;, ids = &quot;FGFR1&quot;)
 getParalogs(queryBy)</code></pre>
 </div>
-<div id="static-unichem-mirror" class="section level2" number="8.4">
-<h2><span class="header-section-number">8.4</span> Static UniChem Mirror</h2>
+<div id="ensembldb-based-id-mapping" class="section level2" number="8.4">
+<h2><span class="header-section-number">8.4</span> ensembldb-Based ID Mapping</h2>
+<p><code>getSymEnsUp()</code> is a third, independent way to translate between gene
+symbols, Ensembl gene IDs and UniProt accessions - based on a local
+Bioconductor annotation package (<em><a href="https://bioconductor.org/packages/3.24/EnsDb.Hsapiens.v86">EnsDb.Hsapiens.v86</a></em>) via
+<em><a href="https://bioconductor.org/packages/3.24/ensembldb">ensembldb</a></em>, rather than a live web service. Useful when
+network access to UniProt’s or Ensembl’s REST endpoints isn’t available.
+Supported <code>idtype</code> values are <code>GENE_NAME</code>, <code>ENSEMBL_GENE_ID</code> and
+<code>UNIPROT_ID</code>.</p>
+<pre class="r"><code>idMap &lt;- getSymEnsUp(EnsDb = &quot;EnsDb.Hsapiens.v86&quot;, ids = &quot;FGFR1&quot;, idtype = &quot;GENE_NAME&quot;)</code></pre>
+<pre><code>## Loading required package: EnsDb.Hsapiens.v86</code></pre>
+<pre><code>## Loading required package: ensembldb</code></pre>
+<pre><code>## Loading required package: BiocGenerics</code></pre>
+<pre><code>## Loading required package: generics</code></pre>
+<pre><code>## 
+## Attaching package: &#39;generics&#39;</code></pre>
+<pre><code>## The following objects are masked from &#39;package:base&#39;:
+## 
+##     as.difftime, as.factor, as.ordered, intersect, is.element, setdiff, setequal, union</code></pre>
+<pre><code>## 
+## Attaching package: &#39;BiocGenerics&#39;</code></pre>
+<pre><code>## The following objects are masked from &#39;package:stats&#39;:
+## 
+##     IQR, mad, sd, var, xtabs</code></pre>
+<pre><code>## The following object is masked from &#39;package:utils&#39;:
+## 
+##     data</code></pre>
+<pre><code>## The following objects are masked from &#39;package:base&#39;:
+## 
+##     anyDuplicated, aperm, append, as.data.frame, basename, cbind, colnames, dirname,
+##     do.call, duplicated, eval, evalq, Filter, Find, get, grep, grepl, is.unsorted,
+##     lapply, Map, mapply, match, mget, order, paste, pmax, pmax.int, pmin, pmin.int,
+##     Position, rank, rbind, Reduce, rownames, sapply, saveRDS, scale, sequence, table,
+##     tapply, transform, unique, unsplit, which.max, which.min</code></pre>
+<pre><code>## Loading required package: GenomicRanges</code></pre>
+<pre><code>## Loading required package: stats4</code></pre>
+<pre><code>## Loading required package: S4Vectors</code></pre>
+<pre><code>## 
+## Attaching package: &#39;S4Vectors&#39;</code></pre>
+<pre><code>## The following object is masked from &#39;package:utils&#39;:
+## 
+##     findMatches</code></pre>
+<pre><code>## The following objects are masked from &#39;package:base&#39;:
+## 
+##     expand.grid, I, unname</code></pre>
+<pre><code>## Loading required package: IRanges</code></pre>
+<pre><code>## Loading required package: Seqinfo</code></pre>
+<pre><code>## Loading required package: GenomicFeatures</code></pre>
+<pre><code>## Loading required package: AnnotationDbi</code></pre>
+<pre><code>## Loading required package: Biobase</code></pre>
+<pre><code>## Welcome to Bioconductor
+## 
+##     Vignettes contain introductory material; view with &#39;browseVignettes()&#39;. To cite
+##     Bioconductor, see &#39;citation(&quot;Biobase&quot;)&#39;, and for packages &#39;citation(&quot;pkgname&quot;)&#39;.</code></pre>
+<pre><code>## Loading required package: AnnotationFilter</code></pre>
+<pre><code>## 
+## Attaching package: &#39;ensembldb&#39;</code></pre>
+<pre><code>## The following object is masked from &#39;package:stats&#39;:
+## 
+##     filter</code></pre>
+<pre class="r"><code>head(idMap$idDF)</code></pre>
+<pre><code>##           gene_id gene_name uniprot_id      protein_id
+## 1 ENSG00000077782     FGFR1     P11362 ENSP00000380280
+## 2 ENSG00000077782     FGFR1     P11362 ENSP00000432972
+## 3 ENSG00000077782     FGFR1 A0A0S2Z3Q6 ENSP00000432972
+## 4 ENSG00000077782     FGFR1     P11362 ENSP00000380302
+## 5 ENSG00000077782     FGFR1     P11362 ENSP00000348537
+## 6 ENSG00000077782     FGFR1     P11362 ENSP00000337247</code></pre>
+</div>
+<div id="static-unichem-mirror" class="section level2" number="8.5">
+<h2><span class="header-section-number">8.5</span> Static UniChem Mirror</h2>
 <p><code>downloadUniChem()</code>/<code>cmpIdMapping()</code> predate <code>buildUnichemDb()</code>/
 <code>getUnichemMapping()</code> (see <a href="#id-translation-layer">ID Translation Layer</a>) and work from a small,
 static, pre-computed ChEMBL↔︎{DrugBank, PubChem, ChEBI} cross-reference
@@ -3164,11 +3291,36 @@ workflow above, which uses it internally via <code>cmpIdMapping()</code>.</p>
 <pre class="r"><code>downloadUniChem(rerun = TRUE)
 cmpIdMapping(outfile = &quot;cmp_ids.rds&quot;, rerun = TRUE)</code></pre>
 </div>
+<div id="putting-it-together" class="section level2" number="8.6">
+<h2><span class="header-section-number">8.6</span> Putting It Together</h2>
+<p><code>runDrugTarget_Annot_Bioassay()</code> is a convenience wrapper combining
+<code>drugTargetAnnot()</code> and <code>drugTargetBioactivity()</code> for a set of UniProt
+IDs obtained from <code>getUniprotIDs()</code> or <code>getParalogs()</code> - the legacy
+equivalent of this vignette’s own <a href="#cross-source-queries">Cross-Source Queries</a> combining step,
+predating <code>combineDrugTargets()</code>. It expects the two-slot (<code>IDM</code>/<code>SSNN</code>)
+list structure returned by those ID-mapping functions:</p>
+<pre class="r"><code>idMap &lt;- getSymEnsUp(EnsDb = &quot;EnsDb.Hsapiens.v86&quot;, ids = c(&quot;CA7&quot;, &quot;CFTR&quot;), idtype = &quot;GENE_NAME&quot;)
+queryBy &lt;- list(molType = &quot;gene&quot;, idType = &quot;ensembl_gene_id&quot;, ids = names(idMap$ens_gene_id))
+res_list &lt;- getParalogs(queryBy)
+combined &lt;- runDrugTarget_Annot_Bioassay(res_list = res_list, up_col_id = &quot;ID_up_sp&quot;,
+    ens_gene_id = idMap$ens_gene_id, config = config)
+sapply(combined, nrow)</code></pre>
+<pre><code>## Annotation   Bioassay 
+##         55         35</code></pre>
+<pre class="r"><code>head(combined$Annotation[, c(&quot;GeneName&quot;, &quot;Drug_Name&quot;, &quot;MOA&quot;)])</code></pre>
+<pre><code>##    GeneName     Drug_Name                              MOA
+## 1       CA7 ETHOXZOLAMIDE     Carbonic anhydrase inhibitor
+## 2       CA7 METHAZOLAMIDE Carbonic anhydrase VII inhibitor
+## 3 Query_CA7          &lt;NA&gt;                             &lt;NA&gt;
+## 4 Query_CA7 ETHOXZOLAMIDE     Carbonic anhydrase inhibitor
+## 5 Query_CA7          &lt;NA&gt;                             &lt;NA&gt;
+## 6 Query_CA7 ETHOXZOLAMIDE     Carbonic anhydrase inhibitor</code></pre>
+</div>
 </div>
 <div id="session-info" class="section level1" number="9">
 <h1><span class="header-section-number">9</span> Session Info</h1>
 <pre class="r"><code>sessionInfo()</code></pre>
-<pre><code>## R version 4.6.0 (2026-04-24)
+<pre><code>## R Under development (unstable) (2026-06-15 r90156)
 ## Platform: x86_64-pc-linux-gnu
 ## Running under: Debian GNU/Linux 12 (bookworm)
 ## 
@@ -3186,46 +3338,46 @@ cmpIdMapping(outfile = &quot;cmp_ids.rds&quot;, rerun = TRUE)</code></pre>
 ## tzcode source: system (glibc)
 ## 
 ## attached base packages:
-## [1] stats     graphics  grDevices utils     datasets  methods   base     
+## [1] stats4    stats     graphics  grDevices utils     datasets  methods   base     
 ## 
 ## other attached packages:
-## [1] drugTargetInteractions_1.21.4 BiocStyle_2.41.0             
+##  [1] EnsDb.Hsapiens.v86_2.99.0     ensembldb_2.37.3              AnnotationFilter_1.37.0      
+##  [4] GenomicFeatures_1.65.0        AnnotationDbi_1.75.0          Biobase_2.73.1               
+##  [7] GenomicRanges_1.65.1          Seqinfo_1.3.0                 IRanges_2.47.2               
+## [10] S4Vectors_0.51.5              BiocGenerics_0.59.10          generics_0.1.4               
+## [13] drugTargetInteractions_1.21.4 BiocStyle_2.41.0             
 ## 
 ## loaded via a namespace (and not attached):
-##   [1] tidyselect_1.2.1            dplyr_1.2.1                 blob_1.3.0                 
-##   [4] filelock_1.0.3              Biostrings_2.81.5           bitops_1.0-9               
-##   [7] lazyeval_0.2.3              fastmap_1.2.0               RCurl_1.98-1.19            
-##  [10] BiocFileCache_3.3.0         GenomicAlignments_1.49.0    XML_3.99-0.23              
-##  [13] digest_0.6.39               lifecycle_1.0.5             ProtGenerics_1.45.0        
-##  [16] KEGGREST_1.53.1             RSQLite_3.53.3              magrittr_2.0.5             
-##  [19] compiler_4.6.0              rlang_1.3.0                 sass_0.4.10                
-##  [22] progress_1.2.3              tools_4.6.0                 yaml_2.3.12                
-##  [25] rtracklayer_1.73.0          knitr_1.51                  prettyunits_1.2.0          
-##  [28] S4Arrays_1.13.0             bit_4.6.0                   curl_7.1.0                 
-##  [31] DelayedArray_0.39.3         abind_1.4-8                 BiocParallel_1.47.0        
-##  [34] withr_3.0.3                 purrr_1.2.2                 BiocGenerics_0.59.9        
-##  [37] grid_4.6.0                  stats4_4.6.0                biomaRt_2.69.0             
-##  [40] SummarizedExperiment_1.43.0 cli_3.6.6                   rmarkdown_2.31             
-##  [43] crayon_1.5.3                generics_0.1.4              otel_0.2.0                 
-##  [46] httr_1.4.8                  rjson_0.2.23                BiocBaseUtils_1.15.1       
-##  [49] readxl_1.5.0                DBI_1.3.0                   cachem_1.1.0               
-##  [52] stringr_1.6.0               parallel_4.6.0              AnnotationDbi_1.75.0       
-##  [55] cellranger_1.1.0            AnnotationFilter_1.37.0     BiocManager_1.30.27        
-##  [58] XVector_0.53.0              restfulr_0.0.17             matrixStats_1.5.0          
-##  [61] vctrs_0.7.3                 Matrix_1.7-5                jsonlite_2.0.0             
-##  [64] bookdown_0.47               IRanges_2.47.2              hms_1.1.4                  
-##  [67] S4Vectors_0.51.5            bit64_4.8.2                 ensembldb_2.37.3           
-##  [70] GenomicFeatures_1.65.0      jquerylib_0.1.4             glue_1.8.1                 
-##  [73] codetools_0.2-20            stringi_1.8.7               GenomeInfoDb_1.49.1        
-##  [76] GenomicRanges_1.65.0        BiocIO_1.23.3               UCSC.utils_1.9.0           
-##  [79] tibble_3.3.1                pillar_1.11.1               rappdirs_0.3.4             
-##  [82] htmltools_0.5.9             Seqinfo_1.3.0               R6_2.6.1                   
-##  [85] dbplyr_2.6.0                httr2_1.2.3                 evaluate_1.0.5             
-##  [88] Biobase_2.73.1              lattice_0.22-9              cigarillo_1.3.0            
-##  [91] png_0.1-9                   Rsamtools_2.29.0            memoise_2.0.1              
-##  [94] bslib_0.11.0                rjsoncons_1.3.3             SparseArray_1.13.2         
-##  [97] xfun_0.59                   MatrixGenerics_1.25.0       UniProt.ws_2.53.0          
-## [100] pkgconfig_2.0.3</code></pre>
+##  [1] tidyselect_1.2.1            dplyr_1.2.1                 blob_1.3.0                 
+##  [4] filelock_1.0.3              Biostrings_2.81.5           bitops_1.0-9               
+##  [7] lazyeval_0.2.3              fastmap_1.2.0               RCurl_1.98-1.19            
+## [10] BiocFileCache_3.3.0         GenomicAlignments_1.49.1    XML_3.99-0.23              
+## [13] digest_0.6.39               lifecycle_1.0.5             ProtGenerics_1.45.0        
+## [16] KEGGREST_1.53.1             RSQLite_3.53.3              magrittr_2.0.5             
+## [19] compiler_4.7.0              rlang_1.3.0                 sass_0.4.10                
+## [22] progress_1.2.3              tools_4.7.0                 yaml_2.3.12                
+## [25] rtracklayer_1.73.0          knitr_1.51                  prettyunits_1.2.0          
+## [28] S4Arrays_1.13.0             bit_4.6.0                   curl_7.1.0                 
+## [31] DelayedArray_0.39.3         xml2_1.6.0                  abind_1.4-8                
+## [34] BiocParallel_1.47.0         withr_3.0.3                 purrr_1.2.2                
+## [37] grid_4.7.0                  biomaRt_2.69.0              SummarizedExperiment_1.43.0
+## [40] cli_3.6.6                   rmarkdown_2.31              crayon_1.5.3               
+## [43] otel_0.2.0                  httr_1.4.8                  rjson_0.2.23               
+## [46] BiocBaseUtils_1.15.1        readxl_1.5.0                DBI_1.3.0                  
+## [49] cachem_1.1.0                stringr_1.6.0               parallel_4.7.0             
+## [52] cellranger_1.1.0            BiocManager_1.30.27         XVector_0.53.0             
+## [55] restfulr_0.0.17             matrixStats_1.5.0           vctrs_0.7.3                
+## [58] Matrix_1.7-5                jsonlite_2.0.0              bookdown_0.47              
+## [61] hms_1.1.4                   bit64_4.8.2                 jquerylib_0.1.4            
+## [64] glue_1.8.1                  codetools_0.2-20            stringi_1.8.7              
+## [67] GenomeInfoDb_1.49.1         BiocIO_1.23.3               UCSC.utils_1.9.0           
+## [70] tibble_3.3.1                pillar_1.11.1               rappdirs_0.3.4             
+## [73] htmltools_0.5.9             R6_2.6.1                    dbplyr_2.6.0               
+## [76] httr2_1.3.0                 evaluate_1.0.5              lattice_0.22-9             
+## [79] cigarillo_1.3.1             png_0.1-9                   Rsamtools_2.29.0           
+## [82] memoise_2.0.1               bslib_0.11.0                rjsoncons_1.3.3            
+## [85] SparseArray_1.13.2          xfun_0.60                   MatrixGenerics_1.25.0      
+## [88] UniProt.ws_2.53.0           pkgconfig_2.0.3</code></pre>
 </div>
 <div id="references" class="section level1 unnumbered">
 <h1>References</h1>
