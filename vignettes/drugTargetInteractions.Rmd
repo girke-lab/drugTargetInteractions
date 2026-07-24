@@ -961,8 +961,53 @@ very-high-volume ChEMBL querying where the REST API's batch limits (see
 ```{r legacy_chembl_download, eval=FALSE}
 config <- genConfig(chemblDbPath = "chembldb.db")
 downloadChemblDb(rerun = TRUE, config = config)  # downloads the full ChEMBL SQLite (several GB)
-queryBy <- list(molType = "protein", idType = "UniProt_ID", ids = "P11362")
-drugTargetAnnot(queryBy, config = config)
+```
+
+The examples below instead point `chemblDbPath` at the small ChEMBL
+subset shipped with the package (`inst/extdata/chembl_sample.db`), so
+they run - and are checked - as part of every vignette build rather than
+only being documented. `drugTargetAnnot()` additionally needs a compound
+ID cross-reference table built once via `downloadUniChem()`/
+`cmpIdMapping()` (see [Static UniChem Mirror] below) - `resultsPath` is
+pointed at a temp directory here purely to avoid leaving files behind in
+the vignette source tree:
+
+```{r legacy_chembl_sample, eval=TRUE}
+config <- genConfig(
+    chemblDbPath = system.file("extdata", "chembl_sample.db", package = "drugTargetInteractions"),
+    resultsPath = tempfile())
+downloadUniChem(config = config, rerun = TRUE)
+cmpIdMapping(config = config, rerun = TRUE)
+t2d <- drugTargetAnnot(
+    list(molType = "protein", idType = "UniProt_ID", ids = "P00915"), config = config)
+head(t2d[, c("Drug_Name", "MOA", "Action_Type", "First_Approval")])
+d2t <- drugTargetAnnot(
+    list(molType = "cmp", idType = "chembl_id", ids = "CHEMBL25"), config = config)  # aspirin
+d2t[, c("UniProt_ID", "Organism", "MOA")]
+```
+
+`getDrugTarget()` queries a pre-generated flat-file export instead of the
+SQLite directly - built once with `drugTargetAnnotTable()` and re-read on
+every subsequent call, which is faster for repeated querying against the
+same ChEMBL snapshot:
+
+```{r legacy_getdrugtarget, eval=TRUE}
+annotFile <- tempfile(fileext = ".xls")
+drugTargetAnnotTable(outfile = annotFile, config = config, rerun = TRUE)
+id_mapping <- c(chembl = "chembl_id", pubchem = "PubChem_ID",
+    uniprot = "UniProt_ID", drugbank = "DrugBank_ID")
+getDrugTarget(dt_file = annotFile,
+    queryBy = list(molType = "cmp", idType = "chembl", ids = "CHEMBL25"),
+    id_mapping = id_mapping)[, c("pref_name", "action_type", "UniProt_ID", "Organism")]
+```
+
+`drugTargetBioactivity()` returns the corresponding raw bioassay
+measurements (IC50/Ki/Kd/EC50) from the same local SQLite:
+
+```{r legacy_bioactivity, eval=TRUE}
+ba <- drugTargetBioactivity(
+    list(molType = "protein", idType = "uniprot", ids = "P00915"), config = config)
+head(ba[, c("pref_name", "standard_type", "standard_value", "standard_units")])
 ```
 
 ## UniProt.ws-Based ID Mapping
@@ -990,6 +1035,21 @@ queryBy <- list(molType = "gene", idType = "external_gene_name", ids = "FGFR1")
 getParalogs(queryBy)
 ```
 
+## ensembldb-Based ID Mapping
+
+`getSymEnsUp()` is a third, independent way to translate between gene
+symbols, Ensembl gene IDs and UniProt accessions - based on a local
+Bioconductor annotation package (`r Biocpkg("EnsDb.Hsapiens.v86")`) via
+`r Biocpkg("ensembldb")`, rather than a live web service. Useful when
+network access to UniProt's or Ensembl's REST endpoints isn't available.
+Supported `idtype` values are `GENE_NAME`, `ENSEMBL_GENE_ID` and
+`UNIPROT_ID`.
+
+```{r legacy_symensup, eval=TRUE}
+idMap <- getSymEnsUp(EnsDb = "EnsDb.Hsapiens.v86", ids = "FGFR1", idtype = "GENE_NAME")
+head(idMap$idDF)
+```
+
 ## Static UniChem Mirror
 
 `downloadUniChem()`/`cmpIdMapping()` predate `buildUnichemDb()`/
@@ -1002,6 +1062,25 @@ workflow above, which uses it internally via `cmpIdMapping()`.
 ```{r legacy_unichem, eval=FALSE}
 downloadUniChem(rerun = TRUE)
 cmpIdMapping(outfile = "cmp_ids.rds", rerun = TRUE)
+```
+
+## Putting It Together
+
+`runDrugTarget_Annot_Bioassay()` is a convenience wrapper combining
+`drugTargetAnnot()` and `drugTargetBioactivity()` for a set of UniProt
+IDs obtained from `getUniprotIDs()` or `getParalogs()` - the legacy
+equivalent of this vignette's own [Cross-Source Queries] combining step,
+predating `combineDrugTargets()`. It expects the two-slot (`IDM`/`SSNN`)
+list structure returned by those ID-mapping functions:
+
+```{r legacy_run_everything, eval=TRUE}
+idMap <- getSymEnsUp(EnsDb = "EnsDb.Hsapiens.v86", ids = c("CA7", "CFTR"), idtype = "GENE_NAME")
+queryBy <- list(molType = "gene", idType = "ensembl_gene_id", ids = names(idMap$ens_gene_id))
+res_list <- getParalogs(queryBy)
+combined <- runDrugTarget_Annot_Bioassay(res_list = res_list, up_col_id = "ID_up_sp",
+    ens_gene_id = idMap$ens_gene_id, config = config)
+sapply(combined, nrow)
+head(combined$Annotation[, c("GeneName", "Drug_Name", "MOA")])
 ```
 
 # Session Info
