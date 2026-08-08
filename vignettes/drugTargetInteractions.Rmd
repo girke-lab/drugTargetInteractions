@@ -324,8 +324,13 @@ underlying API exposes many more fields than this curated set. Pass
 name clashes between sources:
 
 ```{r fields_all, eval=TRUE}
-chembl_all <- getChemblDrugTarget(
-    list(molType = "cmp", idType = "chembl_id", ids = "CHEMBL25"), fields = "all")
+chembl_all <- drugTargetInteractions:::.dtiLiveOrCached(
+    getChemblDrugTarget(list(molType = "cmp", idType = "chembl_id", ids = "CHEMBL25"),
+                        fields = "all"),
+    fixture = "chembl_fields_all_chembl25.rds", label = "ChEMBL")
+if (isTRUE(attr(chembl_all, "dtiCached")))
+    cat("> **Note:** Live query to ChEMBL failed; showing cached results",
+        "from", attr(chembl_all, "dtiCachedDate"), "instead.\n\n")
 dim(chembl_all)
 chembl_all[, c("Drug_Name", "mechanism.mechanism_comment", "molecule.molecule_type")]
 ```
@@ -361,7 +366,10 @@ that local database repeatedly. This mirrors ChEMBL's local-SQLite option
 (see the [Supplement]) - build once, query many times.
 
 ```{r ttd_build, eval=TRUE}
-ttdDbPath <- buildTtdDb(rerun = TRUE)  # first build must fetch; rerun = FALSE reuses the cache afterward
+## Prefer the cache (fast, no network); only re-fetch live if nothing
+## usable is cached yet (rerun = FALSE errors instead of fetching when
+## the raw flat files were never downloaded - see buildTtdDb()).
+ttdDbPath <- tryCatch(buildTtdDb(rerun = FALSE), error = function(e) buildTtdDb(rerun = TRUE))
 ```
 
 Native identifiers for `ttdTargetAnnot()`: for target &rarr; drug, a
@@ -451,7 +459,11 @@ downloaded once and assembled into a small local SQLite via
 that local database repeatedly.
 
 ```{r broad_build, eval=TRUE, warning=FALSE, message=FALSE}
-brhDbPath <- buildBroadRepurposingHubDb(rerun = TRUE)  # first build must fetch; rerun = FALSE reuses the cache afterward
+## Prefer the cache (fast, no network); only re-fetch live if nothing
+## usable is cached yet (rerun = FALSE errors instead of fetching when
+## the raw flat files were never downloaded - see buildBroadRepurposingHubDb()).
+brhDbPath <- tryCatch(buildBroadRepurposingHubDb(rerun = FALSE),
+                      error = function(e) buildBroadRepurposingHubDb(rerun = TRUE))
 ```
 
 Native identifiers for `broadRepurposingHubAnnot()`: for target &rarr; drug,
@@ -515,7 +527,11 @@ query-many pattern as TTD and the Repurposing Hub, just sourced from
 REST plus one small file instead of pure flat files.
 
 ```{r gtopdb_build, eval=TRUE}
-gtoPdbDbPath <- buildGtoPdbDb(rerun = TRUE)  # first build must fetch; rerun = FALSE reuses the cache afterward
+## Prefer the cache (fast, no network); only re-fetch live if nothing
+## usable is cached yet (rerun = FALSE errors instead of fetching when
+## the raw bulk files were never downloaded - see buildGtoPdbDb()).
+gtoPdbDbPath <- tryCatch(buildGtoPdbDb(rerun = FALSE),
+                        error = function(e) buildGtoPdbDb(rerun = TRUE))
 ```
 
 Native identifiers for `gtoPdbTargetAnnot()`: for target &rarr; drug, a
@@ -1078,7 +1094,12 @@ list structure returned by those ID-mapping functions:
 ```{r legacy_run_everything, eval=TRUE}
 idMap <- getSymEnsUp(EnsDb = "EnsDb.Hsapiens.v86", ids = c("CA7", "CFTR"), idtype = "GENE_NAME")
 queryBy <- list(molType = "gene", idType = "ensembl_gene_id", ids = names(idMap$ens_gene_id))
-res_list <- getParalogs(queryBy)
+res_list <- drugTargetInteractions:::.dtiLiveOrCached(
+    getParalogs(queryBy),
+    fixture = "ensembl_legacy_paralogs_ca7_cftr.rds", label = "Ensembl (biomaRt)")
+if (isTRUE(attr(res_list, "dtiCached")))
+    cat("> **Note:** Live query to Ensembl (biomaRt) failed; showing cached results",
+        "from", attr(res_list, "dtiCachedDate"), "instead.\n\n")
 combined <- runDrugTarget_Annot_Bioassay(res_list = res_list, up_col_id = "ID_up_sp",
     ens_gene_id = idMap$ens_gene_id, config = config)
 sapply(combined, nrow)
