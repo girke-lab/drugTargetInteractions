@@ -1959,7 +1959,7 @@ function toggle_visibility(id1) {
 
 <h1 class="title toc-ignore">drugTargetInteractions: Mining the Druggable Genome</h1>
 <p class="author-name">Authors: Kevin Horan, Brandon Le, Brendan Gongol, Desmond Cairo, Mohammad Afsharinia, Tandis Salem, Dan Evans, Nicholas Schork and Thomas Girke</p>
-<h4 class="date">Last update: 23 July, 2026</h4>
+<h4 class="date">Last update: 08 August, 2026</h4>
 
 </div>
 
@@ -2051,7 +2051,9 @@ compatibility.</li>
     install.packages(&quot;BiocManager&quot;)
 BiocManager::install(&quot;drugTargetInteractions&quot;)</code></pre>
 <p>Alternatively, the package can be installed from GitHub as follows.</p>
-<pre class="r"><code>devtools::install_github(&quot;girke-lab/drugTargetInteractions&quot;, build_vignettes=TRUE) # Installs from github</code></pre>
+<pre class="r"><code>if (!requireNamespace(&quot;pak&quot;, quietly = TRUE))
+    install.packages(&quot;pak&quot;)
+pak::pak(&quot;girke-lab/drugTargetInteractions&quot;) # Installs from github</code></pre>
 </div>
 <div id="load-package-and-access-help" class="section level2" number="1.3">
 <h2><span class="header-section-number">1.3</span> Load Package and Access Help</h2>
@@ -2407,8 +2409,13 @@ by default (<code>fields = &quot;core&quot;</code>) - this is exactly what lets
 underlying API exposes many more fields than this curated set. Pass
 <code>fields = &quot;all&quot;</code> to get everything available, source-prefixed to avoid
 name clashes between sources:</p>
-<pre class="r"><code>chembl_all &lt;- getChemblDrugTarget(
-    list(molType = &quot;cmp&quot;, idType = &quot;chembl_id&quot;, ids = &quot;CHEMBL25&quot;), fields = &quot;all&quot;)
+<pre class="r"><code>chembl_all &lt;- drugTargetInteractions:::.dtiLiveOrCached(
+    getChemblDrugTarget(list(molType = &quot;cmp&quot;, idType = &quot;chembl_id&quot;, ids = &quot;CHEMBL25&quot;),
+                        fields = &quot;all&quot;),
+    fixture = &quot;chembl_fields_all_chembl25.rds&quot;, label = &quot;ChEMBL&quot;)
+if (isTRUE(attr(chembl_all, &quot;dtiCached&quot;)))
+    cat(&quot;&gt; **Note:** Live query to ChEMBL failed; showing cached results&quot;,
+        &quot;from&quot;, attr(chembl_all, &quot;dtiCachedDate&quot;), &quot;instead.\n\n&quot;)
 dim(chembl_all)</code></pre>
 <pre><code>## [1]   2 111</code></pre>
 <pre class="r"><code>chembl_all[, c(&quot;Drug_Name&quot;, &quot;mechanism.mechanism_comment&quot;, &quot;molecule.molecule_type&quot;)]</code></pre>
@@ -2441,7 +2448,10 @@ since GraphQL only returns fields a query explicitly asks for.</p>
 a small local SQLite via <code>buildTtdDb()</code>; <code>ttdTargetAnnot()</code> then queries
 that local database repeatedly. This mirrors ChEMBL’s local-SQLite option
 (see the <a href="#supplement">Supplement</a>) - build once, query many times.</p>
-<pre class="r"><code>ttdDbPath &lt;- buildTtdDb(rerun = TRUE)  # first build must fetch; rerun = FALSE reuses the cache afterward</code></pre>
+<pre class="r"><code>## Prefer the cache (fast, no network); only re-fetch live if nothing
+## usable is cached yet (rerun = FALSE errors instead of fetching when
+## the raw flat files were never downloaded - see buildTtdDb()).
+ttdDbPath &lt;- tryCatch(buildTtdDb(rerun = FALSE), error = function(e) buildTtdDb(rerun = TRUE))</code></pre>
 <p>Native identifiers for <code>ttdTargetAnnot()</code>: for target → drug, a
 <strong>gene symbol</strong> (<code>idType = &quot;symbol&quot;</code>), a <strong>UniProt mnemonic entry name</strong>
 such as <code>&quot;FGFR1_HUMAN&quot;</code> (<code>idType = &quot;uniprot&quot;</code> - note this is <em>not</em> the
@@ -2538,7 +2548,11 @@ flat TSV files (drug-level and physical-sample-level annotation) are
 downloaded once and assembled into a small local SQLite via
 <code>buildBroadRepurposingHubDb()</code>; <code>broadRepurposingHubAnnot()</code> then queries
 that local database repeatedly.</p>
-<pre class="r"><code>brhDbPath &lt;- buildBroadRepurposingHubDb(rerun = TRUE)  # first build must fetch; rerun = FALSE reuses the cache afterward</code></pre>
+<pre class="r"><code>## Prefer the cache (fast, no network); only re-fetch live if nothing
+## usable is cached yet (rerun = FALSE errors instead of fetching when
+## the raw flat files were never downloaded - see buildBroadRepurposingHubDb()).
+brhDbPath &lt;- tryCatch(buildBroadRepurposingHubDb(rerun = FALSE),
+                      error = function(e) buildBroadRepurposingHubDb(rerun = TRUE))</code></pre>
 <p>Native identifiers for <code>broadRepurposingHubAnnot()</code>: for target → drug,
 a <strong>gene symbol</strong> (<code>idType = &quot;symbol&quot;</code> - the Repurposing Hub only exposes
 gene symbols, no accession system of its own); for drug → target, a
@@ -2600,7 +2614,11 @@ small bulk flat file GtoPdb separately publishes for target-ID-to-HGNC
 mapping, assembled into a small local SQLite - the same build-once,
 query-many pattern as TTD and the Repurposing Hub, just sourced from
 REST plus one small file instead of pure flat files.</p>
-<pre class="r"><code>gtoPdbDbPath &lt;- buildGtoPdbDb(rerun = TRUE)  # first build must fetch; rerun = FALSE reuses the cache afterward</code></pre>
+<pre class="r"><code>## Prefer the cache (fast, no network); only re-fetch live if nothing
+## usable is cached yet (rerun = FALSE errors instead of fetching when
+## the raw bulk files were never downloaded - see buildGtoPdbDb()).
+gtoPdbDbPath &lt;- tryCatch(buildGtoPdbDb(rerun = FALSE),
+                        error = function(e) buildGtoPdbDb(rerun = TRUE))</code></pre>
 <p>Native identifiers for <code>gtoPdbTargetAnnot()</code>: for target → drug, a
 <strong>gene symbol</strong> (<code>idType = &quot;symbol&quot;</code>) or GtoPdb’s own <strong>target ID</strong>
 (<code>idType = &quot;gtp_target_id&quot;</code>); for drug → target, a <strong>ligand name</strong>
@@ -3299,22 +3317,26 @@ IDs obtained from <code>getUniprotIDs()</code> or <code>getParalogs()</code> - t
 equivalent of this vignette’s own <a href="#cross-source-queries">Cross-Source Queries</a> combining step,
 predating <code>combineDrugTargets()</code>. It expects the two-slot (<code>IDM</code>/<code>SSNN</code>)
 list structure returned by those ID-mapping functions:</p>
+<blockquote>
+<p><strong>Note:</strong> this chunk is temporarily <code>eval=FALSE</code> in this published render
+only - Ensembl’s classic BioMart service (used internally by
+<code>getParalogs()</code>) was down for this render’s entire session, so no
+shipped fallback fixture could be generated yet. The vignette <em>source</em>
+on <code>devel</code> still has this chunk live (<code>eval=TRUE</code>) and will render it
+again once the fixture is generated.</p>
+</blockquote>
 <pre class="r"><code>idMap &lt;- getSymEnsUp(EnsDb = &quot;EnsDb.Hsapiens.v86&quot;, ids = c(&quot;CA7&quot;, &quot;CFTR&quot;), idtype = &quot;GENE_NAME&quot;)
 queryBy &lt;- list(molType = &quot;gene&quot;, idType = &quot;ensembl_gene_id&quot;, ids = names(idMap$ens_gene_id))
-res_list &lt;- getParalogs(queryBy)
+res_list &lt;- drugTargetInteractions:::.dtiLiveOrCached(
+    getParalogs(queryBy),
+    fixture = &quot;ensembl_legacy_paralogs_ca7_cftr.rds&quot;, label = &quot;Ensembl (biomaRt)&quot;)
+if (isTRUE(attr(res_list, &quot;dtiCached&quot;)))
+    cat(&quot;&gt; **Note:** Live query to Ensembl (biomaRt) failed; showing cached results&quot;,
+        &quot;from&quot;, attr(res_list, &quot;dtiCachedDate&quot;), &quot;instead.\n\n&quot;)
 combined &lt;- runDrugTarget_Annot_Bioassay(res_list = res_list, up_col_id = &quot;ID_up_sp&quot;,
     ens_gene_id = idMap$ens_gene_id, config = config)
-sapply(combined, nrow)</code></pre>
-<pre><code>## Annotation   Bioassay 
-##         55         35</code></pre>
-<pre class="r"><code>head(combined$Annotation[, c(&quot;GeneName&quot;, &quot;Drug_Name&quot;, &quot;MOA&quot;)])</code></pre>
-<pre><code>##    GeneName     Drug_Name                              MOA
-## 1       CA7 ETHOXZOLAMIDE     Carbonic anhydrase inhibitor
-## 2       CA7 METHAZOLAMIDE Carbonic anhydrase VII inhibitor
-## 3 Query_CA7          &lt;NA&gt;                             &lt;NA&gt;
-## 4 Query_CA7 ETHOXZOLAMIDE     Carbonic anhydrase inhibitor
-## 5 Query_CA7          &lt;NA&gt;                             &lt;NA&gt;
-## 6 Query_CA7 ETHOXZOLAMIDE     Carbonic anhydrase inhibitor</code></pre>
+sapply(combined, nrow)
+head(combined$Annotation[, c(&quot;GeneName&quot;, &quot;Drug_Name&quot;, &quot;MOA&quot;)])</code></pre>
 </div>
 </div>
 <div id="session-info" class="section level1" number="9">
@@ -3345,7 +3367,7 @@ sapply(combined, nrow)</code></pre>
 ##  [4] GenomicFeatures_1.65.0        AnnotationDbi_1.75.0          Biobase_2.73.1               
 ##  [7] GenomicRanges_1.65.1          Seqinfo_1.3.0                 IRanges_2.47.2               
 ## [10] S4Vectors_0.51.5              BiocGenerics_0.59.10          generics_0.1.4               
-## [13] drugTargetInteractions_1.21.4 BiocStyle_2.41.0             
+## [13] drugTargetInteractions_1.21.6 BiocStyle_2.41.0             
 ## 
 ## loaded via a namespace (and not attached):
 ##  [1] tidyselect_1.2.1            dplyr_1.2.1                 blob_1.3.0                 
@@ -3358,26 +3380,25 @@ sapply(combined, nrow)</code></pre>
 ## [22] progress_1.2.3              tools_4.7.0                 yaml_2.3.12                
 ## [25] rtracklayer_1.73.0          knitr_1.51                  prettyunits_1.2.0          
 ## [28] S4Arrays_1.13.0             bit_4.6.0                   curl_7.1.0                 
-## [31] DelayedArray_0.39.3         xml2_1.6.0                  abind_1.4-8                
-## [34] BiocParallel_1.47.0         withr_3.0.3                 purrr_1.2.2                
-## [37] grid_4.7.0                  biomaRt_2.69.0              SummarizedExperiment_1.43.0
-## [40] cli_3.6.6                   rmarkdown_2.31              crayon_1.5.3               
-## [43] otel_0.2.0                  httr_1.4.8                  rjson_0.2.23               
-## [46] BiocBaseUtils_1.15.1        readxl_1.5.0                DBI_1.3.0                  
-## [49] cachem_1.1.0                stringr_1.6.0               parallel_4.7.0             
-## [52] cellranger_1.1.0            BiocManager_1.30.27         XVector_0.53.0             
-## [55] restfulr_0.0.17             matrixStats_1.5.0           vctrs_0.7.3                
-## [58] Matrix_1.7-5                jsonlite_2.0.0              bookdown_0.47              
-## [61] hms_1.1.4                   bit64_4.8.2                 jquerylib_0.1.4            
-## [64] glue_1.8.1                  codetools_0.2-20            stringi_1.8.7              
-## [67] GenomeInfoDb_1.49.1         BiocIO_1.23.3               UCSC.utils_1.9.0           
-## [70] tibble_3.3.1                pillar_1.11.1               rappdirs_0.3.4             
-## [73] htmltools_0.5.9             R6_2.6.1                    dbplyr_2.6.0               
-## [76] httr2_1.3.0                 evaluate_1.0.5              lattice_0.22-9             
-## [79] cigarillo_1.3.1             png_0.1-9                   Rsamtools_2.29.0           
-## [82] memoise_2.0.1               bslib_0.11.0                rjsoncons_1.3.3            
-## [85] SparseArray_1.13.2          xfun_0.60                   MatrixGenerics_1.25.0      
-## [88] UniProt.ws_2.53.0           pkgconfig_2.0.3</code></pre>
+## [31] DelayedArray_0.39.3         abind_1.4-8                 BiocParallel_1.47.0        
+## [34] withr_3.0.3                 purrr_1.2.2                 grid_4.7.0                 
+## [37] biomaRt_2.69.0              SummarizedExperiment_1.43.0 cli_3.6.6                  
+## [40] rmarkdown_2.31              crayon_1.5.3                otel_0.2.0                 
+## [43] httr_1.4.8                  rjson_0.2.23                BiocBaseUtils_1.15.1       
+## [46] DBI_1.3.0                   cachem_1.1.0                stringr_1.6.0              
+## [49] parallel_4.7.0              BiocManager_1.30.27         XVector_0.53.0             
+## [52] restfulr_0.0.17             matrixStats_1.5.0           vctrs_0.7.3                
+## [55] Matrix_1.7-5                jsonlite_2.0.0              bookdown_0.47              
+## [58] hms_1.1.4                   bit64_4.8.2                 jquerylib_0.1.4            
+## [61] glue_1.8.1                  codetools_0.2-20            stringi_1.8.7              
+## [64] GenomeInfoDb_1.49.1         BiocIO_1.23.3               UCSC.utils_1.9.0           
+## [67] tibble_3.3.1                pillar_1.11.1               rappdirs_0.3.4             
+## [70] htmltools_0.5.9             R6_2.6.1                    dbplyr_2.6.0               
+## [73] httr2_1.3.0                 evaluate_1.0.5              lattice_0.22-9             
+## [76] cigarillo_1.3.1             png_0.1-9                   Rsamtools_2.29.0           
+## [79] memoise_2.0.1               bslib_0.11.0                rjsoncons_1.3.3            
+## [82] SparseArray_1.13.2          xfun_0.60                   MatrixGenerics_1.25.0      
+## [85] UniProt.ws_2.53.0           pkgconfig_2.0.3</code></pre>
 </div>
 <div id="references" class="section level1 unnumbered">
 <h1>References</h1>
