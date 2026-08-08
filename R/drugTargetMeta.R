@@ -596,7 +596,15 @@ combineDrugTargets <- function(results,
 
     rows <- lapply(names(results), function(src) {
         df <- results[[src]]
-        out <- data.frame(row.names = seq_len(nrow(df)))
+        n <- nrow(df)
+        if (n == 0L) return(NULL)  ## a source whose IDs resolved but whose
+                                    ## live query matched zero rows (e.g. a
+                                    ## transient upstream-API gap) contributes
+                                    ## nothing here rather than crashing
+                                    ## $<-.data.frame's "replacement has 1
+                                    ## row, data has 0" on a brand-new column
+                                    ## of a 0-row frame
+        out <- data.frame(row.names = seq_len(n))
         out$.source <- .dtiCombineSourceLabel[[src]]  ## always tracked internally
         if ("query_id" %in% needCols) {
             out$query_id <- if (!is.null(resolvedAttr[[src]])) {
@@ -617,6 +625,10 @@ combineDrugTargets <- function(results,
         }
         out
     })
+    rows <- Filter(Negate(is.null), rows)
+    if (length(rows) == 0L)
+        return(as.data.frame(stats::setNames(
+            replicate(length(columns), character(0), simplify = FALSE), columns)))
     out <- do.call(rbind, rows)
     rownames(out) <- NULL
 

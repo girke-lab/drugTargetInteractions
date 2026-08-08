@@ -353,3 +353,27 @@ test_that("combineDrugTargets errors clearly when an expected column is missing 
     fixture$chembl$Drug_Name <- NULL
     expect_error(combineDrugTargets(fixture), "expected column 'Drug_Name' not found")
 })
+
+test_that("combineDrugTargets tolerates a source whose IDs resolved but that matched zero rows", {
+    ## Regression guard: queryDrugTargets() can hand back a non-NULL,
+    ## 0-row data.frame for a source (e.g. a transient upstream-API gap
+    ## after resolution succeeded) - combineDrugTargets() must skip it,
+    ## not crash on $<-.data.frame's "replacement has 1 row, data has 0"
+    ## when adding the internal .source column to a 0-row frame.
+    fixture <- .combineFixture()
+    fixture$chembl <- fixture$chembl[0, ]
+    combined <- combineDrugTargets(fixture)
+    expect_false("ChEMBL" %in% combined$source)
+    expect_equal(nrow(combined), 5L)
+    expect_setequal(combined$source, c("DGIdb", "OpenTargets", "TTD",
+                                       "Broad Repurposing Hub", "GtoPdb"))
+})
+
+test_that("combineDrugTargets returns an empty, correctly-columned data.frame when every source matched zero rows", {
+    fixture <- .combineFixture()
+    fixture <- lapply(fixture, function(df) df[0, ])
+    attr(fixture, "resolved") <- attr(.combineFixture(), "resolved")
+    empty <- combineDrugTargets(fixture)
+    expect_equal(nrow(empty), 0L)
+    expect_identical(names(empty), c("query_id", "gene_symbol", "drug_name", "action", "source"))
+})
