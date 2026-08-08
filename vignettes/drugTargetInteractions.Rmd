@@ -123,7 +123,9 @@ BiocManager::install("drugTargetInteractions")
 Alternatively, the package can be installed from GitHub as follows.
 
 ```{r pkg_install_github, eval=FALSE}
-devtools::install_github("girke-lab/drugTargetInteractions", build_vignettes=TRUE) # Installs from github
+if (!requireNamespace("pak", quietly = TRUE))
+    install.packages("pak")
+pak::pak("girke-lab/drugTargetInteractions") # Installs from github
 ```
 
 ## Load Package and Access Help
