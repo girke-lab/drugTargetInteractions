@@ -38,13 +38,20 @@
 ##
 ##  The date embedded in each URL/filename is NOT a reliable version
 ##  indicator - both files' own "!File_date" metadata line (the real
-##  content version) was observed to read the same current date despite
-##  the URLs themselves carrying stale 2020/2024 filename suffixes. As
-##  with TTD's embedded "Version X.Y.Z" line, "!File_date" (not the URL)
-##  is what's used to name/cache the derived SQLite. Because the URLs
-##  themselves are otherwise fixed/hardcoded, a future Broad Hub release
-##  that changes the filename suffix will need .brhEndpoints() updated by
-##  hand - there is no discovery mechanism for the current filename.
+##  content version) is what's used to name/cache the derived SQLite,
+##  same as TTD's embedded "Version X.Y.Z" line. For a while the
+##  2020/2024-dated URLs kept serving the current file regardless of
+##  filename staleness, but as of 2026-08-07 those URLs were confirmed
+##  to have been retired: they now return HTTP 200 with the site's HTML
+##  landing page instead of the flat file (silent failure mode - no
+##  4xx/5xx, so a plain download-error check doesn't catch it; see
+##  .brhReadTable()'s guard against this). Endpoints were updated to the
+##  current 20250818-dated URLs, discovered by scraping the "Download
+##  Data" links off https://repo-hub.broadinstitute.org/repurposing.
+##  Because the URLs themselves are otherwise fixed/hardcoded, a future
+##  Broad Hub release that changes the filename suffix will need
+##  .brhEndpoints() updated by hand the same way - there is no discovery
+##  mechanism for the current filename beyond that page.
 ##
 ##  Known operational caveat: as of this writing repo-hub.broadinstitute.org's
 ##  TLS certificate chain is served without its InCommon intermediate
@@ -71,8 +78,8 @@
 #' @noRd
 .brhEndpoints <- function() {
     list(
-        drug   = "https://repo-hub.broadinstitute.org/public/data/repo-drug-annotation-20200324.txt",
-        sample = "https://repo-hub.broadinstitute.org/public/data/repo-sample-annotation-20240610.txt"
+        drug   = "https://repo-hub.broadinstitute.org/public/data/repo-drug-annotation-20250818.txt",
+        sample = "https://repo-hub.broadinstitute.org/public/data/repo-sample-annotation-20250818.txt"
     )
 }
 
@@ -176,11 +183,28 @@ loK8Ee0Y9wee43mVaHEdRD11fUQZYXsnXIFFtVXsIFH43LTiYfgN
 #' rely on ordinary CSV-style quoting for fields containing commas (e.g.
 #' \code{moa} values), and disabling it would leave stray literal quote
 #' characters in the parsed values.
+#'
+#' Guards against the file having no "!"-prefixed metadata block at all -
+#' observed live 2026-08-07 when Broad retired the then-current
+#' \code{.brhEndpoints()} URLs: they started returning HTTP 200 with the
+#' site's HTML landing page instead of the flat file, a silent failure
+#' a download-error check doesn't catch (see this file's header
+#' comment). Without this guard, \code{meta} is
+#' \code{integer(0)}, \code{max(meta)} is \code{-Inf}, and
+#' \code{hdrIdx:length(lines)} fails with the cryptic "result would be
+#' too long a vector" - this raises an actionable error instead.
 #' @keywords internal
 #' @noRd
 .brhReadTable <- function(path) {
     lines <- readLines(path, warn = FALSE, encoding = "UTF-8")
     meta  <- grep("^!", lines)
+    if (length(meta) == 0L) {
+        stop("'", path, "' has no \"!\"-prefixed metadata block - ",
+             "this is not a Repurposing Hub flat file (the URL in ",
+             ".brhEndpoints() may have been retired; check ",
+             "https://repo-hub.broadinstitute.org/repurposing for the ",
+             "current download link).", call. = FALSE)
+    }
     hdrIdx <- max(meta) + 1L
     df <- read.delim(text = paste(lines[hdrIdx:length(lines)], collapse = "\n"),
                       sep = "\t", quote = "\"", header = TRUE,
