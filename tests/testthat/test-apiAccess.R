@@ -16,6 +16,24 @@ skip_if_offline_dti <- function() {
         testthat::skip("No internet / API unreachable")
 }
 
+## For getChemblDrugTarget()'s unichemDbPath = ... path: looks for an
+## already-built UniChem SQLite via BiocFileCache and skips if none is
+## cached - building one from scratch takes on the order of an hour (see
+## test-unichemAccess.R), far too heavy to trigger from this suite.
+.getCachedUnichemDb <- function() {
+    bfc <- .getCache()
+    hits <- bfcquery(bfc, "unichem_", field = "rname")
+    if (nrow(hits) == 0L) return(NA_character_)
+    hits <- hits[order(hits$create_time, decreasing = TRUE), ]
+    tryCatch(.getCacheFile(hits$rname[1]), error = function(e) NA_character_)
+}
+
+skip_if_no_unichem_db <- function() {
+    testthat::skip_on_cran()
+    if (is.na(.getCachedUnichemDb()))
+        testthat::skip("No cached UniChem SQLite - build one with buildUnichemDb() to run this test")
+}
+
 test_that("getChemblMolecule returns tidy rows with expected columns", {
     skip_if_offline_dti()
     df <- getChemblMolecule(c("CHEMBL25", "CHEMBL1201585"))
@@ -48,13 +66,24 @@ test_that("getChemblDrugTarget target->drug returns FGFR1 inhibitors", {
     df <- getChemblDrugTarget(list(molType = "protein", idType = "Uniprot",
                                    ids = "P11362"))
     expect_s3_class(df, "data.frame")
-    expect_identical(names(df), c("QueryIDs", "chembl_id", "Drug_Name", "MOA",
-                                  "Action_Type", "Max_Phase", "First_Approval",
+    expect_identical(names(df), c("QueryIDs", "chembl_id", "Drug_Name",
+                                  "PubChem_CID", "MOA", "Action_Type",
+                                  "Max_Phase", "First_Approval",
                                   "ChEMBL_TID", "UniProt_ID", "Desc",
                                   "Organism", "Mesh_Indication"))
+    expect_true(all(is.na(df$PubChem_CID)))  # no unichemDbPath passed
     expect_true(nrow(df) >= 1L)
     expect_true(all(df$QueryIDs == "P11362"))
     expect_true("CHEMBL1201733" %in% df$chembl_id)  # pazopanib
+})
+
+test_that("getChemblDrugTarget(unichemDbPath = ...) resolves PubChem_CID via UniChem", {
+    skip_if_offline_dti()
+    skip_if_no_unichem_db()
+    df <- getChemblDrugTarget(list(molType = "cmp", idType = "chembl_id",
+                                   ids = "CHEMBL25"),  # aspirin
+                              unichemDbPath = .getCachedUnichemDb())
+    expect_identical(df$PubChem_CID[df$chembl_id == "CHEMBL25"][1], "2244")
 })
 
 test_that("getChemblDrugTarget drug->target returns dasatinib's targets", {
@@ -624,9 +653,9 @@ test_that("getChemblDrugTarget(fields = 'all') adds source-prefixed columns", {
     skip_if_offline_dti()
     all <- getChemblDrugTarget(list(molType = "cmp", idType = "chembl_id",
                                     ids = "CHEMBL1421"), fields = "all")
-    coreCols <- c("QueryIDs", "chembl_id", "Drug_Name", "MOA", "Action_Type",
-                 "Max_Phase", "First_Approval", "ChEMBL_TID", "UniProt_ID",
-                 "Desc", "Organism", "Mesh_Indication")
+    coreCols <- c("QueryIDs", "chembl_id", "Drug_Name", "PubChem_CID", "MOA",
+                 "Action_Type", "Max_Phase", "First_Approval", "ChEMBL_TID",
+                 "UniProt_ID", "Desc", "Organism", "Mesh_Indication")
     expect_identical(coreCols, listDrugTargetFields("chembl")[seq_along(coreCols)])
     expect_true(all(coreCols %in% names(all)))
     expect_true(ncol(all) > length(coreCols))

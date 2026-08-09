@@ -8,7 +8,8 @@ getChemblDrugTarget(
   queryBy = list(molType = NULL, idType = NULL, ids = NULL),
   verbose = FALSE,
   chunkSize = 200L,
-  fields = "core"
+  fields = "core",
+  unichemDbPath = NULL
 )
 }
 \arguments{
@@ -48,10 +49,22 @@ are already fetched and simply no longer discarded. A character
 vector requests just those extra fields (\code{QueryIDs} is always
 included). See \code{\link{listDrugTargetFields}} to browse what's
 available.}
+
+\item{unichemDbPath}{optional path to a local UniChem SQLite (see
+\code{\link{buildUnichemDb}}), used to resolve the \code{PubChem_CID}
+column via \code{\link{getUnichemMapping}} - ChEMBL's own REST API
+has no PubChem CID field on the molecule record (its
+\code{cross_references} field is sparse/curator-populated and does
+not carry PubChem, confirmed live). \code{PubChem_CID} is always
+present in the output; when \code{unichemDbPath = NULL} (the
+default - a pre-built UniChem SQLite is a multi-hundred-MB local
+resource, not something a routine REST query should require), it is
+left \code{NA} and a message points to \code{buildUnichemDb()}.}
 }
 \value{
 A \code{data.frame} with columns \code{QueryIDs},
-  \code{chembl_id}, \code{Drug_Name}, \code{MOA}, \code{Action_Type},
+  \code{chembl_id}, \code{Drug_Name}, \code{PubChem_CID} (see
+  \code{unichemDbPath}), \code{MOA}, \code{Action_Type},
   \code{Max_Phase}, \code{First_Approval}, \code{ChEMBL_TID},
   \code{UniProt_ID}, \code{Desc}, \code{Organism},
   \code{Mesh_Indication} (with \code{fields = "core"}, the default), plus

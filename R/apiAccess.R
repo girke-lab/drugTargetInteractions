@@ -1031,8 +1031,19 @@ getChemblBioassay <- function(queryBy = list(molType = NULL, idType = NULL, ids 
 #'   vector requests just those extra fields (\code{QueryIDs} is always
 #'   included). See \code{\link{listDrugTargetFields}} to browse what's
 #'   available.
+#' @param unichemDbPath optional path to a local UniChem SQLite (see
+#'   \code{\link{buildUnichemDb}}), used to resolve the \code{PubChem_CID}
+#'   column via \code{\link{getUnichemMapping}} - ChEMBL's own REST API
+#'   has no PubChem CID field on the molecule record (its
+#'   \code{cross_references} field is sparse/curator-populated and does
+#'   not carry PubChem, confirmed live). \code{PubChem_CID} is always
+#'   present in the output; when \code{unichemDbPath = NULL} (the
+#'   default - a pre-built UniChem SQLite is a multi-hundred-MB local
+#'   resource, not something a routine REST query should require), it is
+#'   left \code{NA} and a message points to \code{buildUnichemDb()}.
 #' @return A \code{data.frame} with columns \code{QueryIDs},
-#'   \code{chembl_id}, \code{Drug_Name}, \code{MOA}, \code{Action_Type},
+#'   \code{chembl_id}, \code{Drug_Name}, \code{PubChem_CID} (see
+#'   \code{unichemDbPath}), \code{MOA}, \code{Action_Type},
 #'   \code{Max_Phase}, \code{First_Approval}, \code{ChEMBL_TID},
 #'   \code{UniProt_ID}, \code{Desc}, \code{Organism},
 #'   \code{Mesh_Indication} (with \code{fields = "core"}, the default), plus
@@ -1058,7 +1069,7 @@ getChemblBioassay <- function(queryBy = list(molType = NULL, idType = NULL, ids 
 getChemblDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
                                                ids = NULL),
                                 verbose = FALSE, chunkSize = 200L,
-                                fields = "core") {
+                                fields = "core", unichemDbPath = NULL) {
     if (!identical(names(queryBy), c("molType", "idType", "ids"))) {
         stop(
             "All three list components in 'queryBy' (named: 'molType',",
@@ -1074,9 +1085,9 @@ getChemblDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
 
     base <- .dtiEndpoints()$chembl
     wantAll <- !identical(fields, "core")
-    emptyCols <- c("QueryIDs", "chembl_id", "Drug_Name", "MOA", "Action_Type",
-                  "Max_Phase", "First_Approval", "ChEMBL_TID", "UniProt_ID",
-                  "Desc", "Organism", "Mesh_Indication")
+    emptyCols <- c("QueryIDs", "chembl_id", "Drug_Name", "PubChem_CID", "MOA",
+                  "Action_Type", "Max_Phase", "First_Approval", "ChEMBL_TID",
+                  "UniProt_ID", "Desc", "Organism", "Mesh_Indication")
     emptyDF <- as.data.frame(stats::setNames(
         replicate(length(emptyCols), character(0), simplify = FALSE),
         emptyCols), stringsAsFactors = FALSE)
@@ -1247,6 +1258,28 @@ getChemblDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
     names(out)[names(out) == "pref_name"] <- "Drug_Name"
     names(out)[names(out) == "first_approval"] <- "First_Approval"
 
+    ## ChEMBL's own REST API has no PubChem CID field on the molecule
+    ## record (confirmed live via its `cross_references` field, which is
+    ## sparse/curator-populated and does not carry PubChem) - resolving
+    ## ChEMBL -> PubChem needs UniChem, via the same generic
+    ## getUnichemMapping() the rest of the package already uses for
+    ## compound-ID translation. unichemDbPath is optional (a pre-built
+    ## UniChem SQLite is a multi-hundred-MB local resource, not something
+    ## to require for a routine REST query) - PubChem_CID is always
+    ## present in the output shape either way, just NA when not resolved.
+    if (!is.null(unichemDbPath)) {
+        pcMap <- getUnichemMapping(unique(stats::na.omit(out$chembl_id)),
+                                   from = "chembl", to = "pubchem",
+                                   dbPath = unichemDbPath)
+        pcVec <- stats::setNames(pcMap$To, pcMap$From)
+        out$PubChem_CID <- unname(pcVec[out$chembl_id])
+    } else {
+        out$PubChem_CID <- NA_character_
+        message("getChemblDrugTarget(): 'PubChem_CID' left NA - pass ",
+                "unichemDbPath (build one first via buildUnichemDb()) to ",
+                "resolve ChEMBL IDs to PubChem CIDs.")
+    }
+
     if (wantAll) {
         if (!is.null(meshRes$wide))
             out <- merge(out, meshRes$wide, by = "chembl_id", all.x = TRUE)
@@ -1284,9 +1317,9 @@ getChemblDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
 #' @keywords internal
 #' @noRd
 .dtiChemblAllCols <- c(
-    "QueryIDs", "chembl_id", "Drug_Name", "MOA", "Action_Type", "Max_Phase",
-    "First_Approval", "ChEMBL_TID", "UniProt_ID", "Desc", "Organism",
-    "Mesh_Indication",
+    "QueryIDs", "chembl_id", "Drug_Name", "PubChem_CID", "MOA", "Action_Type",
+    "Max_Phase", "First_Approval", "ChEMBL_TID", "UniProt_ID", "Desc",
+    "Organism", "Mesh_Indication",
     "target.target_chembl_id", "target.pref_name", "target.organism",
     "target.target_type", "target.tax_id", "target.species_group_flag",
     "target.target_components.accession",
