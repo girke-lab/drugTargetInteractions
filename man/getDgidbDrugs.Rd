@@ -38,10 +38,15 @@ available.}
 \value{
 A \code{data.frame} with columns \code{gene_name},
   \code{drug_name}, \code{drug_concept_id} (e.g.
-  \code{"chembl:CHEMBL1201585"}), \code{drug_approved},
-  \code{interaction_types}, \code{directionality},
-  \code{interaction_score}, \code{evidence_score}, \code{sources}
-  (upstream provenance), \code{db}. Empty if none / offline.
+  \code{"chembl:CHEMBL1201585"} - DGIdb's own pick of one external
+  ID, not a stable DGIdb-native ID), \code{drug_aliases}
+  (\code{"; "}-collapsed cross-reference IDs DGIdb knows for that
+  drug, e.g. \code{"CHEMBL:CHEMBL941; DRUGBANK:DB00619; ..."} - more
+  reliable for linking to other sources than matching on drug name
+  alone), \code{drug_approved}, \code{interaction_types},
+  \code{directionality}, \code{interaction_score},
+  \code{evidence_score}, \code{sources} (upstream provenance),
+  \code{db}. Empty if none / offline.
 }
 \description{
 Queries the DGIdb \code{interactions(geneNames: ...)} GraphQL field

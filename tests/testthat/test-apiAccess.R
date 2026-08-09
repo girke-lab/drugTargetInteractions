@@ -314,7 +314,7 @@ test_that("getDgidbDrugs matches the validated 8-gene row count exactly", {
     df <- getDgidbDrugs(genes)
     expect_s3_class(df, "data.frame")
     expect_identical(names(df), c("gene_name", "drug_name", "drug_concept_id",
-                                  "drug_approved", "interaction_types",
+                                  "drug_aliases", "drug_approved", "interaction_types",
                                   "directionality", "interaction_score",
                                   "evidence_score", "sources", "db"))
     expect_equal(nrow(df), 227L)  # matches R_Py_code/dgidb_fetch.py reference
@@ -390,7 +390,9 @@ test_that("getDgidbDrugTarget rejects unsupported idType / malformed queryBy", {
 
 test_that(".dtiParseDgidbInteractions parses/collapses raw nodes, no network", {
     nodes <- list(list(
-        drug = list(name = "ASPIRIN", conceptId = "chembl:CHEMBL25", approved = TRUE),
+        drug = list(name = "ASPIRIN", conceptId = "chembl:CHEMBL25", approved = TRUE,
+                    drugAliases = list(list(alias = "CHEMBL:CHEMBL25"),
+                                      list(alias = "DRUGBANK:DB00945"))),
         gene = list(name = "PTGS1"),
         interactionScore = 1.5,
         evidenceScore = 3.2,
@@ -403,7 +405,19 @@ test_that(".dtiParseDgidbInteractions parses/collapses raw nodes, no network", {
     expect_identical(df$drug_approved, TRUE)
     expect_identical(df$interaction_types, "inhibitor")
     expect_identical(df$sources, "ChEMBL; DrugBank")
+    expect_identical(df$drug_aliases, "CHEMBL:CHEMBL25; DRUGBANK:DB00945")
     expect_identical(.dtiParseDgidbInteractions(NULL), .dtiEmptyDgidb())
+})
+
+test_that(".dtiParseDgidbInteractions leaves drug_aliases empty (not erroring) when a drug has none", {
+    nodes <- list(list(
+        drug = list(name = "OBSCURE COMPOUND", conceptId = "rxcui:1", approved = FALSE),
+        gene = list(name = "GENEX"),
+        interactionScore = NULL, evidenceScore = NULL,
+        interactionTypes = list(), sources = list()
+    ))
+    df <- .dtiParseDgidbInteractions(nodes)
+    expect_identical(df$drug_aliases, "")
 })
 
 test_that("getOpenTargetsIds resolves gene symbols to Ensembl IDs", {
@@ -638,9 +652,9 @@ test_that("getPubchemDrugTarget(fields = 'all') adds activity.*-prefixed columns
 test_that("getDgidbDrugTarget(fields = 'all') adds drug./gene./source.-prefixed columns", {
     skip_if_offline_dti()
     all <- getDgidbTargets("imatinib", fields = "all")
-    coreCols <- c("gene_name", "drug_name", "drug_concept_id", "drug_approved",
-                 "interaction_types", "directionality", "interaction_score",
-                 "evidence_score", "sources", "db")
+    coreCols <- c("gene_name", "drug_name", "drug_concept_id", "drug_aliases",
+                 "drug_approved", "interaction_types", "directionality",
+                 "interaction_score", "evidence_score", "sources", "db")
     expect_identical(coreCols, listDrugTargetFields("dgidb")[seq_along(coreCols)])
     expect_true(all(coreCols %in% names(all)))
     expect_true(ncol(all) > length(coreCols))

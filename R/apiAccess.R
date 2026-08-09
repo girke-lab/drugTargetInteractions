@@ -1883,13 +1883,27 @@ getPubchemDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
 ## an aggregator - individual rows carry their upstream source's license,
 ## not one blanket DGIdb license (see the standalone
 ## R_Py_code/license_registry.py table; not ported into the package).
+##
+## DGIdb has no ID namespace of its own for drugs/genes (confirmed live
+## via GraphQL introspection 2026-08-09): `Drug.id`/`Gene.id` are internal
+## database UUIDs, not a stable public accession, and `conceptId` is
+## always a normalized *external* ID borrowed from whichever vocabulary
+## DGIdb picked as canonical for that record (e.g. `rxcui:1191` for
+## aspirin via RxNorm, `hgnc:3688` for FGFR1) - the prefix varies row to
+## row, so it's one pick, not a full cross-reference set. `drugAliases`
+## is the fuller version of the same idea: every cross-reference DGIdb
+## knows about for that drug (ChEMBL, DrugBank, PubChem compound/
+## substance, IUPHAR, TTD, NCIt, PharmGKB, CIViC, plus bare name
+## synonyms), collapsed into `drug_aliases` - since drug identity from
+## name matching alone is often unreliable, this is the most direct way
+## to link a DGIdb row to other sources' own IDs.
 
 #' Column order for tidy DGIdb interaction rows
 #' @keywords internal
 #' @noRd
-.dtiDgidbCols <- c("gene_name", "drug_name", "drug_concept_id", "drug_approved",
-                   "interaction_types", "directionality", "interaction_score",
-                   "evidence_score", "sources", "db")
+.dtiDgidbCols <- c("gene_name", "drug_name", "drug_concept_id", "drug_aliases",
+                   "drug_approved", "interaction_types", "directionality",
+                   "interaction_score", "evidence_score", "sources", "db")
 
 #' Documented column list for \code{listDrugTargetFields("dgidb")}
 #'
@@ -1940,7 +1954,7 @@ getPubchemDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
 #' @noRd
 .dtiDgidbSelection <- function(wantAll = FALSE) {
     if (!wantAll) {
-        return("drug { name conceptId approved }
+        return("drug { name conceptId approved drugAliases { alias } }
      gene { name }
      interactionScore
      evidenceScore
@@ -1948,7 +1962,7 @@ getPubchemDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
      sources { sourceDbName }")
     }
     "id drugId geneId drugSpecificity geneSpecificity
-     drug { id name conceptId approved antiNeoplastic immunotherapy }
+     drug { id name conceptId approved antiNeoplastic immunotherapy drugAliases { alias } }
      gene { id name longName conceptId }
      interactionScore
      evidenceScore
@@ -1980,10 +1994,14 @@ getPubchemDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
         srcs   <- n$sources %||% list()
         srcNames <- collapse(vapply(srcs, function(s) s$sourceDbName %||% NA_character_,
                                     character(1)))
+        aliases <- drug$drugAliases %||% list()
+        aliasStr <- collapse(vapply(aliases, function(a) a$alias %||% NA_character_,
+                                    character(1)))
         base <- list(
             gene_name         = gene$name %||% NA_character_,
             drug_name         = drug$name %||% NA_character_,
             drug_concept_id   = drug$conceptId %||% NA_character_,
+            drug_aliases      = aliasStr,
             drug_approved     = as.logical(drug$approved %||% NA),
             interaction_types = types,
             directionality    = dirs,
@@ -2125,10 +2143,15 @@ getPubchemDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
 #' @param verbose logical(1); if TRUE, message progress per chunk/page.
 #' @return A \code{data.frame} with columns \code{gene_name},
 #'   \code{drug_name}, \code{drug_concept_id} (e.g.
-#'   \code{"chembl:CHEMBL1201585"}), \code{drug_approved},
-#'   \code{interaction_types}, \code{directionality},
-#'   \code{interaction_score}, \code{evidence_score}, \code{sources}
-#'   (upstream provenance), \code{db}. Empty if none / offline.
+#'   \code{"chembl:CHEMBL1201585"} - DGIdb's own pick of one external
+#'   ID, not a stable DGIdb-native ID), \code{drug_aliases}
+#'   (\code{"; "}-collapsed cross-reference IDs DGIdb knows for that
+#'   drug, e.g. \code{"CHEMBL:CHEMBL941; DRUGBANK:DB00619; ..."} - more
+#'   reliable for linking to other sources than matching on drug name
+#'   alone), \code{drug_approved}, \code{interaction_types},
+#'   \code{directionality}, \code{interaction_score},
+#'   \code{evidence_score}, \code{sources} (upstream provenance),
+#'   \code{db}. Empty if none / offline.
 #' @examples
 #' \donttest{
 #'   df <- getDgidbDrugs(c("FGFR1", "KLB"))
