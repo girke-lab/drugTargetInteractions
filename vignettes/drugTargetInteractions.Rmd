@@ -258,6 +258,10 @@ properties), `getChemblTarget()` (search targets by gene/protein name), and
 `getChemblBioactivities()` (raw IC50/Ki/Kd/EC50 measurements for one
 target).
 
+The `PubChem_CID` column above is `NA` by default - ChEMBL's own REST API
+has no PubChem cross-reference on the molecule record, so resolving it
+needs a local UniChem SQLite (`unichemDbPath`; see [Compound IDs] below).
+
 ## DGIdb
 
 The Drug Gene Interaction Database is queried through its GraphQL API via
@@ -720,6 +724,16 @@ specifically to avoid depending on it (see `?buildUnichemDb`). Because the
 build is a real, deliberate operation (not something to trigger silently),
 `buildUnichemDb(rerun = FALSE)` is always required explicitly before using
 `getUnichemMapping()` or `queryDrugTargets()` on structured compound IDs.
+
+ChEMBL's own REST API has no PubChem CID field on the molecule record, so
+`getChemblDrugTarget()`'s `PubChem_CID` column is `NA` by default (see
+[ChEMBL] above) - pass the same `unichemDbPath` to resolve it via UniChem:
+
+```{r chembl_pubchem_cid, eval=.haveUnichemDb()}
+getChemblDrugTarget(list(molType = "cmp", idType = "chembl_id", ids = "CHEMBL25"),
+                    unichemDbPath = unichemDbPath)[
+    , c("chembl_id", "Drug_Name", "PubChem_CID")]
+```
 
 # Cross-Source Queries
 
