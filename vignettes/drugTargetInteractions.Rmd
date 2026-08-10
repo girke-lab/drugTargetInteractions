@@ -110,6 +110,37 @@ This vignette is organised as follows:
 - **[Supplement]** - legacy/alternative functions kept for backward
   compatibility.
 
+## Data Sources at a Glance
+
+Quick reference for everything covered above: the seven drug-target/
+bioassay data sources plus the helper resources used for identifier
+translation and (for genome-wide runs) the gene anchor. License/
+redistribution posture matters for reuse - see each source's own section
+for detail, and note that `buildTtdDb()`/`buildBroadRepurposingHubDb()`/
+`buildGtoPdbDb()`/`buildUnichemDb()` only ever download into your own
+local cache; the package itself redistributes none of this data.
+
+**Drug-target and bioassay data sources**
+
+| Source | Data provided | Access mode | Package function(s) | License / redistribution |
+|---|---|---|---|---|
+| [ChEMBL](https://www.ebi.ac.uk/chembl/) | Drug-target annotations + bioassay measurements | Live REST API (legacy full local SQLite optional, see [Supplement]) | `getChemblDrugTarget()`, `getChemblBioassay()` | CC-BY-SA 3.0 - redistribution allowed with attribution + share-alike |
+| [DGIdb](https://dgidb.org/) | Drug-target annotations (aggregates many upstream sources) | Live GraphQL API | `getDgidbDrugTarget()` | Mixed - each row's `sources` column carries its own upstream license |
+| [Open Targets](https://platform.opentargets.org/) | Drug-target annotations | Live GraphQL API | `getOpenTargetsDrugTarget()` | CC0 |
+| [TTD](https://ttd.idrblab.cn/) | Drug-target annotations | Local SQLite, built once from downloaded flat files | `buildTtdDb()`, `ttdTargetAnnot()` | No explicit redistribution grant ("academic use" only) |
+| [Broad Repurposing Hub](https://repo-hub.broadinstitute.org/repurposing) | Drug-target annotations | Local SQLite, built once from downloaded flat files | `buildBroadRepurposingHubDb()`, `broadRepurposingHubAnnot()` | Non-commercial use only |
+| [GtoPdb](https://www.guidetopharmacology.org/) | Drug-target annotations | Local SQLite, built once from bulk REST + one flat file | `buildGtoPdbDb()`, `gtoPdbTargetAnnot()` | ODbL + CC-BY-SA 4.0 - redistribution permitted |
+| [PubChem](https://pubchem.ncbi.nlm.nih.gov/) | Bioassay measurements | Live REST (PUG-REST + E-utilities) | `getPubchemDrugTarget()` | Public-domain-leaning; per-depositor terms vary, not fully verified |
+
+**ID-translation and helper resources**
+
+| Resource | Provides | Access mode | Package function(s) | License / redistribution |
+|---|---|---|---|---|
+| [UniProt](https://www.uniprot.org/) | Protein/gene ID mapping | Live REST (ID Mapping API) | `getUniprotMapping()` | n/a - lookup service, no data redistributed |
+| [Ensembl](https://www.ensembl.org/) | Paralog/ortholog mapping | Live REST (homology API) | `getEnsemblParalogs()`, `getEnsemblOrthologs()` | n/a - lookup service, no data redistributed |
+| [UniChem](https://www.ebi.ac.uk/unichem/) | Compound ID cross-referencing (ChEMBL, PubChem, DrugBank, ChEBI, and dozens more) | Local SQLite, built once from EBI's bulk cross-reference dump (~1 hour, ~1.5GB) | `buildUnichemDb()`, `getUnichemMapping()` | Not explicitly stated; EBI data generally open (unverified) |
+| [HGNC](https://www.genenames.org/) | Gene-centric anchor for [Genome-Wide Master Table] runs (approved symbol + aliases + Ensembl/UniProt/Entrez cross-references) | Live download of a pinned quarterly snapshot (or rolling latest) | `getHgncGeneTable()`, `buildHgncSymbolMap()`, `normalizeGeneSymbols()` | n/a - lookup service, no data redistributed |
+
 ## Install Package
 
 As Bioconductor package `drugTargetInteraction` can be installed with the `BiocManager::install()` function.
