@@ -402,8 +402,32 @@ getUniprotIDs <- function(taxId = 9606, kt = "ENSEMBL", keys,
 ## function, but instead of UNIREF clusters, biomaRt's paralogs are used to
 ## obtain SSNNs.
 
+## www.ensembl.org's classic BioMart service (biomaRt::useMart()'s default
+## host) was retired 2026-08 in favor of a new beta site -
+## https://www.ensembl.org/biomart/martservice now 404s. Its regional
+## load-balancer mirrors still serve the classic schema programmatically,
+## but availability across them is inconsistent (uswest's TLS cert has
+## expired; useast 403s for some callers) - looks like Ensembl is
+## mid-decommission of that infrastructure, not a clean single-URL
+## rotation like the Broad Repurposing Hub case. Try hosts in order
+## (default first, in case it's restored) and use whichever responds.
+.dtiClassicEnsemblMart <- function(dataset = "hsapiens_gene_ensembl") {
+    hosts <- c("https://www.ensembl.org", "https://asia.ensembl.org",
+               "https://useast.ensembl.org", "https://uswest.ensembl.org")
+    lastErr <- NULL
+    for (h in hosts) {
+        mart <- tryCatch(biomaRt::useMart("ensembl", dataset = dataset, host = h),
+                          error = function(e) e)
+        if (!inherits(mart, "error")) return(mart)
+        lastErr <- mart
+    }
+    stop("Could not connect to any Ensembl classic BioMart mirror (tried: ",
+         paste(hosts, collapse = ", "), "). Last error: ",
+         conditionMessage(lastErr))
+}
+
 getParalogs <- function(queryBy) {
-    mart <- biomaRt::useMart("ensembl", dataset = "hsapiens_gene_ensembl")
+    mart <- .dtiClassicEnsemblMart()
 
     ## ID Matching (IDM) result table
     ## To list available uniprot annotation fields, run:
