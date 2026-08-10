@@ -2044,8 +2044,137 @@ covering all human protein-coding genes at once.</li>
 compatibility.</li>
 </ul>
 </div>
-<div id="install-package" class="section level2" number="1.2">
-<h2><span class="header-section-number">1.2</span> Install Package</h2>
+<div id="data-sources-at-a-glance" class="section level2" number="1.2">
+<h2><span class="header-section-number">1.2</span> Data Sources at a Glance</h2>
+<p>Quick reference for everything covered above: the seven drug-target/
+bioassay data sources plus the helper resources used for identifier
+translation and (for genome-wide runs) the gene anchor. License/
+redistribution posture matters for reuse - see each source’s own section
+for detail, and note that <code>buildTtdDb()</code>/<code>buildBroadRepurposingHubDb()</code>/
+<code>buildGtoPdbDb()</code>/<code>buildUnichemDb()</code> only ever download into your own
+local cache; the package itself redistributes none of this data.</p>
+<p><strong>Drug-target and bioassay data sources</strong></p>
+<div class='horizontal-scroll'><table>
+<colgroup>
+<col width="20%" />
+<col width="20%" />
+<col width="20%" />
+<col width="20%" />
+<col width="20%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Source</th>
+<th>Data provided</th>
+<th>Access mode</th>
+<th>Package function(s)</th>
+<th>License / redistribution</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><a href="https://www.ebi.ac.uk/chembl/">ChEMBL</a></td>
+<td>Drug-target annotations + bioassay measurements</td>
+<td>Live REST API (legacy full local SQLite optional, see <a href="#supplement">Supplement</a>)</td>
+<td><code>getChemblDrugTarget()</code>, <code>getChemblBioassay()</code></td>
+<td>CC-BY-SA 3.0 - redistribution allowed with attribution + share-alike</td>
+</tr>
+<tr class="even">
+<td><a href="https://dgidb.org/">DGIdb</a></td>
+<td>Drug-target annotations (aggregates many upstream sources)</td>
+<td>Live GraphQL API</td>
+<td><code>getDgidbDrugTarget()</code></td>
+<td>Mixed - each row’s <code>sources</code> column carries its own upstream license</td>
+</tr>
+<tr class="odd">
+<td><a href="https://platform.opentargets.org/">Open Targets</a></td>
+<td>Drug-target annotations</td>
+<td>Live GraphQL API</td>
+<td><code>getOpenTargetsDrugTarget()</code></td>
+<td>CC0</td>
+</tr>
+<tr class="even">
+<td><a href="https://ttd.idrblab.cn/">TTD</a></td>
+<td>Drug-target annotations</td>
+<td>Local SQLite, built once from downloaded flat files</td>
+<td><code>buildTtdDb()</code>, <code>ttdTargetAnnot()</code></td>
+<td>No explicit redistribution grant (“academic use” only)</td>
+</tr>
+<tr class="odd">
+<td><a href="https://repo-hub.broadinstitute.org/repurposing">Broad Repurposing Hub</a></td>
+<td>Drug-target annotations</td>
+<td>Local SQLite, built once from downloaded flat files</td>
+<td><code>buildBroadRepurposingHubDb()</code>, <code>broadRepurposingHubAnnot()</code></td>
+<td>Non-commercial use only</td>
+</tr>
+<tr class="even">
+<td><a href="https://www.guidetopharmacology.org/">GtoPdb</a></td>
+<td>Drug-target annotations</td>
+<td>Local SQLite, built once from bulk REST + one flat file</td>
+<td><code>buildGtoPdbDb()</code>, <code>gtoPdbTargetAnnot()</code></td>
+<td>ODbL + CC-BY-SA 4.0 - redistribution permitted</td>
+</tr>
+<tr class="odd">
+<td><a href="https://pubchem.ncbi.nlm.nih.gov/">PubChem</a></td>
+<td>Bioassay measurements</td>
+<td>Live REST (PUG-REST + E-utilities)</td>
+<td><code>getPubchemDrugTarget()</code></td>
+<td>Public-domain-leaning; per-depositor terms vary, not fully verified</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>ID-translation and helper resources</strong></p>
+<div class='horizontal-scroll'><table>
+<colgroup>
+<col width="20%" />
+<col width="20%" />
+<col width="20%" />
+<col width="20%" />
+<col width="20%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Resource</th>
+<th>Provides</th>
+<th>Access mode</th>
+<th>Package function(s)</th>
+<th>License / redistribution</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><a href="https://www.uniprot.org/">UniProt</a></td>
+<td>Protein/gene ID mapping</td>
+<td>Live REST (ID Mapping API)</td>
+<td><code>getUniprotMapping()</code></td>
+<td>n/a - lookup service, no data redistributed</td>
+</tr>
+<tr class="even">
+<td><a href="https://www.ensembl.org/">Ensembl</a></td>
+<td>Paralog/ortholog mapping</td>
+<td>Live REST (homology API)</td>
+<td><code>getEnsemblParalogs()</code>, <code>getEnsemblOrthologs()</code></td>
+<td>n/a - lookup service, no data redistributed</td>
+</tr>
+<tr class="odd">
+<td><a href="https://www.ebi.ac.uk/unichem/">UniChem</a></td>
+<td>Compound ID cross-referencing (ChEMBL, PubChem, DrugBank, ChEBI, and dozens more)</td>
+<td>Local SQLite, built once from EBI’s bulk cross-reference dump (~1 hour, ~1.5GB)</td>
+<td><code>buildUnichemDb()</code>, <code>getUnichemMapping()</code></td>
+<td>Not explicitly stated; EBI data generally open (unverified)</td>
+</tr>
+<tr class="even">
+<td><a href="https://www.genenames.org/">HGNC</a></td>
+<td>Gene-centric anchor for <a href="#genome-wide-master-table">Genome-Wide Master Table</a> runs (approved symbol + aliases + Ensembl/UniProt/Entrez cross-references)</td>
+<td>Live download of a pinned quarterly snapshot (or rolling latest)</td>
+<td><code>getHgncGeneTable()</code>, <code>buildHgncSymbolMap()</code>, <code>normalizeGeneSymbols()</code></td>
+<td>n/a - lookup service, no data redistributed</td>
+</tr>
+</tbody>
+</table></div>
+</div>
+<div id="install-package" class="section level2" number="1.3">
+<h2><span class="header-section-number">1.3</span> Install Package</h2>
 <p>As Bioconductor package <code>drugTargetInteraction</code> can be installed with the <code>BiocManager::install()</code> function.</p>
 <pre class="r"><code>if (!requireNamespace(&quot;BiocManager&quot;, quietly = TRUE))
     install.packages(&quot;BiocManager&quot;)
@@ -2055,8 +2184,8 @@ BiocManager::install(&quot;drugTargetInteractions&quot;)</code></pre>
     install.packages(&quot;pak&quot;)
 pak::pak(&quot;girke-lab/drugTargetInteractions&quot;) # Installs from github</code></pre>
 </div>
-<div id="load-package-and-access-help" class="section level2" number="1.3">
-<h2><span class="header-section-number">1.3</span> Load Package and Access Help</h2>
+<div id="load-package-and-access-help" class="section level2" number="1.4">
+<h2><span class="header-section-number">1.4</span> Load Package and Access Help</h2>
 <pre class="r"><code>library(&quot;drugTargetInteractions&quot;) # Loads the package</code></pre>
 <pre class="r"><code>library(help=&quot;drugTargetInteractions&quot;) # Lists package info
 vignette(topic=&quot;drugTargetInteractions&quot;, package=&quot;drugTargetInteractions&quot;) # Opens vignette</code></pre>
@@ -3391,7 +3520,7 @@ sapply(combined, nrow)</code></pre>
 ##  [4] GenomicFeatures_1.65.0        AnnotationDbi_1.75.0          Biobase_2.73.1               
 ##  [7] GenomicRanges_1.65.1          Seqinfo_1.3.0                 IRanges_2.47.2               
 ## [10] S4Vectors_0.51.5              BiocGenerics_0.59.10          generics_0.1.4               
-## [13] drugTargetInteractions_1.21.6 BiocStyle_2.41.0             
+## [13] drugTargetInteractions_1.21.7 BiocStyle_2.41.0             
 ## 
 ## loaded via a namespace (and not attached):
 ##  [1] tidyselect_1.2.1            dplyr_1.2.1                 blob_1.3.0                 
