@@ -97,11 +97,31 @@ separate, source-agnostic ID-translation step (see
 \code{\link{getUniprotIDs}}/\code{\link{getParalogs}} for the protein
 side) so that this function's interface stays uniform across sources.
 }
+\section{Salt and parent compounds}{
+
+  In the drug &rarr; target direction, ChEMBL files a drug's mechanism
+  records against whichever molecule form the curator used, which is
+  frequently a salt rather than the parent normally used to refer to
+  the drug - imatinib (\code{CHEMBL941}) has no records of its own,
+  only records on the mesylate salt \code{CHEMBL1642}. Both
+  \code{molecule_chembl_id} and \code{parent_molecule_chembl_id} are
+  therefore queried and unioned, and results are keyed back to the ID
+  that was asked for, so \code{chembl_id}/\code{Drug_Name} describe
+  that compound (\code{"IMATINIB"}) rather than whichever salt carried
+  the record. Querying a salt ID directly still returns that salt.
+  Under \code{fields = "all"} the underlying record is still visible
+  unchanged in \code{mechanism.molecule_chembl_id}.
+}
+
 \examples{
 \donttest{
   ## target -> drug: FGFR1
   getChemblDrugTarget(list(molType = "protein", idType = "Uniprot",
                            ids = "P11362"))
+  ## drug -> target for a compound whose mechanisms ChEMBL files on a
+  ## salt form (imatinib) - resolved via the parent, see above
+  getChemblDrugTarget(list(molType = "cmp", idType = "chembl_id",
+                           ids = "CHEMBL941"))
   ## drug -> target: dasatinib
   getChemblDrugTarget(list(molType = "cmp", idType = "chembl_id",
                            ids = "CHEMBL1421"))

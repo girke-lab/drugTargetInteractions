@@ -1051,11 +1051,28 @@ getChemblBioassay <- function(queryBy = list(molType = NULL, idType = NULL, ids 
 #'   IDs that return no rows still appear as a single row with all other
 #'   fields \code{NA}, so callers can always confirm which of their input
 #'   IDs were resolved.
+#' @section Salt and parent compounds:
+#'   In the drug &rarr; target direction, ChEMBL files a drug's mechanism
+#'   records against whichever molecule form the curator used, which is
+#'   frequently a salt rather than the parent normally used to refer to
+#'   the drug - imatinib (\code{CHEMBL941}) has no records of its own,
+#'   only records on the mesylate salt \code{CHEMBL1642}. Both
+#'   \code{molecule_chembl_id} and \code{parent_molecule_chembl_id} are
+#'   therefore queried and unioned, and results are keyed back to the ID
+#'   that was asked for, so \code{chembl_id}/\code{Drug_Name} describe
+#'   that compound (\code{"IMATINIB"}) rather than whichever salt carried
+#'   the record. Querying a salt ID directly still returns that salt.
+#'   Under \code{fields = "all"} the underlying record is still visible
+#'   unchanged in \code{mechanism.molecule_chembl_id}.
 #' @examples
 #' \donttest{
 #'   ## target -> drug: FGFR1
 #'   getChemblDrugTarget(list(molType = "protein", idType = "Uniprot",
 #'                            ids = "P11362"))
+#'   ## drug -> target for a compound whose mechanisms ChEMBL files on a
+#'   ## salt form (imatinib) - resolved via the parent, see above
+#'   getChemblDrugTarget(list(molType = "cmp", idType = "chembl_id",
+#'                            ids = "CHEMBL941"))
 #'   ## drug -> target: dasatinib
 #'   getChemblDrugTarget(list(molType = "cmp", idType = "chembl_id",
 #'                            ids = "CHEMBL1421"))
@@ -1219,15 +1236,26 @@ getChemblDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
     ## records already carry target_chembl_id/molecule_chembl_id, which
     ## doubles as the join/query key, so no separate per-ID query tag is
     ## needed the way a one-request-per-ID loop would require.
+    ## 'param' may name more than one query field, in which case the
+    ## per-field result sets are unioned - see the molecule/parent note in
+    ## the compound branch below.
     .mechanismsFor <- function(param, ids) {
-        recs <- .dtiBatchGET(paste0(base, "/mechanism.json"), paste0(param, "__in"),
-                             ids, "mechanisms", chunkSize = chunkSize,
-                             verbose = verbose)
+        recs <- unlist(lapply(param, function(p)
+            .dtiBatchGET(paste0(base, "/mechanism.json"), paste0(p, "__in"),
+                         ids, "mechanisms", chunkSize = chunkSize,
+                         verbose = verbose)), recursive = FALSE)
         if (length(recs) == 0L) return(NULL)
+        ## A parent compound's own record matches both query fields, so the
+        ## same record can come back twice. Dedupe on ChEMBL's own
+        ## mechanism-record id; records without one are always kept.
+        mecId <- vapply(recs, function(m)
+            as.character(m$mec_id %||% NA_character_), character(1))
+        recs <- recs[!(!is.na(mecId) & duplicated(mecId))]
         .dtiRbindFill(lapply(recs, function(m) {
             mFlat <- if (wantAll) .dtiFlattenRecord(m, "mechanism") else list()
             do.call(data.frame, c(list(
                 chembl_id        = m$molecule_chembl_id %||% NA_character_,
+                parent_chembl_id = m$parent_molecule_chembl_id %||% NA_character_,
                 ChEMBL_TID       = m$target_chembl_id   %||% NA_character_,
                 MOA              = m$mechanism_of_action %||% NA_character_,
                 Action_Type      = m$action_type        %||% NA_character_,
@@ -1241,11 +1269,40 @@ getChemblDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
         if (nrow(tgtByAcc) == 0L) return(emptyDF)
         mech <- .mechanismsFor("target_chembl_id", unique(tgtByAcc$ChEMBL_TID))
         if (is.null(mech) || nrow(mech) == 0L) return(emptyDF)
+        ## Target direction keys drugs by the molecule the record was filed
+        ## against, salt or not - deliberately left as ChEMBL reports it.
+        mech$parent_chembl_id <- NULL
         out <- merge(tgtByAcc, mech, by = "ChEMBL_TID")
     } else {
-        mech <- .mechanismsFor("molecule_chembl_id", queryBy$ids)
+        ## ChEMBL files a drug's mechanism records against whichever molecule
+        ## form the curator used, which is frequently a salt rather than the
+        ## parent a caller queries: imatinib (CHEMBL941) has *zero* records
+        ## under molecule_chembl_id but four under parent_molecule_chembl_id,
+        ## all filed on the mesylate salt CHEMBL1642 (same for sildenafil,
+        ## CHEMBL192 -> CHEMBL1737). Both fields must be queried and unioned;
+        ## parent_molecule_chembl_id alone is not a substitute, because a
+        ## caller passing a salt ID directly matches only molecule_chembl_id.
+        mech <- .mechanismsFor(c("molecule_chembl_id", "parent_molecule_chembl_id"),
+                               queryBy$ids)
         if (is.null(mech) || nrow(mech) == 0L) return(emptyDF)
+        ## Re-key each record to the ID the caller actually asked for, so
+        ## Drug_Name/PubChem_CID resolve against that compound rather than
+        ## whichever salt carried the record. A record can match two queried
+        ## IDs (caller passed both a parent and its salt), hence one row per
+        ## match rather than a single lookup.
+        matched <- lapply(seq_len(nrow(mech)), function(i)
+            intersect(c(mech$chembl_id[i], mech$parent_chembl_id[i]), queryBy$ids))
+        keep <- which(lengths(matched) > 0L)
+        if (length(keep) == 0L) return(emptyDF)
+        mech <- mech[rep(keep, lengths(matched[keep])), , drop = FALSE]
+        mech$chembl_id <- unlist(matched[keep], use.names = FALSE)
+        mech$parent_chembl_id <- NULL
         mech$QueryIDs <- mech$chembl_id
+        ## Parent and salt records for one drug are separate ChEMBL records
+        ## but the same assertion, so they collapse here under the default
+        ## column set. Under fields="all" they keep their distinct record
+        ## detail (mec_id, refs) and both rows survive - by design.
+        mech <- unique(mech)
         tgtById <- .resolveTargetsById(unique(mech$ChEMBL_TID))
         out <- merge(mech, tgtById, by = "ChEMBL_TID", all.x = TRUE)
     }
