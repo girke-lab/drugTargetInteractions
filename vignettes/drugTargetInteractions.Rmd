@@ -105,6 +105,8 @@ This vignette is organised as follows:
 - **[Cross-Source Queries]** - `queryDrugTargets()` across one or many
   sources at once, performance guidance, and combining results into a
   single table.
+- **[Mechanism of Action]** - pooling MOA across sources without losing
+  track of what each source actually asserted.
 - **[Genome-Wide Master Table]** - an HGNC-anchored, checkpointed build
   covering all human protein-coding genes at once.
 - **[Supplement]** - legacy/alternative functions kept for backward
@@ -122,15 +124,15 @@ local cache; the package itself redistributes none of this data.
 
 **Drug-target and bioassay data sources**
 
-| Source | Data provided | Access mode | Package function(s) | License / redistribution |
-|---|---|---|---|---|
-| [ChEMBL](https://www.ebi.ac.uk/chembl/) | Drug-target annotations + bioassay measurements | Live REST API (legacy full local SQLite optional, see [Supplement]) | `getChemblDrugTarget()`, `getChemblBioassay()` | CC-BY-SA 3.0 - redistribution allowed with attribution + share-alike |
-| [DGIdb](https://dgidb.org/) | Drug-target annotations (aggregates many upstream sources) | Live GraphQL API | `getDgidbDrugTarget()` | Mixed - each row's `sources` column carries its own upstream license |
-| [Open Targets](https://platform.opentargets.org/) | Drug-target annotations | Live GraphQL API | `getOpenTargetsDrugTarget()` | CC0 |
-| [TTD](https://ttd.idrblab.cn/) | Drug-target annotations | Local SQLite, built once from downloaded flat files | `buildTtdDb()`, `ttdTargetAnnot()` | No explicit redistribution grant ("academic use" only) |
-| [Broad Repurposing Hub](https://repo-hub.broadinstitute.org/repurposing) | Drug-target annotations | Local SQLite, built once from downloaded flat files | `buildBroadRepurposingHubDb()`, `broadRepurposingHubAnnot()` | Non-commercial use only |
-| [GtoPdb](https://www.guidetopharmacology.org/) | Drug-target annotations | Local SQLite, built once from bulk REST + one flat file | `buildGtoPdbDb()`, `gtoPdbTargetAnnot()` | ODbL + CC-BY-SA 4.0 - redistribution permitted |
-| [PubChem](https://pubchem.ncbi.nlm.nih.gov/) | Bioassay measurements | Live REST (PUG-REST + E-utilities) | `getPubchemDrugTarget()` | Public-domain-leaning; per-depositor terms vary, not fully verified |
+| Source | Data provided | MOA (see [Mechanism of Action]) | Access mode | Package function(s) | License / redistribution |
+|---|---|---|---|---|---|
+| [ChEMBL](https://www.ebi.ac.uk/chembl/) | Drug-target annotations + bioassay measurements | Free-text prose, per target | Live REST API (legacy full local SQLite optional, see [Supplement]) | `getChemblDrugTarget()`, `getChemblBioassay()` | CC-BY-SA 3.0 - redistribution allowed with attribution + share-alike |
+| [DGIdb](https://dgidb.org/) | Drug-target annotations (aggregates many upstream sources) | Action vocabulary, often empty | Live GraphQL API | `getDgidbDrugTarget()` | Mixed - each row's `sources` column carries its own upstream license |
+| [Open Targets](https://platform.opentargets.org/) | Drug-target annotations | Free-text prose; one statement can span several targets | Live GraphQL API | `getOpenTargetsDrugTarget()` | CC0 |
+| [TTD](https://ttd.idrblab.cn/) | Drug-target annotations | Action vocabulary, per target | Local SQLite, built once from downloaded flat files | `buildTtdDb()`, `ttdTargetAnnot()` | No explicit redistribution grant ("academic use" only) |
+| [Broad Repurposing Hub](https://repo-hub.broadinstitute.org/repurposing) | Drug-target annotations | Free-text prose but **drug-level only** - not attributable to a target | Local SQLite, built once from downloaded flat files | `buildBroadRepurposingHubDb()`, `broadRepurposingHubAnnot()` | Non-commercial use only |
+| [GtoPdb](https://www.guidetopharmacology.org/) | Drug-target annotations | Action vocabulary, per target | Local SQLite, built once from bulk REST + one flat file | `buildGtoPdbDb()`, `gtoPdbTargetAnnot()` | ODbL + CC-BY-SA 4.0 - redistribution permitted |
+| [PubChem](https://pubchem.ncbi.nlm.nih.gov/) | Bioassay measurements | None - measurements only | Live REST (PUG-REST + E-utilities) | `getPubchemDrugTarget()` | Public-domain-leaning; per-depositor terms vary, not fully verified |
 
 **ID-translation and helper resources**
 
@@ -910,6 +912,86 @@ literal same compound/target could be properly joined - is a separate,
 deferred phase. Every source's full original data remains available
 unchanged in the list `queryDrugTargets()` returned, regardless of what
 you pass to `combineDrugTargets()`.
+
+# Mechanism of Action
+
+Per-source mechanism-of-action (MOA) coverage is individually incomplete,
+so pooling it across sources is a genuine value-add rather than a
+convenience. `assembleMoaTable()` does that, transforming
+`queryDrugTargets()`'s per-source results the same way
+`combineDrugTargets()` does - but it records two things a plain
+column-append would flatten away, because ignoring either produces
+conclusions the underlying data does not support.
+
+`listMoaSources()` is the quick reference for what each source actually
+carries:
+
+```{r moa_sources, eval=TRUE}
+listMoaSources()[, c("source", "moa_column", "moa_kind", "moa_scope")]
+```
+
+**Grain (`moa_scope`) is the important one.** Most sources assert a
+mechanism for a specific drug-target pair, but the Broad Repurposing
+Hub's `moa` is a *drug-level* attribute: the same `" | "`-joined string
+is repeated on every one of that drug's target rows. Treating those rows
+as per-target evidence would invent attributions Broad never made, so
+they are marked `moa_scope = "drug"` and their target columns are always
+`NA`. `moaByTarget()` drops them for you before any per-target grouping.
+
+**Kind (`moa_kind`)** separates free-text mechanism prose (ChEMBL, Open
+Targets, Broad - e.g. `"Bcr/Abl fusion protein inhibitor"`) from a short
+controlled action vocabulary (TTD, GtoPdb, DGIdb - e.g. `"Inhibitor"`).
+Both are legitimately MOA, but counting them together compares unlike
+things.
+
+```{r moa_assemble, eval=TRUE}
+moa_res <- queryDrugTargets(
+    list(molType = "cmp", idType = "chembl_id", ids = "CHEMBL941"),  # imatinib
+    sources = c("chembl", "opentargets"))
+moa <- assembleMoaTable(moa_res)
+moa[, c("source", "moa_text", "moa_kind", "moa_scope", "target_symbol",
+        "target_uniprot")]
+```
+
+Note ChEMBL populates `target_uniprot` and Open Targets `target_symbol` -
+ChEMBL's REST output has no gene-symbol column at all. Pass
+`resolveGeneSymbol = TRUE` to fill the gap in one batched UniProt lookup,
+exactly as `combineDrugTargets()` does, so the two line up per target:
+
+```{r moa_resolve_symbol, eval=TRUE}
+assembleMoaTable(moa_res, resolveGeneSymbol = TRUE)[
+    , c("source", "moa_text", "target_symbol")] |> head(4)
+```
+
+MOA strings are kept **verbatim** - only `action_type` is normalized, to
+a shared controlled term, because the action vocabularies are
+near-identical once case is folded (ChEMBL `"INHIBITOR"`, TTD
+`"Inhibitor"`, DGIdb `"inhibitor"`, GtoPdb `"Inhibition"` all become
+`"inhibitor"`) while genuine synonymy across free-text prose would need
+an ontology. The source's own term is always kept in `action_type_raw`.
+
+`moaWide()` collapses the long table to one row per drug, with
+list-columns and the two MOA kinds in separate columns:
+
+```{r moa_wide, eval=TRUE}
+moaWide(moa)[, c("drug_key", "drug_name", "n_sources", "action_type")]
+```
+
+`queryMoa()` is the one-call convenience wrapper (`queryDrugTargets()`
+then `assembleMoaTable()`); use the two separately when you also want
+each source's full native columns, which the wrapper discards. One
+caveat when starting from a compound **name**: `queryDrugTargets()`
+reaches ChEMBL and Open Targets only via a ChEMBL ID, so those two need
+`unichemDbPath` (see [Compound IDs]) for a name-based query - without it
+they are skipped and the table is assembled from the remaining sources.
+
+Rows are deduplicated but never merged across sources: the same
+mechanism reported by both ChEMBL and Open Targets stays as two rows.
+Merging them would require the same cross-source identity claim
+`combineDrugTargets()` deliberately does not make. `drug_key` is provided
+to group on when you judge it safe - a ChEMBL ID where obtainable, an
+InChIKey for the Broad Hub, and a case-folded name as a deliberately weak
+last resort for TTD and GtoPdb.
 
 # Genome-Wide Master Table
 
