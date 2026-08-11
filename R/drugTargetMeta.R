@@ -445,7 +445,8 @@ queryDrugTargets <- function(queryBy = list(molType = NULL, idType = NULL, ids =
             if (verbose) message("queryDrugTargets: querying '", src, "' with ",
                                  length(rids), " resolved ID(s)")
             switch(src,
-                chembl      = getChemblDrugTarget(qb, verbose = verbose, ...),
+                chembl      = getChemblDrugTarget(qb, verbose = verbose,
+                                                  unichemDbPath = unichemDbPath, ...),
                 dgidb       = getDgidbDrugTarget(qb, verbose = verbose, ...),
                 opentargets = getOpenTargetsDrugTarget(qb, verbose = verbose, ...),
                 ttd         = {

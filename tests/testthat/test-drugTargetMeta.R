@@ -191,8 +191,18 @@ test_that("queryDrugTargets: compound direction with a UniChem-resolved ChEMBL I
     dbPath <- .getCachedUnichemDb()
     res <- queryDrugTargets(list(molType = "cmp", idType = "drugbank_id", ids = "DB00945"),
                             sources = "chembl", unichemDbPath = dbPath)
-    direct <- getChemblDrugTarget(list(molType = "cmp", idType = "chembl_id", ids = "CHEMBL25"))
+    direct <- getChemblDrugTarget(list(molType = "cmp", idType = "chembl_id", ids = "CHEMBL25"),
+                                  unichemDbPath = dbPath)
     expect_identical(res$chembl, direct)
+})
+
+test_that("queryDrugTargets: gene direction forwards unichemDbPath through to getChemblDrugTarget", {
+    skip_if_offline_dti()
+    skip_if_no_unichem_db()
+    dbPath <- .getCachedUnichemDb()
+    res <- queryDrugTargets(list(molType = "gene", idType = "symbol", ids = "FGFR1"),
+                            sources = "chembl", unichemDbPath = dbPath)
+    expect_true(any(!is.na(res$chembl$PubChem_CID)))
 })
 
 test_that("queryDrugTargets dispatches to TTD given a local TTD db path, matching ttdTargetAnnot directly", {
