@@ -37,8 +37,8 @@
 #' @keywords internal
 #' @noRd
 .dtiLiveOrCached <- function(expr, fixture, label) {
-    tryCatch(expr, error = function(e) {
-        message("live call to '", label, "' failed (", conditionMessage(e),
+    useCached <- function(reason) {
+        message("live call to '", label, "' failed (", reason,
                 "); using shipped cached result instead")
         path <- system.file("extdata", "fixtures", fixture,
                             package = "drugTargetInteractions")
@@ -47,5 +47,16 @@
         attr(out, "dtiCached") <- TRUE
         attr(out, "dtiCachedDate") <- cached$cachedDate
         out
-    })
+    }
+    ## Two failure shapes, both of which must fall back. An error covers
+    ## callers that stop outright (biomaRt's getParalogs()). A
+    ## `dtiApiFailure` warning covers the far more common REST case: the
+    ## transport helpers degrade to NULL on an HTTP 500/timeout rather
+    ## than erroring, so an error-only handler silently let the *empty*
+    ## live result through and never reached the fixture at all - see
+    ## .dtiSignalApiFailure(). Catching that class rather than all
+    ## warnings keeps unrelated warnings from triggering a fallback.
+    tryCatch(expr,
+             error = function(e) useCached(conditionMessage(e)),
+             dtiApiFailure = function(w) useCached(conditionMessage(w)))
 }

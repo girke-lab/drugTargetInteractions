@@ -57,6 +57,31 @@
     isTRUE(ok)
 }
 
+#' Signal that a live API call failed outright, as a classed warning
+#'
+#' The transport helpers below degrade to \code{NULL} on failure rather
+#' than erroring, so callers can carry on. That is the right default, but
+#' it means a plain \code{tryCatch(expr, error = )} cannot tell an
+#' upstream outage from a legitimately empty answer - which is exactly
+#' what \code{.dtiLiveOrCached()} needs to know before deciding to fall
+#' back to a shipped fixture. Signalling these failures with their own
+#' condition class gives that mechanism a precise trigger: it catches
+#' \code{dtiApiFailure} specifically, rather than all warnings (which
+#' would over-trigger on unrelated ones) or a 0-row result (which is a
+#' correct answer for, say, a gene with no paralogs).
+#'
+#' Used only where the call produced no result at all. A GraphQL response
+#' that carries both \code{errors} and usable \code{data} deliberately
+#' keeps its plain warning, since discarding real data for a fixture
+#' would be the worse outcome.
+#' @keywords internal
+#' @noRd
+.dtiSignalApiFailure <- function(...) {
+    warning(structure(
+        class = c("dtiApiFailure", "warning", "condition"),
+        list(message = paste0(...), call = NULL)))
+}
+
 #' Perform a GET against a REST endpoint with retry + polite throttling
 #'
 #' Wraps httr2 with a client-side rate limit (a token-bucket throttle,
@@ -98,8 +123,8 @@
         httr2::resp_body_json(resp, simplifyVector = FALSE)
     }, error = function(e) {
         if (hardStop) stop(e)
-        warning("drugTargetInteractions API GET failed for '", url, "': ",
-                conditionMessage(e), call. = FALSE)
+        .dtiSignalApiFailure("drugTargetInteractions API GET failed for '", url,
+                             "': ", conditionMessage(e))
         NULL
     })
     out
@@ -138,8 +163,8 @@
         httr2::resp_body_json(resp, simplifyVector = FALSE)
     }, error = function(e) {
         if (hardStop) stop(e)
-        warning("drugTargetInteractions API POST failed for '", url, "': ",
-                conditionMessage(e), call. = FALSE)
+        .dtiSignalApiFailure("drugTargetInteractions API POST failed for '", url,
+                             "': ", conditionMessage(e))
         NULL
     })
     out
@@ -251,8 +276,8 @@
         parsed$data
     }, error = function(e) {
         if (hardStop) stop(e)
-        warning("drugTargetInteractions GraphQL POST failed for '", url, "': ",
-                conditionMessage(e), call. = FALSE)
+        .dtiSignalApiFailure("drugTargetInteractions GraphQL POST failed for '",
+                             url, "': ", conditionMessage(e))
         NULL
     })
     out
