@@ -2,24 +2,24 @@
 % Please edit documentation in R/moaTable.R
 \name{listMoaSources}
 \alias{listMoaSources}
-\title{Which sources contribute mechanism-of-action data, and of what kind}
+\title{Which sources carry mechanism-of-action terms, and what the others store}
 \usage{
 listMoaSources()
 }
 \value{
 A \code{data.frame} with one row per data source and columns
-  \code{source}, \code{moa_column}, \code{moa_kind}, \code{moa_scope}
-  and \code{note}.
+  \code{source}, \code{column}, \code{kind}, \code{n_distinct},
+  \code{used_for_moa} and \code{note}.
 }
 \description{
-A quick-reference companion to \code{\link{assembleMoaTable}}: what
-each source's MOA field actually contains, at what grain, and why
-PubChem is excluded. All of it verified against live query output
-rather than upstream documentation.
+Reference table behind \code{\link{assembleMoaTable}}'s source
+selection, including the distinct-value counts that separate a MOA
+field from an action-type field. All figures measured from the sources
+themselves rather than taken from their documentation.
 }
 \examples{
 listMoaSources()
 }
 \seealso{
-\code{\link{assembleMoaTable}}
+\code{\link{assembleMoaTable}}, \code{\link{combineDrugTargets}}
 }

@@ -76,9 +76,9 @@ export( "genConfig",
     "combineDrugTargets",
 
     "assembleMoaTable",
+    "assembleMoaTargets",
     "queryMoa",
     "moaWide",
-    "moaByTarget",
     "listMoaSources",
 
     "listDrugTargetFields",

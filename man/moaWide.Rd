@@ -2,7 +2,7 @@
 % Please edit documentation in R/moaTable.R
 \name{moaWide}
 \alias{moaWide}
-\title{Collapse a long MOA table to one row per drug}
+\title{Collapse a MOA table to one row per drug}
 \usage{
 moaWide(x)
 }
@@ -12,25 +12,24 @@ moaWide(x)
 \value{
 A \code{data.frame} with one row per \code{query_id} x
   \code{drug_key}, columns \code{query_id}, \code{drug_key},
-  \code{drug_name}, \code{n_sources}, and the list-columns
-  \code{sources}, \code{moa_description}, \code{moa_action_vocabulary}
-  and \code{action_type}.
+  \code{drug_name}, \code{n_sources}, \code{n_moa}, and the
+  list-columns \code{sources}, \code{moa_text} and \code{action_type}.
 }
 \description{
-Reshapes \code{\link{assembleMoaTable}}'s output column-wise, with
-list-columns where a drug has several distinct values. Both MOA kinds
-are kept but in separate columns, since free-text prose and controlled
-action terms are not interchangeable (see \code{\link{assembleMoaTable}}).
+Reshapes \code{\link{assembleMoaTable}}'s output column-wise, with a
+list-column of the distinct MOA terms each drug carries.
 }
 \examples{
-chembl <- data.frame(QueryIDs = "CHEMBL941", chembl_id = "CHEMBL941",
-                     Drug_Name = "IMATINIB",
-                     MOA = "Tyrosine-protein kinase ABL inhibitor",
-                     Action_Type = "INHIBITOR", UniProt_ID = "P00519")
+chembl <- data.frame(
+    QueryIDs = "CHEMBL941", chembl_id = "CHEMBL941",
+    Drug_Name = "IMATINIB",
+    MOA = c("Bcr/Abl fusion protein inhibitor",
+            "Stem cell growth factor receptor inhibitor"),
+    Action_Type = "INHIBITOR", UniProt_ID = c("P00519", "P10721"))
 wide <- moaWide(assembleMoaTable(list(chembl = chembl)))
-wide[, c("drug_key", "drug_name", "n_sources")]
-wide$moa_description[[1]]
+wide[, c("drug_key", "drug_name", "n_sources", "n_moa")]
+wide$moa_text[[1]]
 }
 \seealso{
-\code{\link{assembleMoaTable}}, \code{\link{moaByTarget}}
+\code{\link{assembleMoaTable}}
 }

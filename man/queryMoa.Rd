@@ -2,47 +2,36 @@
 % Please edit documentation in R/moaTable.R
 \name{queryMoa}
 \alias{queryMoa}
-\title{Query one or more sources and assemble their MOA table in one call}
+\title{Query the MOA-carrying sources and assemble their MOA table in one call}
 \usage{
-queryMoa(
-  queryBy,
-  sources = names(.dtiMoaSourceSpec),
-  resolveGeneSymbol = FALSE,
-  taxId = 9606L,
-  ...
-)
+queryMoa(queryBy, sources = names(.dtiMoaSourceSpec), ...)
 }
 \arguments{
 \item{queryBy}{a \code{list(molType, idType, ids)} as accepted by
 \code{\link{queryDrugTargets}}.}
 
-\item{sources}{character vector of sources to query; defaults to every
-source that carries MOA data (see \code{\link{listMoaSources}}).}
-
-\item{resolveGeneSymbol}{logical(1); passed to
-\code{\link{assembleMoaTable}}.}
-
-\item{taxId}{integer(1); passed to \code{\link{assembleMoaTable}}.}
+\item{sources}{character vector of sources to query; defaults to the
+three that carry MOA terms (see \code{\link{listMoaSources}}).}
 
 \item{...}{further arguments passed to \code{\link{queryDrugTargets}},
-e.g. \code{ttdDbPath}, \code{brhDbPath}, \code{gtoPdbDbPath},
-\code{unichemDbPath}, \code{verbose}.}
+e.g. \code{brhDbPath}, \code{unichemDbPath}, \code{verbose}.}
 }
 \value{
 The \code{data.frame} described in \code{\link{assembleMoaTable}}.
 }
 \description{
 Convenience wrapper: \code{\link{queryDrugTargets}} followed by
-\code{\link{assembleMoaTable}}. Use the two separately when you also
-want each source's full native columns, which this wrapper discards.
+\code{\link{assembleMoaTable}}. Call the two separately when you also
+want the target link (\code{\link{assembleMoaTargets}}) or each
+source's full native columns, both of which this wrapper discards.
 }
 \note{
 Querying compounds by \code{idType = "name"} routes through
   \code{\link{queryDrugTargets}}'s compound resolution, which reaches
-  ChEMBL and Open Targets only via a ChEMBL ID - so those two sources
-  need \code{unichemDbPath} (see \code{\link{buildUnichemDb}}) when the
+  ChEMBL and Open Targets only via a ChEMBL ID - so those two need
+  \code{unichemDbPath} (see \code{\link{buildUnichemDb}}) when the
   query starts from a name. Without it they are skipped and the table
-  is assembled from the remaining sources.
+  is assembled from whatever remains.
 }
 \examples{
 \donttest{
@@ -51,5 +40,5 @@ Querying compounds by \code{idType = "name"} routes through
 }
 }
 \seealso{
-\code{\link{assembleMoaTable}}
+\code{\link{assembleMoaTable}}, \code{\link{assembleMoaTargets}}
 }

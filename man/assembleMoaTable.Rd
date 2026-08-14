@@ -2,100 +2,66 @@
 % Please edit documentation in R/moaTable.R
 \name{assembleMoaTable}
 \alias{assembleMoaTable}
-\title{Assemble a long, grain-aware mechanism-of-action table}
+\title{Assemble a drug -> mechanism-of-action table}
 \usage{
-assembleMoaTable(results, resolveGeneSymbol = FALSE, taxId = 9606L)
+assembleMoaTable(results)
 }
 \arguments{
 \item{results}{a named list as returned by \code{\link{queryDrugTargets}}
 (or any similarly-shaped named list of per-source data.frames -
 \code{query_id} falls back to each source's own \code{QueryIDs}
 column when \code{results} has no \code{"resolved"} attribute).
-Sources with no MOA data, and sources present but matching zero rows,
-simply contribute nothing.}
-
-\item{resolveGeneSymbol}{logical(1); if \code{TRUE}, fill
-otherwise-\code{NA} \code{target_symbol} values by resolving
-\code{target_uniprot} via \code{\link{getUniprotMapping}} (one extra
-network round trip; default \code{FALSE}). Rows whose accession does
-not resolve keep \code{NA}.}
-
-\item{taxId}{integer(1) passed to \code{\link{getUniprotMapping}} when
-\code{resolveGeneSymbol = TRUE} (default 9606L = human).}
+Sources present but matching zero rows contribute nothing; sources
+that carry no MOA are rejected with a pointer to
+\code{\link{listMoaSources}}.}
 }
 \value{
 A \code{data.frame} with columns \code{query_id},
   \code{drug_key}, \code{drug_name}, \code{source}, \code{moa_text},
-  \code{moa_kind}, \code{moa_scope}, \code{action_type_raw},
-  \code{action_type}, \code{target_symbol}, \code{target_uniprot} and
-  \code{evidence_refs}.
+  \code{action_type_raw} and \code{action_type}.
 }
 \description{
-Transforms \code{\link{queryDrugTargets}}'s per-source results into a
-single long \code{data.frame} with one row per drug x source x MOA
-statement x target, preserving each source's MOA string verbatim while
-recording *what kind* of statement it is and *at what grain* it was
-asserted. See this package's \code{listMoaSources()} for the per-source
-summary.
+Transforms \code{\link{queryDrugTargets}}'s per-source results into
+the MOA terms each source states for each drug, one row per drug x
+source x MOA term. Because a mechanism of action is a property of the
+*drug*, the target(s) a source says the mechanism acts through are a
+separate relation - see \code{\link{assembleMoaTargets}}.
 }
 \details{
-Two columns carry the distinctions that make the table safe to pool
-across sources:
-\describe{
-  \item{\code{moa_scope}}{\code{"drug_target"} when the source asserted
-    the mechanism for that specific drug-target pair, \code{"drug"}
-    when it is a drug-level attribute that cannot be attributed to any
-    one target (the Broad Repurposing Hub). \code{target_symbol} and
-    \code{target_uniprot} are always \code{NA} on \code{"drug"} rows -
-    filling them would fabricate an attribution the source does not
-    make. \code{\link{moaByTarget}} drops those rows for you.}
-  \item{\code{moa_kind}}{\code{"description"} for free-text mechanism
-    prose, \code{"action_vocabulary"} for a short controlled term.
-    Grouping or counting across the two without distinguishing them
-    compares unlike things.}
-}
+Only ChEMBL, Open Targets and the Broad Repurposing Hub are used:
+TTD, GtoPdb and DGIdb label a column "MOA"/"type"/"interaction_types"
+but store an *action type* (the verb alone, no target named), and
+pooling those under a MOA heading would let "Inhibitor" dominate any
+grouping or frequency count. \code{\link{listMoaSources}} gives the
+evidence; \code{\link{combineDrugTargets}}'s \code{action} column
+already carries that dimension for all six sources.
+
+MOA strings are kept verbatim - genuine synonymy across free text
+would need an ontology. Only \code{action_type} is normalized, and
+only for the sources that state one, since those vocabularies are
+near-identical once case is folded.
 
 Rows are deduplicated but never merged across sources: the same
 mechanism reported by ChEMBL and by Open Targets stays as two rows,
-since collapsing them would require an identity claim this package
-deliberately does not make (see \code{.dtiMoaDrugKey}). Free-text MOA
-strings are likewise left verbatim - real synonymy resolution needs an
-ontology, so only \code{action_type} is normalized (see
-\code{.dtiNormalizeActionType}).
-
-Sources also disagree on how they name a target: ChEMBL's REST output
-is UniProt-accession-keyed with no gene symbol at all, while most
-others carry only a symbol, so \code{target_symbol} alone will not line
-ChEMBL up with the rest. \code{resolveGeneSymbol = TRUE} fills the
-missing symbols from \code{target_uniprot} in one batched lookup - the
-same opt-in, one-extra-round-trip treatment
-\code{\link{combineDrugTargets}} gives its \code{gene_symbol} column,
-and off by default for the same reason (assembly stays network-free
-unless asked otherwise).
+because collapsing them would require a cross-source identity claim
+this package deliberately does not make.
 }
 \examples{
 ## A pure transformer, so it runs on any correctly-shaped per-source
-## frames - no network needed. Note Broad's drug-level MOA explodes to
-## one row per mechanism and keeps no target attribution.
-chembl <- data.frame(QueryIDs = "CHEMBL941", chembl_id = "CHEMBL941",
-                     Drug_Name = "IMATINIB",
-                     MOA = "Tyrosine-protein kinase ABL inhibitor",
-                     Action_Type = "INHIBITOR", UniProt_ID = "P00519")
-broad <- data.frame(QueryIDs = "imatinib", pert_iname = "imatinib",
-                    InChIKey = "KTUFNOKKBVMGRW-UHFFFAOYSA-N",
-                    moa = "Bcr-Abl kinase inhibitor | KIT inhibitor",
-                    target_gene = "ABL1")
-moa <- assembleMoaTable(list(chembl = chembl, broad = broad))
-moa[, c("source", "moa_text", "moa_kind", "moa_scope", "target_symbol")]
-\donttest{
-  ## the usual path: straight from queryDrugTargets()
-  res <- queryDrugTargets(list(molType = "cmp", idType = "chembl_id",
-                               ids = "CHEMBL941"), sources = "chembl")
-  assembleMoaTable(res, resolveGeneSymbol = TRUE)
-}
+## frames - no network needed. ChEMBL's two records for one mechanism
+## against two targets collapse to a single MOA row.
+chembl <- data.frame(
+    QueryIDs = c("CHEMBL941", "CHEMBL941"), chembl_id = "CHEMBL941",
+    Drug_Name = "IMATINIB", MOA = "Bcr/Abl fusion protein inhibitor",
+    Action_Type = "INHIBITOR", UniProt_ID = c("P00519", "P11274"))
+broad <- data.frame(
+    QueryIDs = "imatinib", pert_iname = "imatinib",
+    InChIKey = "KTUFNOKKBVMGRW-UHFFFAOYSA-N",
+    moa = "Bcr-Abl kinase inhibitor | KIT inhibitor", target_gene = "ABL1")
+assembleMoaTable(list(chembl = chembl, broad = broad))
 }
 \seealso{
-\code{\link{queryMoa}}, \code{\link{moaWide}},
-  \code{\link{moaByTarget}}, \code{\link{listMoaSources}},
+\code{\link{assembleMoaTargets}}, \code{\link{queryMoa}},
+  \code{\link{moaWide}}, \code{\link{listMoaSources}},
   \code{\link{combineDrugTargets}}
 }

@@ -126,12 +126,12 @@ local cache; the package itself redistributes none of this data.
 
 | Source | Data provided | MOA (see [Mechanism of Action]) | Access mode | Package function(s) | License / redistribution |
 |---|---|---|---|---|---|
-| [ChEMBL](https://www.ebi.ac.uk/chembl/) | Drug-target annotations + bioassay measurements | Free-text prose, per target | Live REST API (legacy full local SQLite optional, see [Supplement]) | `getChemblDrugTarget()`, `getChemblBioassay()` | CC-BY-SA 3.0 - redistribution allowed with attribution + share-alike |
-| [DGIdb](https://dgidb.org/) | Drug-target annotations (aggregates many upstream sources) | Action vocabulary, often empty | Live GraphQL API | `getDgidbDrugTarget()` | Mixed - each row's `sources` column carries its own upstream license |
-| [Open Targets](https://platform.opentargets.org/) | Drug-target annotations | Free-text prose; one statement can span several targets | Live GraphQL API | `getOpenTargetsDrugTarget()` | CC0 |
-| [TTD](https://ttd.idrblab.cn/) | Drug-target annotations | Action vocabulary, per target | Local SQLite, built once from downloaded flat files | `buildTtdDb()`, `ttdTargetAnnot()` | No explicit redistribution grant ("academic use" only) |
-| [Broad Repurposing Hub](https://repo-hub.broadinstitute.org/repurposing) | Drug-target annotations | Free-text prose but **drug-level only** - not attributable to a target | Local SQLite, built once from downloaded flat files | `buildBroadRepurposingHubDb()`, `broadRepurposingHubAnnot()` | Non-commercial use only |
-| [GtoPdb](https://www.guidetopharmacology.org/) | Drug-target annotations | Action vocabulary, per target | Local SQLite, built once from bulk REST + one flat file | `buildGtoPdbDb()`, `gtoPdbTargetAnnot()` | ODbL + CC-BY-SA 4.0 - redistribution permitted |
+| [ChEMBL](https://www.ebi.ac.uk/chembl/) | Drug-target annotations + bioassay measurements | Real MOA (reference model) | Live REST API (legacy full local SQLite optional, see [Supplement]) | `getChemblDrugTarget()`, `getChemblBioassay()` | CC-BY-SA 3.0 - redistribution allowed with attribution + share-alike |
+| [DGIdb](https://dgidb.org/) | Drug-target annotations (aggregates many upstream sources) | **Not MOA** - interaction-type vocabulary; see [Mechanism of Action] | Live GraphQL API | `getDgidbDrugTarget()` | Mixed - each row's `sources` column carries its own upstream license |
+| [Open Targets](https://platform.opentargets.org/) | Drug-target annotations | Real MOA | Live GraphQL API | `getOpenTargetsDrugTarget()` | CC0 |
+| [TTD](https://ttd.idrblab.cn/) | Drug-target annotations | **Not MOA** - action type despite the column name; see [Mechanism of Action] | Local SQLite, built once from downloaded flat files | `buildTtdDb()`, `ttdTargetAnnot()` | No explicit redistribution grant ("academic use" only) |
+| [Broad Repurposing Hub](https://repo-hub.broadinstitute.org/repurposing) | Drug-target annotations | Real MOA, but drug-level only - no per-target attribution | Local SQLite, built once from downloaded flat files | `buildBroadRepurposingHubDb()`, `broadRepurposingHubAnnot()` | Non-commercial use only |
+| [GtoPdb](https://www.guidetopharmacology.org/) | Drug-target annotations | **Not MOA** - action type, partly drug modality; see [Mechanism of Action] | Local SQLite, built once from bulk REST + one flat file | `buildGtoPdbDb()`, `gtoPdbTargetAnnot()` | ODbL + CC-BY-SA 4.0 - redistribution permitted |
 | [PubChem](https://pubchem.ncbi.nlm.nih.gov/) | Bioassay measurements | None - measurements only | Live REST (PUG-REST + E-utilities) | `getPubchemDrugTarget()` | Public-domain-leaning; per-depositor terms vary, not fully verified |
 
 **ID-translation and helper resources**
@@ -915,83 +915,98 @@ you pass to `combineDrugTargets()`.
 
 # Mechanism of Action
 
-Per-source mechanism-of-action (MOA) coverage is individually incomplete,
-so pooling it across sources is a genuine value-add rather than a
-convenience. `assembleMoaTable()` does that, transforming
-`queryDrugTargets()`'s per-source results the same way
-`combineDrugTargets()` does - but it records two things a plain
-column-append would flatten away, because ignoring either produces
-conclusions the underlying data does not support.
+A mechanism of action describes the molecular action of a **drug** -
+what it does and, almost always, to which molecular target
+(`"Bcr/Abl fusion protein inhibitor"`). It is a property of the drug,
+not of a drug-target edge, and the data bears that out: 48% of distinct
+ChEMBL MOA terms are used by more than one drug ("Histamine H1 receptor
+antagonist" covers 55 of them), so a MOA is a shared functional
+descriptor rather than a per-edge fact.
 
-`listMoaSources()` is the quick reference for what each source actually
-carries:
+That gives two relations rather than one flat table:
+
+- `assembleMoaTable()` - the drug's MOA terms, one row per drug x
+  source x MOA term.
+- `assembleMoaTargets()` - the separate link from a MOA to the target(s)
+  a source says it acts through.
+
+## Which sources carry MOA
+
+Only **ChEMBL, Open Targets and the Broad Repurposing Hub**. TTD, GtoPdb
+and DGIdb label a column `MOA`/`type`/`interaction_types`, but what they
+store is an *action type* - the verb alone, with no target named. The
+distinct-value counts settle it, and ChEMBL settles it at schema level
+by carrying both concepts as separate fields:
 
 ```{r moa_sources, eval=TRUE}
-listMoaSources()[, c("source", "moa_column", "moa_kind", "moa_scope")]
+listMoaSources()[, c("source", "column", "kind", "n_distinct", "used_for_moa")]
 ```
 
-**Grain (`moa_scope`) is the important one.** Most sources assert a
-mechanism for a specific drug-target pair, but the Broad Repurposing
-Hub's `moa` is a *drug-level* attribute: the same `" | "`-joined string
-is repeated on every one of that drug's target rows. Treating those rows
-as per-target evidence would invent attributions Broad never made, so
-they are marked `moa_scope = "drug"` and their target columns are always
-`NA`. `moaByTarget()` drops them for you before any per-target grouping.
+ChEMBL's `mechanism_of_action` has ~1,589 distinct values; its
+`action_type` has 33. TTD's "MOA" column has 48 - it is a clone of the
+*action type* field, not of the MOA field. Pooling those under a MOA
+heading would let `"Inhibitor"` dominate any grouping or frequency
+count, so they are excluded here. Nothing is lost:
+`combineDrugTargets()`'s `action` column already carries that dimension
+for all six sources (see [Combining Results]).
 
-**Kind (`moa_kind`)** separates free-text mechanism prose (ChEMBL, Open
-Targets, Broad - e.g. `"Bcr/Abl fusion protein inhibitor"`) from a short
-controlled action vocabulary (TTD, GtoPdb, DGIdb - e.g. `"Inhibitor"`).
-Both are legitimately MOA, but counting them together compares unlike
-things.
+Mode of Action - the broader cellular or organism-level consequence, as
+distinct from MOA - is deliberately not modelled, because no source
+carries it systematically: 94% of ChEMBL's MOA strings are
+[target] + [action], and the remainder are still molecular or modality
+(`"Iron chelating agent"`, `"Surfactant agent"`). The only
+MoA-flavoured content anywhere is ChEMBL's free-text `mechanism_comment`
+("Role in regulating gastric secretion"), carried through as an optional
+passthrough column rather than modelled as a concept.
+
+## The two relations
 
 ```{r moa_assemble, eval=TRUE}
 moa_res <- queryDrugTargets(
     list(molType = "cmp", idType = "chembl_id", ids = "CHEMBL941"),  # imatinib
     sources = c("chembl", "opentargets"))
-moa <- assembleMoaTable(moa_res)
-moa[, c("source", "moa_text", "moa_kind", "moa_scope", "target_symbol",
-        "target_uniprot")]
+assembleMoaTable(moa_res)[, c("source", "moa_text", "action_type")]
 ```
 
-Note ChEMBL populates `target_uniprot` and Open Targets `target_symbol` -
+ChEMBL records "Bcr/Abl fusion protein inhibitor" against *two* targets
+(ABL1 and BCR), but the drug has one such mechanism - so it appears once
+above, and twice in the link table:
+
+```{r moa_targets, eval=TRUE}
+assembleMoaTargets(moa_res)[, c("source", "moa_text", "target_symbol",
+                                "target_uniprot")]
+```
+
+ChEMBL populates `target_uniprot` and Open Targets `target_symbol` -
 ChEMBL's REST output has no gene-symbol column at all. Pass
-`resolveGeneSymbol = TRUE` to fill the gap in one batched UniProt lookup,
-exactly as `combineDrugTargets()` does, so the two line up per target:
+`resolveGeneSymbol = TRUE` to fill the gap in one batched UniProt
+lookup, exactly as `combineDrugTargets()` does:
 
 ```{r moa_resolve_symbol, eval=TRUE}
-assembleMoaTable(moa_res, resolveGeneSymbol = TRUE)[
+assembleMoaTargets(moa_res, resolveGeneSymbol = TRUE)[
     , c("source", "moa_text", "target_symbol")] |> head(4)
 ```
 
-MOA strings are kept **verbatim** - only `action_type` is normalized, to
-a shared controlled term, because the action vocabularies are
-near-identical once case is folded (ChEMBL `"INHIBITOR"`, TTD
-`"Inhibitor"`, DGIdb `"inhibitor"`, GtoPdb `"Inhibition"` all become
-`"inhibitor"`) while genuine synonymy across free-text prose would need
-an ontology. The source's own term is always kept in `action_type_raw`.
+The Broad Hub states its MOA for the drug with no per-target
+attribution, so it contributes to the MOA table but **no rows at all**
+to the link table - which is why the two relations are separate rather
+than one table with drug-level rows flagged inside it.
 
-`moaWide()` collapses the long table to one row per drug, with
-list-columns and the two MOA kinds in separate columns:
+`moaWide()` collapses the MOA table to one row per drug, and
+`queryMoa()` is the one-call wrapper (`queryDrugTargets()` then
+`assembleMoaTable()`); call the two separately when you also want the
+target link. One caveat when starting from a compound **name**:
+`queryDrugTargets()` reaches ChEMBL and Open Targets only via a ChEMBL
+ID, so those two need `unichemDbPath` (see [Compound IDs]) for a
+name-based query.
 
-```{r moa_wide, eval=TRUE}
-moaWide(moa)[, c("drug_key", "drug_name", "n_sources", "action_type")]
-```
+MOA strings are kept **verbatim** - only `action_type` is normalized,
+since those vocabularies are near-identical once case is folded while
+genuine synonymy across free-text prose would need an ontology. Rows are
+deduplicated but never merged across sources: the same mechanism from
+ChEMBL and Open Targets stays as two rows, because collapsing them would
+require a cross-source identity claim this package does not make.
 
-`queryMoa()` is the one-call convenience wrapper (`queryDrugTargets()`
-then `assembleMoaTable()`); use the two separately when you also want
-each source's full native columns, which the wrapper discards. One
-caveat when starting from a compound **name**: `queryDrugTargets()`
-reaches ChEMBL and Open Targets only via a ChEMBL ID, so those two need
-`unichemDbPath` (see [Compound IDs]) for a name-based query - without it
-they are skipped and the table is assembled from the remaining sources.
-
-Rows are deduplicated but never merged across sources: the same
-mechanism reported by both ChEMBL and Open Targets stays as two rows.
-Merging them would require the same cross-source identity claim
-`combineDrugTargets()` deliberately does not make. `drug_key` is provided
-to group on when you judge it safe - a ChEMBL ID where obtainable, an
-InChIKey for the Broad Hub, and a case-folded name as a deliberately weak
-last resort for TTD and GtoPdb.
 
 # Genome-Wide Master Table
 
