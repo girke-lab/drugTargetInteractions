@@ -1959,7 +1959,7 @@ function toggle_visibility(id1) {
 
 <h1 class="title toc-ignore">drugTargetInteractions: Mining the Druggable Genome</h1>
 <p class="author-name">Authors: Kevin Horan, Brandon Le, Brendan Gongol, Desmond Cairo, Mohammad Afsharinia, Tandis Salem, Dan Evans, Nicholas Schork and Thomas Girke</p>
-<h4 class="date">Last update: 09 August, 2026</h4>
+<h4 class="date">Last update: 14 August, 2026</h4>
 
 </div>
 
@@ -2038,6 +2038,8 @@ PubChem).</li>
 <li><strong><a href="#cross-source-queries">Cross-Source Queries</a></strong> - <code>queryDrugTargets()</code> across one or many
 sources at once, performance guidance, and combining results into a
 single table.</li>
+<li><strong><a href="#mechanism-of-action">Mechanism of Action</a></strong> - pooling MOA across sources without losing
+track of what each source actually asserted.</li>
 <li><strong><a href="#genome-wide-master-table">Genome-Wide Master Table</a></strong> - an HGNC-anchored, checkpointed build
 covering all human protein-coding genes at once.</li>
 <li><strong><a href="#supplement">Supplement</a></strong> - legacy/alternative functions kept for backward
@@ -2054,18 +2056,20 @@ for detail, and note that <code>buildTtdDb()</code>/<code>buildBroadRepurposingH
 <code>buildGtoPdbDb()</code>/<code>buildUnichemDb()</code> only ever download into your own
 local cache; the package itself redistributes none of this data.</p>
 <p><strong>Drug-target and bioassay data sources</strong></p>
-<div class='horizontal-scroll'><table>
+<div class='horizontal-scroll'><table style="width:100%;">
 <colgroup>
-<col width="20%" />
-<col width="20%" />
-<col width="20%" />
-<col width="20%" />
-<col width="20%" />
+<col width="16%" />
+<col width="16%" />
+<col width="16%" />
+<col width="16%" />
+<col width="16%" />
+<col width="16%" />
 </colgroup>
 <thead>
 <tr class="header">
 <th>Source</th>
 <th>Data provided</th>
+<th>MOA (see <a href="#mechanism-of-action">Mechanism of Action</a>)</th>
 <th>Access mode</th>
 <th>Package function(s)</th>
 <th>License / redistribution</th>
@@ -2075,6 +2079,7 @@ local cache; the package itself redistributes none of this data.</p>
 <tr class="odd">
 <td><a href="https://www.ebi.ac.uk/chembl/">ChEMBL</a></td>
 <td>Drug-target annotations + bioassay measurements</td>
+<td>Real MOA (reference model)</td>
 <td>Live REST API (legacy full local SQLite optional, see <a href="#supplement">Supplement</a>)</td>
 <td><code>getChemblDrugTarget()</code>, <code>getChemblBioassay()</code></td>
 <td>CC-BY-SA 3.0 - redistribution allowed with attribution + share-alike</td>
@@ -2082,6 +2087,7 @@ local cache; the package itself redistributes none of this data.</p>
 <tr class="even">
 <td><a href="https://dgidb.org/">DGIdb</a></td>
 <td>Drug-target annotations (aggregates many upstream sources)</td>
+<td><strong>Not MOA</strong> - interaction-type vocabulary; see <a href="#mechanism-of-action">Mechanism of Action</a></td>
 <td>Live GraphQL API</td>
 <td><code>getDgidbDrugTarget()</code></td>
 <td>Mixed - each row’s <code>sources</code> column carries its own upstream license</td>
@@ -2089,6 +2095,7 @@ local cache; the package itself redistributes none of this data.</p>
 <tr class="odd">
 <td><a href="https://platform.opentargets.org/">Open Targets</a></td>
 <td>Drug-target annotations</td>
+<td>Real MOA</td>
 <td>Live GraphQL API</td>
 <td><code>getOpenTargetsDrugTarget()</code></td>
 <td>CC0</td>
@@ -2096,6 +2103,7 @@ local cache; the package itself redistributes none of this data.</p>
 <tr class="even">
 <td><a href="https://ttd.idrblab.cn/">TTD</a></td>
 <td>Drug-target annotations</td>
+<td><strong>Not MOA</strong> - action type despite the column name; see <a href="#mechanism-of-action">Mechanism of Action</a></td>
 <td>Local SQLite, built once from downloaded flat files</td>
 <td><code>buildTtdDb()</code>, <code>ttdTargetAnnot()</code></td>
 <td>No explicit redistribution grant (“academic use” only)</td>
@@ -2103,6 +2111,7 @@ local cache; the package itself redistributes none of this data.</p>
 <tr class="odd">
 <td><a href="https://repo-hub.broadinstitute.org/repurposing">Broad Repurposing Hub</a></td>
 <td>Drug-target annotations</td>
+<td>Real MOA, but drug-level only - no per-target attribution</td>
 <td>Local SQLite, built once from downloaded flat files</td>
 <td><code>buildBroadRepurposingHubDb()</code>, <code>broadRepurposingHubAnnot()</code></td>
 <td>Non-commercial use only</td>
@@ -2110,6 +2119,7 @@ local cache; the package itself redistributes none of this data.</p>
 <tr class="even">
 <td><a href="https://www.guidetopharmacology.org/">GtoPdb</a></td>
 <td>Drug-target annotations</td>
+<td><strong>Not MOA</strong> - action type, partly drug modality; see <a href="#mechanism-of-action">Mechanism of Action</a></td>
 <td>Local SQLite, built once from bulk REST + one flat file</td>
 <td><code>buildGtoPdbDb()</code>, <code>gtoPdbTargetAnnot()</code></td>
 <td>ODbL + CC-BY-SA 4.0 - redistribution permitted</td>
@@ -2117,6 +2127,7 @@ local cache; the package itself redistributes none of this data.</p>
 <tr class="odd">
 <td><a href="https://pubchem.ncbi.nlm.nih.gov/">PubChem</a></td>
 <td>Bioassay measurements</td>
+<td>None - measurements only</td>
 <td>Live REST (PUG-REST + E-utilities)</td>
 <td><code>getPubchemDrugTarget()</code></td>
 <td>Public-domain-leaning; per-depositor terms vary, not fully verified</td>
@@ -2914,31 +2925,21 @@ signal than picking the highest <code>perc_id</code> alone - prefer
 <code>type == &quot;ortholog_one2one&quot;</code> when you need a single best cross-species
 match.</p>
 <pre class="r"><code>getEnsemblParalogs(&quot;NLRP3&quot;)[, c(&quot;homolog_id&quot;, &quot;type&quot;, &quot;perc_id&quot;)]</code></pre>
-<pre><code>##         homolog_id          type  perc_id
-## 1  ENSG00000167984 other_paralog 20.65730
-## 2  ENSG00000179583 other_paralog 14.86730
-## 3  ENSG00000158077 other_paralog 34.30920
-## 4  ENSG00000253548 other_paralog  8.24742
-## 5  ENSG00000022556 other_paralog 21.75140
-## 6  ENSG00000167207 other_paralog 19.54590
-## 7  ENSG00000185792 other_paralog 32.59330
-## 8  ENSG00000179709 other_paralog 28.43510
-## 9  ENSG00000142405 other_paralog 46.55980
-## 10 ENSG00000167634 other_paralog 22.08290
-## 11 ENSG00000140853 other_paralog 12.70100
-## 12 ENSG00000091592 other_paralog 17.65110
-## 13 ENSG00000182261 other_paralog 29.77100
-## 14 ENSG00000160703 other_paralog 16.41030
-## 15 ENSG00000106100 other_paralog 18.99270
-## 16 ENSG00000171487 other_paralog 25.67450
-## 17 ENSG00000179873 other_paralog 20.23230
-## 18 ENSG00000173572 other_paralog 29.53020
-## 19 ENSG00000174885 other_paralog 25.92590
-## 20 ENSG00000160505 other_paralog 33.09860</code></pre>
+<pre><code>## Waiting 4s for retry backoff ■■■■■■■■■■</code></pre>
+<pre><code>## Waiting 4s for retry backoff ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■</code></pre>
+<pre><code>## Warning: drugTargetInteractions API GET failed for
+## &#39;https://rest.ensembl.org/homology/symbol/human/NLRP3&#39;: HTTP 500 Internal Server Error.</code></pre>
+<pre><code>## [1] homolog_id type       perc_id   
+## &lt;0 rows&gt; (or 0-length row.names)</code></pre>
 <pre class="r"><code>getEnsemblOrthologs(&quot;NLRP3&quot;, targetSpecies = &quot;mouse&quot;)[
     , c(&quot;homolog_id&quot;, &quot;homolog_species&quot;, &quot;type&quot;, &quot;perc_id&quot;)]</code></pre>
-<pre><code>##           homolog_id homolog_species             type perc_id
-## 1 ENSMUSG00000032691    mus_musculus ortholog_one2one  82.575</code></pre>
+<pre><code>## Waiting 4s for retry backoff ■■■■■■■■</code></pre>
+<pre><code>## Waiting 4s for retry backoff ■■■■■■■■■■■■■■■■■</code></pre>
+<pre><code>## Waiting 4s for retry backoff ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■</code></pre>
+<pre><code>## Warning: drugTargetInteractions API GET failed for
+## &#39;https://rest.ensembl.org/homology/symbol/human/NLRP3&#39;: HTTP 500 Internal Server Error.</code></pre>
+<pre><code>## [1] homolog_id      homolog_species type            perc_id        
+## &lt;0 rows&gt; (or 0-length row.names)</code></pre>
 <p>Large gene families need the default query shape here - by design,
 <code>getEnsemblParalogs()</code>/<code>getEnsemblOrthologs()</code> already avoid a
 pathological slowdown found for such families (see
@@ -3088,9 +3089,8 @@ res_all_live &lt;- queryDrugTargets(
 the same way once one has been built:</p>
 <pre class="r"><code>res_drugbank &lt;- queryDrugTargets(
     list(molType = &quot;cmp&quot;, idType = &quot;drugbank_id&quot;, ids = &quot;DB00945&quot;),  # aspirin
-    sources = &quot;chembl&quot;, unichemDbPath = unichemDbPath)</code></pre>
-<pre><code>## getChemblDrugTarget(): &#39;PubChem_CID&#39; left NA - pass unichemDbPath (build one first via buildUnichemDb()) to resolve ChEMBL IDs to PubChem CIDs.</code></pre>
-<pre class="r"><code>res_drugbank$chembl[, c(&quot;QueryIDs&quot;, &quot;UniProt_ID&quot;, &quot;Organism&quot;)]</code></pre>
+    sources = &quot;chembl&quot;, unichemDbPath = unichemDbPath)
+res_drugbank$chembl[, c(&quot;QueryIDs&quot;, &quot;UniProt_ID&quot;, &quot;Organism&quot;)]</code></pre>
 <pre><code>##   QueryIDs UniProt_ID     Organism
 ## 1 CHEMBL25     P35354 Homo sapiens
 ## 2 CHEMBL25     P23219 Homo sapiens</code></pre>
@@ -3212,8 +3212,118 @@ unchanged in the list <code>queryDrugTargets()</code> returned, regardless of wh
 you pass to <code>combineDrugTargets()</code>.</p>
 </div>
 </div>
-<div id="genome-wide-master-table" class="section level1" number="7">
-<h1><span class="header-section-number">7</span> Genome-Wide Master Table</h1>
+<div id="mechanism-of-action" class="section level1" number="7">
+<h1><span class="header-section-number">7</span> Mechanism of Action</h1>
+<p>A mechanism of action describes the molecular action of a <strong>drug</strong> -
+what it does and, almost always, to which molecular target
+(<code>&quot;Bcr/Abl fusion protein inhibitor&quot;</code>). It is a property of the drug,
+not of a drug-target edge, and the data bears that out: 48% of distinct
+ChEMBL MOA terms are used by more than one drug (“Histamine H1 receptor
+antagonist” covers 55 of them), so a MOA is a shared functional
+descriptor rather than a per-edge fact.</p>
+<p>That gives two relations rather than one flat table:</p>
+<ul>
+<li><code>assembleMoaTable()</code> - the drug’s MOA terms, one row per drug x
+source x MOA term.</li>
+<li><code>assembleMoaTargets()</code> - the separate link from a MOA to the target(s)
+a source says it acts through.</li>
+</ul>
+<div id="which-sources-carry-moa" class="section level2" number="7.1">
+<h2><span class="header-section-number">7.1</span> Which sources carry MOA</h2>
+<p>Only <strong>ChEMBL, Open Targets and the Broad Repurposing Hub</strong>. TTD, GtoPdb
+and DGIdb label a column <code>MOA</code>/<code>type</code>/<code>interaction_types</code>, but what they
+store is an <em>action type</em> - the verb alone, with no target named. The
+distinct-value counts settle it, and ChEMBL settles it at schema level
+by carrying both concepts as separate fields:</p>
+<pre class="r"><code>listMoaSources()[, c(&quot;source&quot;, &quot;column&quot;, &quot;kind&quot;, &quot;n_distinct&quot;, &quot;used_for_moa&quot;)]</code></pre>
+<pre><code>##        source              column                kind n_distinct used_for_moa
+## 1      chembl                 MOA mechanism of action       1589         TRUE
+## 2 opentargets mechanism_of_action mechanism of action         NA         TRUE
+## 3       broad                 moa mechanism of action       1612         TRUE
+## 4         ttd                 MOA         action type         48        FALSE
+## 5      gtopdb                type         action type         10        FALSE
+## 6       dgidb   interaction_types         action type         NA        FALSE
+## 7     pubchem                &lt;NA&gt;                none         NA        FALSE</code></pre>
+<p>ChEMBL’s <code>mechanism_of_action</code> has ~1,589 distinct values; its
+<code>action_type</code> has 33. TTD’s “MOA” column has 48 - it is a clone of the
+<em>action type</em> field, not of the MOA field. Pooling those under a MOA
+heading would let <code>&quot;Inhibitor&quot;</code> dominate any grouping or frequency
+count, so they are excluded here. Nothing is lost:
+<code>combineDrugTargets()</code>’s <code>action</code> column already carries that dimension
+for all six sources (see <a href="#combining-results">Combining Results</a>).</p>
+<p>Mode of Action - the broader cellular or organism-level consequence, as
+distinct from MOA - is deliberately not modelled, because no source
+carries it systematically: 94% of ChEMBL’s MOA strings are
+[target] + [action], and the remainder are still molecular or modality
+(<code>&quot;Iron chelating agent&quot;</code>, <code>&quot;Surfactant agent&quot;</code>). The only
+MoA-flavoured content anywhere is ChEMBL’s free-text <code>mechanism_comment</code>
+(“Role in regulating gastric secretion”), carried through as an optional
+passthrough column rather than modelled as a concept.</p>
+</div>
+<div id="the-two-relations" class="section level2" number="7.2">
+<h2><span class="header-section-number">7.2</span> The two relations</h2>
+<pre class="r"><code>moa_res &lt;- queryDrugTargets(
+    list(molType = &quot;cmp&quot;, idType = &quot;chembl_id&quot;, ids = &quot;CHEMBL941&quot;),  # imatinib
+    sources = c(&quot;chembl&quot;, &quot;opentargets&quot;))</code></pre>
+<pre><code>## getChemblDrugTarget(): &#39;PubChem_CID&#39; left NA - pass unichemDbPath (build one first via buildUnichemDb()) to resolve ChEMBL IDs to PubChem CIDs.</code></pre>
+<pre class="r"><code>assembleMoaTable(moa_res)[, c(&quot;source&quot;, &quot;moa_text&quot;, &quot;action_type&quot;)]</code></pre>
+<pre><code>##        source                                               moa_text action_type
+## 1      chembl                  Tyrosine-protein kinase ABL inhibitor   inhibitor
+## 2      chembl Platelet-derived growth factor receptor beta inhibitor   inhibitor
+## 3      chembl             Stem cell growth factor receptor inhibitor   inhibitor
+## 4      chembl                       Bcr/Abl fusion protein inhibitor   inhibitor
+## 5 opentargets                       Bcr/Abl fusion protein inhibitor   inhibitor
+## 6 opentargets             Stem cell growth factor receptor inhibitor   inhibitor
+## 7 opentargets Platelet-derived growth factor receptor beta inhibitor   inhibitor
+## 8 opentargets                  Tyrosine-protein kinase ABL inhibitor   inhibitor</code></pre>
+<p>ChEMBL records “Bcr/Abl fusion protein inhibitor” against <em>two</em> targets
+(ABL1 and BCR), but the drug has one such mechanism - so it appears once
+above, and twice in the link table:</p>
+<pre class="r"><code>assembleMoaTargets(moa_res)[, c(&quot;source&quot;, &quot;moa_text&quot;, &quot;target_symbol&quot;,
+                                &quot;target_uniprot&quot;)]</code></pre>
+<pre><code>##         source                                               moa_text target_symbol target_uniprot
+## 1       chembl                  Tyrosine-protein kinase ABL inhibitor          &lt;NA&gt;         P00519
+## 2       chembl Platelet-derived growth factor receptor beta inhibitor          &lt;NA&gt;         P09619
+## 3       chembl             Stem cell growth factor receptor inhibitor          &lt;NA&gt;         P10721
+## 4       chembl                       Bcr/Abl fusion protein inhibitor          &lt;NA&gt;         P00519
+## 5       chembl                       Bcr/Abl fusion protein inhibitor          &lt;NA&gt;         P11274
+## 6  opentargets                       Bcr/Abl fusion protein inhibitor          ABL1           &lt;NA&gt;
+## 7  opentargets                       Bcr/Abl fusion protein inhibitor           BCR           &lt;NA&gt;
+## 8  opentargets             Stem cell growth factor receptor inhibitor           KIT           &lt;NA&gt;
+## 9  opentargets Platelet-derived growth factor receptor beta inhibitor        PDGFRB           &lt;NA&gt;
+## 10 opentargets                  Tyrosine-protein kinase ABL inhibitor          ABL1           &lt;NA&gt;</code></pre>
+<p>ChEMBL populates <code>target_uniprot</code> and Open Targets <code>target_symbol</code> -
+ChEMBL’s REST output has no gene-symbol column at all. Pass
+<code>resolveGeneSymbol = TRUE</code> to fill the gap in one batched UniProt
+lookup, exactly as <code>combineDrugTargets()</code> does:</p>
+<pre class="r"><code>assembleMoaTargets(moa_res, resolveGeneSymbol = TRUE)[
+    , c(&quot;source&quot;, &quot;moa_text&quot;, &quot;target_symbol&quot;)] |&gt; head(4)</code></pre>
+<pre><code>##   source                                               moa_text target_symbol
+## 1 chembl                  Tyrosine-protein kinase ABL inhibitor          ABL1
+## 2 chembl Platelet-derived growth factor receptor beta inhibitor        PDGFRB
+## 3 chembl             Stem cell growth factor receptor inhibitor           KIT
+## 4 chembl                       Bcr/Abl fusion protein inhibitor          ABL1</code></pre>
+<p>The Broad Hub states its MOA for the drug with no per-target
+attribution, so it contributes to the MOA table but <strong>no rows at all</strong>
+to the link table - which is why the two relations are separate rather
+than one table with drug-level rows flagged inside it.</p>
+<p><code>moaWide()</code> collapses the MOA table to one row per drug, and
+<code>queryMoa()</code> is the one-call wrapper (<code>queryDrugTargets()</code> then
+<code>assembleMoaTable()</code>); call the two separately when you also want the
+target link. One caveat when starting from a compound <strong>name</strong>:
+<code>queryDrugTargets()</code> reaches ChEMBL and Open Targets only via a ChEMBL
+ID, so those two need <code>unichemDbPath</code> (see <a href="#compound-ids">Compound IDs</a>) for a
+name-based query.</p>
+<p>MOA strings are kept <strong>verbatim</strong> - only <code>action_type</code> is normalized,
+since those vocabularies are near-identical once case is folded while
+genuine synonymy across free-text prose would need an ontology. Rows are
+deduplicated but never merged across sources: the same mechanism from
+ChEMBL and Open Targets stays as two rows, because collapsing them would
+require a cross-source identity claim this package does not make.</p>
+</div>
+</div>
+<div id="genome-wide-master-table" class="section level1" number="8">
+<h1><span class="header-section-number">8</span> Genome-Wide Master Table</h1>
 <p><code>queryDrugTargets()</code> is designed for on-demand queries of a handful to a
 few thousand identifiers. A different, common need is a <strong>periodically
 rebuilt, shareable master table</strong> covering essentially all human
@@ -3229,8 +3339,8 @@ no separate compound-centric run is needed.</p>
 genome-wide run queries live APIs for ~19,200 genes and can take hours;
 it has no place executing during vignette or <code>R CMD check</code> builds. Run
 it directly in an interactive session or a scheduled job instead.</p>
-<div id="the-hgnc-gene-table-the-anchor" class="section level2" number="7.1">
-<h2><span class="header-section-number">7.1</span> The HGNC Gene Table (the Anchor)</h2>
+<div id="the-hgnc-gene-table-the-anchor" class="section level2" number="8.1">
+<h2><span class="header-section-number">8.1</span> The HGNC Gene Table (the Anchor)</h2>
 <p>The gene-centric anchor is <a href="https://www.genenames.org/">HGNC</a>’s complete
 gene set - the single authoritative source for the current approved
 symbol <em>and</em> every previous/alias symbol a gene has ever had, alongside
@@ -3257,8 +3367,8 @@ dropping it):</p>
 <pre class="r"><code>symbolMap &lt;- buildHgncSymbolMap(hgncTable)
 normalizeGeneSymbols(c(&quot;FGFR1&quot;, &quot;ABL&quot;), symbolMap = symbolMap, hgncTable = hgncTable)</code></pre>
 </div>
-<div id="building-the-table-with-checkpointing" class="section level2" number="7.2">
-<h2><span class="header-section-number">7.2</span> Building the Table, With Checkpointing</h2>
+<div id="building-the-table-with-checkpointing" class="section level2" number="8.2">
+<h2><span class="header-section-number">8.2</span> Building the Table, With Checkpointing</h2>
 <p><code>buildGenomeWideDrugTargetTable()</code> loops the four annotation sources’
 own bidirectional functions over every gene in an HGNC table, in
 checkpointed chunks written to <code>outDir</code> as it goes - so an interrupted
@@ -3291,14 +3401,14 @@ machines without recomputation - exactly the “compute every few months,
 share the result” workflow this section is meant to support.</p>
 </div>
 </div>
-<div id="supplement" class="section level1" number="8">
-<h1><span class="header-section-number">8</span> Supplement</h1>
+<div id="supplement" class="section level1" number="9">
+<h1><span class="header-section-number">9</span> Supplement</h1>
 <p>The functions below predate, and are independent of, the sources and
 translation layer described above. They remain available as
 backward-compatible/alternative options but are not the default workflow
 recommended by this vignette.</p>
-<div id="local-chembl-sqlite-workflow" class="section level2" number="8.1">
-<h2><span class="header-section-number">8.1</span> Local ChEMBL SQLite Workflow</h2>
+<div id="local-chembl-sqlite-workflow" class="section level2" number="9.1">
+<h2><span class="header-section-number">9.1</span> Local ChEMBL SQLite Workflow</h2>
 <p>Before ChEMBL’s REST API was added, this package’s ChEMBL support was
 exclusively through a downloaded local SQLite instance of the full ChEMBL
 database, queried via <code>drugTargetAnnot()</code> (and the related
@@ -3362,8 +3472,8 @@ head(ba[, c(&quot;pref_name&quot;, &quot;standard_type&quot;, &quot;standard_val
 ## 4       ASPIRIN            Ki        7530000             nM
 ## 5 ACETAMINOPHEN            Ki          10000             nM</code></pre>
 </div>
-<div id="uniprot.ws-based-id-mapping" class="section level2" number="8.2">
-<h2><span class="header-section-number">8.2</span> UniProt.ws-Based ID Mapping</h2>
+<div id="uniprot.ws-based-id-mapping" class="section level2" number="9.2">
+<h2><span class="header-section-number">9.2</span> UniProt.ws-Based ID Mapping</h2>
 <p><code>getUniprotIDs()</code> predates <code>getUniprotMapping()</code> (see <a href="#id-translation-layer">ID Translation
 Layer</a>) and is based on the Bioconductor <em><a href="https://bioconductor.org/packages/3.24/UniProt.ws">UniProt.ws</a></em>
 package rather than a direct REST call. It is kept for backward
@@ -3371,8 +3481,8 @@ compatibility; <code>getUniprotMapping()</code> is the recommended path going
 forward.</p>
 <pre class="r"><code>getUniprotIDs(taxId = 9606, kt = &quot;ENSEMBL&quot;, keys = c(&quot;ENSG00000077782&quot;))</code></pre>
 </div>
-<div id="biomart-based-paralogs" class="section level2" number="8.3">
-<h2><span class="header-section-number">8.3</span> biomaRt-Based Paralogs</h2>
+<div id="biomart-based-paralogs" class="section level2" number="9.3">
+<h2><span class="header-section-number">9.3</span> biomaRt-Based Paralogs</h2>
 <p><code>getParalogs()</code> predates <code>getEnsemblParalogs()</code>/<code>getEnsemblOrthologs()</code>
 (see <a href="#id-translation-layer">ID Translation Layer</a>) and is based on <em><a href="https://CRAN.R-project.org/package=biomaRt">biomaRt</a></em>’s
 BioMart interface rather than Ensembl’s REST API directly. It returns
@@ -3381,8 +3491,8 @@ backward compatibility.</p>
 <pre class="r"><code>queryBy &lt;- list(molType = &quot;gene&quot;, idType = &quot;external_gene_name&quot;, ids = &quot;FGFR1&quot;)
 getParalogs(queryBy)</code></pre>
 </div>
-<div id="ensembldb-based-id-mapping" class="section level2" number="8.4">
-<h2><span class="header-section-number">8.4</span> ensembldb-Based ID Mapping</h2>
+<div id="ensembldb-based-id-mapping" class="section level2" number="9.4">
+<h2><span class="header-section-number">9.4</span> ensembldb-Based ID Mapping</h2>
 <p><code>getSymEnsUp()</code> is a third, independent way to translate between gene
 symbols, Ensembl gene IDs and UniProt accessions - based on a local
 Bioconductor annotation package (<em><a href="https://bioconductor.org/packages/3.24/EnsDb.Hsapiens.v86">EnsDb.Hsapiens.v86</a></em>) via
@@ -3450,8 +3560,8 @@ Supported <code>idtype</code> values are <code>GENE_NAME</code>, <code>ENSEMBL_G
 ## 5 ENSG00000077782     FGFR1     P11362 ENSP00000348537
 ## 6 ENSG00000077782     FGFR1     P11362 ENSP00000337247</code></pre>
 </div>
-<div id="static-unichem-mirror" class="section level2" number="8.5">
-<h2><span class="header-section-number">8.5</span> Static UniChem Mirror</h2>
+<div id="static-unichem-mirror" class="section level2" number="9.5">
+<h2><span class="header-section-number">9.5</span> Static UniChem Mirror</h2>
 <p><code>downloadUniChem()</code>/<code>cmpIdMapping()</code> predate <code>buildUnichemDb()</code>/
 <code>getUnichemMapping()</code> (see <a href="#id-translation-layer">ID Translation Layer</a>) and work from a small,
 static, pre-computed ChEMBL↔︎{DrugBank, PubChem, ChEBI} cross-reference
@@ -3461,8 +3571,8 @@ workflow above, which uses it internally via <code>cmpIdMapping()</code>.</p>
 <pre class="r"><code>downloadUniChem(rerun = TRUE)
 cmpIdMapping(outfile = &quot;cmp_ids.rds&quot;, rerun = TRUE)</code></pre>
 </div>
-<div id="putting-it-together" class="section level2" number="8.6">
-<h2><span class="header-section-number">8.6</span> Putting It Together</h2>
+<div id="putting-it-together" class="section level2" number="9.6">
+<h2><span class="header-section-number">9.6</span> Putting It Together</h2>
 <p><code>runDrugTarget_Annot_Bioassay()</code> is a convenience wrapper combining
 <code>drugTargetAnnot()</code> and <code>drugTargetBioactivity()</code> for a set of UniProt
 IDs obtained from <code>getUniprotIDs()</code> or <code>getParalogs()</code> - the legacy
@@ -3492,8 +3602,8 @@ sapply(combined, nrow)</code></pre>
 ## 6 Query_CA7 ETHOXZOLAMIDE     Carbonic anhydrase inhibitor</code></pre>
 </div>
 </div>
-<div id="session-info" class="section level1" number="9">
-<h1><span class="header-section-number">9</span> Session Info</h1>
+<div id="session-info" class="section level1" number="10">
+<h1><span class="header-section-number">10</span> Session Info</h1>
 <pre class="r"><code>sessionInfo()</code></pre>
 <pre><code>## R Under development (unstable) (2026-06-15 r90156)
 ## Platform: x86_64-pc-linux-gnu
@@ -3520,7 +3630,7 @@ sapply(combined, nrow)</code></pre>
 ##  [4] GenomicFeatures_1.65.0        AnnotationDbi_1.75.0          Biobase_2.73.1               
 ##  [7] GenomicRanges_1.65.1          Seqinfo_1.3.0                 IRanges_2.47.2               
 ## [10] S4Vectors_0.51.5              BiocGenerics_0.59.10          generics_0.1.4               
-## [13] drugTargetInteractions_1.21.7 BiocStyle_2.41.0             
+## [13] drugTargetInteractions_1.21.9 BiocStyle_2.41.0             
 ## 
 ## loaded via a namespace (and not attached):
 ##  [1] tidyselect_1.2.1            dplyr_1.2.1                 blob_1.3.0                 
