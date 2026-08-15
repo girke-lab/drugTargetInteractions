@@ -69,10 +69,14 @@ test_that(".ttdParseDrugSmiles parses a synthetic P1-02-style file, no network",
     expect_identical(sm$Smiles[sm$DrugID == "D00002"], "CC(=O)OC1=CC=CC=C1C(=O)O")
 })
 
-test_that("downloadTTD fetches/caches the 3 TTD flat files", {
+test_that("downloadTTD fetches/caches the 5 TTD flat files", {
     skip_if_offline_dti()
     paths <- downloadTTD()
-    expect_identical(names(paths), c("targets", "drugs", "mapping"))
+    ## crossmatch (drug cross-reference IDs) and drugDisease (per-disease
+    ## indications with ICD-11 codes) joined the original three when the
+    ## TTD integration was extended; see .ttdEndpoints().
+    expect_identical(names(paths), c("targets", "drugs", "mapping",
+                                     "crossmatch", "drugDisease"))
     expect_true(all(vapply(paths, file.exists, logical(1))))
 })
 
@@ -84,8 +88,15 @@ test_that("buildTtdDb builds a queryable local SQLite with the expected table", 
     on.exit(dbDisconnect(con))
     expect_true("ttd_interactions" %in% dbListTables(con))
     cols <- dbListFields(con, "ttd_interactions")
-    expect_identical(cols, c("TargetID", "GeneName", "Uniprot", "TargetType",
-                             "DrugID", "DrugName", "Smiles", "Highest_status", "MOA"))
+    expect_identical(cols, c(
+        ## the original edge columns, from P1-01/P1-02/P1-07
+        "TargetID", "GeneName", "Uniprot", "TargetType",
+        "DrugID", "DrugName", "Smiles", "Highest_status", "MOA",
+        ## derived during the build: resolved accession + how it was
+        ## resolved, and the molecule_type classification
+        "Uniprot_acc", "uniprot_source", "molecule_type",
+        ## drug cross-references (P1-03) and packed indications (P1-05)
+        "PubChem_CID", "PubChem_SID", "CAS", "ChEBI_ID", "Indication"))
 })
 
 test_that("ttdTargetAnnot matches the validated 8-gene row count, NA-padding undrugged targets", {
@@ -96,7 +107,10 @@ test_that("ttdTargetAnnot matches the validated 8-gene row count, NA-padding und
     expect_s3_class(df, "data.frame")
     expect_identical(names(df), c("QueryIDs", "TargetID", "GeneName", "Uniprot",
                                   "TargetType", "DrugID", "DrugName", "Smiles",
-                                  "Highest_status", "MOA"))
+                                  "Highest_status", "MOA", "Uniprot_acc",
+                                  "uniprot_source", "molecule_type",
+                                  "PubChem_CID", "PubChem_SID", "CAS",
+                                  "ChEBI_ID", "Indication"))
     ## 61 real matches (R_Py_code/ttdAccess.R reference) + 3 NA-padded rows
     ## for genes TTD has zero interactions for (ADIPOR1, ADIPOR2, TFEB).
     expect_equal(sum(!is.na(df$TargetID)), 61L)
