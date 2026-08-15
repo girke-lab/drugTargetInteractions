@@ -21,30 +21,26 @@ A \code{data.frame} with columns \code{query_id},
   \code{action_type_raw} and \code{action_type}.
 }
 \description{
-Transforms \code{\link{queryDrugTargets}}'s per-source results into
-the MOA terms each source states for each drug, one row per drug x
-source x MOA term. Because a mechanism of action is a property of the
-*drug*, the target(s) a source says the mechanism acts through are a
-separate relation - see \code{\link{assembleMoaTargets}}.
+Returns the mechanisms of action reported for each drug in
+\code{\link{queryDrugTargets}}'s results, one row per drug, source and
+mechanism. A mechanism of action describes what a drug does, so the
+targets it is reported to act through are returned separately by
+\code{\link{assembleMoaTargets}}.
 }
 \details{
-Only ChEMBL, Open Targets and the Broad Repurposing Hub are used:
-TTD, GtoPdb and DGIdb label a column "MOA"/"type"/"interaction_types"
-but store an *action type* (the verb alone, no target named), and
-pooling those under a MOA heading would let "Inhibitor" dominate any
-grouping or frequency count. \code{\link{listMoaSources}} gives the
-evidence; \code{\link{combineDrugTargets}}'s \code{action} column
-already carries that dimension for all six sources.
+ChEMBL, Open Targets and the Broad Repurposing Hub report mechanisms
+and are used here. TTD, GtoPdb and DGIdb instead report an action term
+such as "Inhibitor" without naming a target;
+\code{\link{combineDrugTargets}} collects those in its \code{action}
+column. \code{\link{listMoaSources}} summarises what each source
+provides.
 
-MOA strings are kept verbatim - genuine synonymy across free text
-would need an ontology. Only \code{action_type} is normalized, and
-only for the sources that state one, since those vocabularies are
-near-identical once case is folded.
-
-Rows are deduplicated but never merged across sources: the same
-mechanism reported by ChEMBL and by Open Targets stays as two rows,
-because collapsing them would require a cross-source identity claim
-this package deliberately does not make.
+Mechanism text is returned as each source wrote it, since the same
+mechanism is often phrased differently in different databases. Only
+\code{action_type} is standardised, with the original wording kept in
+\code{action_type_raw}. Rows from different sources are kept separate,
+so a mechanism reported by both ChEMBL and Open Targets appears
+twice.
 }
 \examples{
 ## A pure transformer, so it runs on any correctly-shaped per-source

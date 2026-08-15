@@ -311,29 +311,25 @@ listMoaSources <- function() {
 
 #' Assemble a drug -> mechanism-of-action table
 #'
-#' Transforms \code{\link{queryDrugTargets}}'s per-source results into
-#' the MOA terms each source states for each drug, one row per drug x
-#' source x MOA term. Because a mechanism of action is a property of the
-#' *drug*, the target(s) a source says the mechanism acts through are a
-#' separate relation - see \code{\link{assembleMoaTargets}}.
+#' Returns the mechanisms of action reported for each drug in
+#' \code{\link{queryDrugTargets}}'s results, one row per drug, source and
+#' mechanism. A mechanism of action describes what a drug does, so the
+#' targets it is reported to act through are returned separately by
+#' \code{\link{assembleMoaTargets}}.
 #'
-#' Only ChEMBL, Open Targets and the Broad Repurposing Hub are used:
-#' TTD, GtoPdb and DGIdb label a column "MOA"/"type"/"interaction_types"
-#' but store an *action type* (the verb alone, no target named), and
-#' pooling those under a MOA heading would let "Inhibitor" dominate any
-#' grouping or frequency count. \code{\link{listMoaSources}} gives the
-#' evidence; \code{\link{combineDrugTargets}}'s \code{action} column
-#' already carries that dimension for all six sources.
+#' ChEMBL, Open Targets and the Broad Repurposing Hub report mechanisms
+#' and are used here. TTD, GtoPdb and DGIdb instead report an action term
+#' such as "Inhibitor" without naming a target;
+#' \code{\link{combineDrugTargets}} collects those in its \code{action}
+#' column. \code{\link{listMoaSources}} summarises what each source
+#' provides.
 #'
-#' MOA strings are kept verbatim - genuine synonymy across free text
-#' would need an ontology. Only \code{action_type} is normalized, and
-#' only for the sources that state one, since those vocabularies are
-#' near-identical once case is folded.
-#'
-#' Rows are deduplicated but never merged across sources: the same
-#' mechanism reported by ChEMBL and by Open Targets stays as two rows,
-#' because collapsing them would require a cross-source identity claim
-#' this package deliberately does not make.
+#' Mechanism text is returned as each source wrote it, since the same
+#' mechanism is often phrased differently in different databases. Only
+#' \code{action_type} is standardised, with the original wording kept in
+#' \code{action_type_raw}. Rows from different sources are kept separate,
+#' so a mechanism reported by both ChEMBL and Open Targets appears
+#' twice.
 #'
 #' @param results a named list as returned by \code{\link{queryDrugTargets}}
 #'   (or any similarly-shaped named list of per-source data.frames -
@@ -376,20 +372,18 @@ assembleMoaTable <- function(results) {
 
 #' Assemble the link from a MOA term to the target(s) it acts through
 #'
-#' The companion relation to \code{\link{assembleMoaTable}}: one row per
-#' drug x source x MOA term x target, for those sources that tie a
-#' mechanism to a named target. The Broad Repurposing Hub states its MOA
-#' for the drug with no per-target attribution and so contributes no rows
-#' here - which is the point of keeping the two relations separate rather
-#' than flagging drug-level rows inside one table.
+#' Returns the targets each mechanism of action is reported to act
+#' through, one row per drug, source, mechanism and target. It is the
+#' companion to \code{\link{assembleMoaTable}}, which returns the
+#' mechanisms themselves.
 #'
-#' Sources also disagree on how they name a target: ChEMBL's REST output
-#' is UniProt-accession-keyed with no gene symbol at all, while Open
-#' Targets carries only a symbol. \code{resolveGeneSymbol = TRUE} fills
-#' the missing symbols from \code{target_uniprot} in one batched lookup -
-#' the same opt-in, one-extra-round-trip treatment
-#' \code{\link{combineDrugTargets}} gives its \code{gene_symbol} column,
-#' and off by default for the same reason.
+#' The Broad Repurposing Hub reports a drug's mechanisms without saying
+#' which target each one acts on, so its drugs do not appear here.
+#'
+#' Sources name targets differently: ChEMBL uses UniProt accessions and
+#' Open Targets gene symbols. \code{resolveGeneSymbol = TRUE} looks up
+#' the missing symbols so results from the two can be compared directly,
+#' at the cost of one extra request.
 #'
 #' @param results a named list as returned by \code{\link{queryDrugTargets}};
 #'   see \code{\link{assembleMoaTable}}.

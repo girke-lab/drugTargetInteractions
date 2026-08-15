@@ -28,21 +28,19 @@ A \code{data.frame} with columns \code{query_id},
   \code{fields = "all"}; \code{NA} otherwise).
 }
 \description{
-The companion relation to \code{\link{assembleMoaTable}}: one row per
-drug x source x MOA term x target, for those sources that tie a
-mechanism to a named target. The Broad Repurposing Hub states its MOA
-for the drug with no per-target attribution and so contributes no rows
-here - which is the point of keeping the two relations separate rather
-than flagging drug-level rows inside one table.
+Returns the targets each mechanism of action is reported to act
+through, one row per drug, source, mechanism and target. It is the
+companion to \code{\link{assembleMoaTable}}, which returns the
+mechanisms themselves.
 }
 \details{
-Sources also disagree on how they name a target: ChEMBL's REST output
-is UniProt-accession-keyed with no gene symbol at all, while Open
-Targets carries only a symbol. \code{resolveGeneSymbol = TRUE} fills
-the missing symbols from \code{target_uniprot} in one batched lookup -
-the same opt-in, one-extra-round-trip treatment
-\code{\link{combineDrugTargets}} gives its \code{gene_symbol} column,
-and off by default for the same reason.
+The Broad Repurposing Hub reports a drug's mechanisms without saying
+which target each one acts on, so its drugs do not appear here.
+
+Sources name targets differently: ChEMBL uses UniProt accessions and
+Open Targets gene symbols. \code{resolveGeneSymbol = TRUE} looks up
+the missing symbols so results from the two can be compared directly,
+at the cost of one extra request.
 }
 \examples{
 chembl <- data.frame(

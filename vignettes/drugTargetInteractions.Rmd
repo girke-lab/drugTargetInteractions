@@ -115,12 +115,13 @@ This vignette is organised as follows:
 ## Data Sources at a Glance
 
 Quick reference for everything covered above: the seven drug-target/
-bioassay data sources plus the helper resources used for identifier
-translation and (for genome-wide runs) the gene anchor. License/
-redistribution posture matters for reuse - see each source's own section
-for detail, and note that `buildTtdDb()`/`buildBroadRepurposingHubDb()`/
-`buildGtoPdbDb()`/`buildUnichemDb()` only ever download into your own
-local cache; the package itself redistributes none of this data.
+bioassay data sources, together with the helper resources used for
+identifier translation and, for genome-wide runs, the gene anchor.
+Licensing differs between sources and matters if you plan to redistribute
+results, so check the relevant section before doing so.
+`buildTtdDb()`, `buildBroadRepurposingHubDb()`, `buildGtoPdbDb()` and
+`buildUnichemDb()` download into your own local cache; the package itself
+ships none of this data.
 
 **Drug-target and bioassay data sources**
 
@@ -416,10 +417,9 @@ UniProt accession `"P11362"` other sources use), or TTD's own
 **TargetID** (`idType = "ttd_target_id"`); for drug &rarr; target, a
 **drug name** or TTD's own **DrugID** (`idType = "ttd_drug_id"`).
 
-The result's `Uniprot_acc` column carries a resolved UniProt accession
-where available (via the package's UniProt REST scaffold, keyed on
-`GeneName`, not on string-mangling the mnemonic) - check the paired
-`uniprot_source` column before trusting it: `"resolved"` means it
+The result's `Uniprot_acc` column carries a UniProt accession where one
+could be found for the target. Check the paired `uniprot_source` column
+before relying on it: `"resolved"` means it
 worked, `"TTD_missing"` means TTD itself had no usable ID for that
 target at all (overwhelmingly family/pathway-level "targets" with no
 single accession by construction, e.g. "Fibroblast growth factor
@@ -480,11 +480,9 @@ into your local cache and builds the SQLite there - the package itself
 ships no TTD data (TTD's license permits academic use but has no explicit
 redistribution grant). The cross-matching columns (`PubChem_CID`,
 `PubChem_SID`, `CAS`, `ChEBI_ID`) are TTD's own; this release's
-cross-matching file does not carry `ChEMBL_ID`, `DrugBank_ID`, or
-`InChIKey` at all (confirmed by reading the raw file, not just its
-header) - joining to those needs a separate hop through
-`getUnichemMapping()`/`buildUnichemDb()` via `PubChem_CID`, not this
-function.
+cross-matching file does not carry `ChEMBL_ID`, `DrugBank_ID` or
+`InChIKey`. To reach any of those, map from `PubChem_CID` with
+`getUnichemMapping()` (see [Compound IDs]).
 
 ## Broad Repurposing Hub (CLUE)
 
@@ -597,10 +595,8 @@ FGFR1 and NLRP3 are covered.
 is licensed under the Open Data Commons Open Database License (ODbL)
 with contents under CC-BY-SA 4.0 - clear terms that explicitly permit
 redistribution (with attribution/share-alike). `buildGtoPdbDb()` still
-only ever downloads into your local cache and builds the SQLite there,
-matching the other local-SQLite sources' posture for consistency, though
-that default isn't a licensing requirement here the way it is for TTD/
-the Repurposing Hub.
+downloads into your local cache and builds the SQLite there, as the other
+local-SQLite sources do.
 
 # Bioassay Queries
 
@@ -721,11 +717,9 @@ getEnsemblOrthologs("NLRP3", targetSpecies = "mouse")[
     , c("homolog_id", "homolog_species", "type", "perc_id")]
 ```
 
-Large gene families need the default query shape here - by design,
-`getEnsemblParalogs()`/`getEnsemblOrthologs()` already avoid a
-pathological slowdown found for such families (see
-`?.dot-dtiEnsemblHomologyFetch` for details); pass `condensed = TRUE` for
-an even faster existence-check-only path when you don't need
+Genes with large families are handled efficiently by the default query,
+so no adjustment is needed for them. Pass `condensed = TRUE` for a faster
+path that only checks which homologs exist, when you do not need
 `perc_id`/`perc_pos`.
 
 ## Compound IDs
@@ -750,13 +744,12 @@ getUnichemMapping("CHEMBL25", from = "chembl", to = "pubchem", unichemDbPath)   
 getUnichemMapping("CHEMBL25", from = "chembl", to = "drugbank", unichemDbPath) # aspirin -> DrugBank ID
 ```
 
-Unlike UniProt's or Ensembl's REST APIs, UniChem's own live per-compound
-API does not support batch queries and was found to be intermittently
-unreliable for even single lookups - the local-SQLite approach exists
-specifically to avoid depending on it (see `?buildUnichemDb`). Because the
-build is a real, deliberate operation (not something to trigger silently),
-`buildUnichemDb(rerun = FALSE)` is always required explicitly before using
-`getUnichemMapping()` or `queryDrugTargets()` on structured compound IDs.
+UniChem's live API handles only one compound per request, so this package
+works from a local copy instead. Building it takes about an hour and
+downloads roughly 1.5GB, so it is never triggered automatically: call
+`buildUnichemDb(rerun = FALSE)` yourself before using
+`getUnichemMapping()`, or `queryDrugTargets()` with structured compound
+IDs.
 
 ChEMBL's own REST API has no PubChem CID field on the molecule record, so
 `getChemblDrugTarget()`'s `PubChem_CID` column is `NA` by default (see
@@ -791,8 +784,8 @@ for those):
 
 Compound-side resolution needs a local UniChem SQLite (`unichemDbPath`,
 see [Compound IDs]) for most `idType != to` combinations, except three
-zero-network-database shortcuts: `idType`/`to` already identical (a
-passthrough, including `"name"` -> `"name"`), `"chembl_id"` -> `"name"`
+shortcuts that need no local database: `idType` and `to` already
+identical, including `"name"` -> `"name"`; `"chembl_id"` -> `"name"`
 (direct via `getChemblMolecule()`), and `"name"` -> `"pubchem_id"`
 (direct via PubChem's own name search). Every other combination needs
 it, including `"name"` -> any structured type *other than*
@@ -903,63 +896,26 @@ combineDrugTargets(res_all_live, resolveGeneSymbol = TRUE) |>
     subset(source == "ChEMBL") |> head(3)
 ```
 
-**This is deliberately just column-name alignment and row append** - not
-deduplication and not cross-source identity resolution (the same compound
-or target appearing under different native IDs in different sources is
-not merged into one row). A more principled harmonized container - an S4
-class analysed but not yet built, so that different sources' rows for the
-literal same compound/target could be properly joined - is a separate,
-deferred phase. Every source's full original data remains available
-unchanged in the list `queryDrugTargets()` returned, regardless of what
-you pass to `combineDrugTargets()`.
+`combineDrugTargets()` aligns column names and stacks the rows. It does
+not merge records: a compound or target that appears in several sources
+under different identifiers stays as one row per source, so counts across
+the combined table reflect sources rather than distinct molecules. Each
+source's full original data remains in the list returned by
+`queryDrugTargets()`.
 
 # Mechanism of Action
 
-A mechanism of action describes the molecular action of a **drug** -
-what it does and, almost always, to which molecular target
-(`"Bcr/Abl fusion protein inhibitor"`). It is a property of the drug,
-not of a drug-target edge, and the data bears that out: 48% of distinct
-ChEMBL MOA terms are used by more than one drug ("Histamine H1 receptor
-antagonist" covers 55 of them), so a MOA is a shared functional
-descriptor rather than a per-edge fact.
+A mechanism of action says what a drug does and, in nearly all cases,
+which molecular target it does it to: imatinib is a
+`"Bcr/Abl fusion protein inhibitor"`, aspirin a
+`"Cyclooxygenase inhibitor"`. It is a statement about the drug. The same
+mechanism often describes many different drugs, and one drug frequently
+has several.
 
-That gives two relations rather than one flat table:
-
-- `assembleMoaTable()` - the drug's MOA terms, one row per drug x
-  source x MOA term.
-- `assembleMoaTargets()` - the separate link from a MOA to the target(s)
-  a source says it acts through.
-
-## Which sources carry MOA
-
-Only **ChEMBL, Open Targets and the Broad Repurposing Hub**. TTD, GtoPdb
-and DGIdb label a column `MOA`/`type`/`interaction_types`, but what they
-store is an *action type* - the verb alone, with no target named. The
-distinct-value counts settle it, and ChEMBL settles it at schema level
-by carrying both concepts as separate fields:
-
-```{r moa_sources, eval=TRUE}
-listMoaSources()[, c("source", "column", "kind", "n_distinct", "used_for_moa")]
-```
-
-ChEMBL's `mechanism_of_action` has ~1,589 distinct values; its
-`action_type` has 33. TTD's "MOA" column has 48 - it is a clone of the
-*action type* field, not of the MOA field. Pooling those under a MOA
-heading would let `"Inhibitor"` dominate any grouping or frequency
-count, so they are excluded here. Nothing is lost:
-`combineDrugTargets()`'s `action` column already carries that dimension
-for all six sources (see [Combining Results]).
-
-Mode of Action - the broader cellular or organism-level consequence, as
-distinct from MOA - is deliberately not modelled, because no source
-carries it systematically: 94% of ChEMBL's MOA strings are
-[target] + [action], and the remainder are still molecular or modality
-(`"Iron chelating agent"`, `"Surfactant agent"`). The only
-MoA-flavoured content anywhere is ChEMBL's free-text `mechanism_comment`
-("Role in regulating gastric secretion"), carried through as an optional
-passthrough column rather than modelled as a concept.
-
-## The two relations
+Two functions cover this. `assembleMoaTable()` returns the mechanisms
+reported for each drug, and `assembleMoaTargets()` returns the targets
+each mechanism is reported to act through. Both take the results of
+`queryDrugTargets()`, in the same way as `combineDrugTargets()`.
 
 ```{r moa_assemble, eval=TRUE}
 moa_res <- queryDrugTargets(
@@ -968,44 +924,56 @@ moa_res <- queryDrugTargets(
 assembleMoaTable(moa_res)[, c("source", "moa_text", "action_type")]
 ```
 
-ChEMBL records "Bcr/Abl fusion protein inhibitor" against *two* targets
-(ABL1 and BCR), but the drug has one such mechanism - so it appears once
-above, and twice in the link table:
+Imatinib inhibits the BCR-ABL fusion protein, which ChEMBL records
+against both of its constituent proteins. That is one mechanism acting
+on two targets, so it appears once above and twice here:
 
 ```{r moa_targets, eval=TRUE}
 assembleMoaTargets(moa_res)[, c("source", "moa_text", "target_symbol",
                                 "target_uniprot")]
 ```
 
-ChEMBL populates `target_uniprot` and Open Targets `target_symbol` -
-ChEMBL's REST output has no gene-symbol column at all. Pass
-`resolveGeneSymbol = TRUE` to fill the gap in one batched UniProt
-lookup, exactly as `combineDrugTargets()` does:
+Targets arrive named differently depending on the source: ChEMBL
+identifies them by UniProt accession, Open Targets by gene symbol. Set
+`resolveGeneSymbol = TRUE` to look up the missing symbols, so that
+results from the two can be compared directly:
 
 ```{r moa_resolve_symbol, eval=TRUE}
 assembleMoaTargets(moa_res, resolveGeneSymbol = TRUE)[
     , c("source", "moa_text", "target_symbol")] |> head(4)
 ```
 
-The Broad Hub states its MOA for the drug with no per-target
-attribution, so it contributes to the MOA table but **no rows at all**
-to the link table - which is why the two relations are separate rather
-than one table with drug-level rows flagged inside it.
+`queryMoa()` combines the query and the assembly into a single call when
+only the mechanisms are needed. To collapse the table to one row per
+drug, with its mechanisms gathered into a list column, use `moaWide()`.
 
-`moaWide()` collapses the MOA table to one row per drug, and
-`queryMoa()` is the one-call wrapper (`queryDrugTargets()` then
-`assembleMoaTable()`); call the two separately when you also want the
-target link. One caveat when starting from a compound **name**:
-`queryDrugTargets()` reaches ChEMBL and Open Targets only via a ChEMBL
-ID, so those two need `unichemDbPath` (see [Compound IDs]) for a
-name-based query.
+## Which sources report mechanisms
 
-MOA strings are kept **verbatim** - only `action_type` is normalized,
-since those vocabularies are near-identical once case is folded while
-genuine synonymy across free-text prose would need an ontology. Rows are
-deduplicated but never merged across sources: the same mechanism from
-ChEMBL and Open Targets stays as two rows, because collapsing them would
-require a cross-source identity claim this package does not make.
+ChEMBL, Open Targets and the Broad Repurposing Hub report mechanisms of
+action. TTD, GtoPdb and DGIdb do not: their comparable columns hold an
+action term such as `"Inhibitor"` or `"Agonist"` without naming a
+target, which is a useful annotation but a different one.
+`combineDrugTargets()` collects those terms in its `action` column for
+all six sources.
+
+```{r moa_sources, eval=TRUE}
+listMoaSources()[, c("source", "column", "kind", "used_for_moa")]
+```
+
+The Broad Repurposing Hub reports each drug's mechanisms but does not
+say which target each one acts on, so its drugs appear in
+`assembleMoaTable()` and not in `assembleMoaTargets()`. If you are
+counting evidence per target, that is the practical consequence: the
+Broad Hub contributes to what a drug is known to do, not to which target
+it does it to.
+
+Mechanism text is reported as each source wrote it, since the same
+mechanism is often phrased differently in different databases. Only
+`action_type` is standardised, to terms such as `inhibitor` and
+`agonist`; the original wording remains in `action_type_raw`. Rows from
+different sources are kept separate even when they describe the same
+mechanism, so a mechanism confirmed by both ChEMBL and Open Targets
+appears twice, once per source.
 
 
 # Genome-Wide Master Table
@@ -1083,23 +1051,18 @@ masterTable <- buildGenomeWideDrugTargetTable(
 sapply(masterTable, nrow)
 ```
 
-This deliberately covers only the four **curated-annotation** sources -
-not ChEMBL's bioassay function or PubChem (see [Bioassay Queries]).
-ChEMBL's full activity table is tens of millions of rows and PubChem's
-accessor is inherently a one-gene-at-a-time loop; a genome-wide sweep of
-either is a different kind of job, better done from their bulk data
-downloads than by looping this package's live-API functions tens of
-thousands of times.
+This covers the four curated-annotation sources only, not the bioassay
+data from ChEMBL or PubChem (see [Bioassay Queries]). ChEMBL's activity
+table runs to tens of millions of rows and PubChem is queried one gene at
+a time, so a genome-wide sweep of either is better done from their bulk
+downloads than through this package's live-API functions.
 
 The result is a named list - one data.frame per source, each row tagged
 with `hgnc_id`/`symbol`/`ensembl_gene_id` alongside that source's own
-native columns (deliberately *not* passed through `combineDrugTargets()`'s
-harmonization, so no information is lost from a resource meant to be
-reused repeatedly; apply `combineDrugTargets()` afterward if you want the
-flattened cross-source view). The assembled result is also cached via
-`BiocFileCache`, so a completed build is reusable across sessions and
-machines without recomputation - exactly the "compute every few months,
-share the result" workflow this section is meant to support.
+native columns, so nothing from the individual sources is dropped. Apply
+`combineDrugTargets()` afterwards for the aligned cross-source view. The
+result is cached with `BiocFileCache`, so a completed build can be reused
+across sessions and machines without recomputing it.
 
 # Supplement
 
