@@ -38,12 +38,13 @@ genConfig <- function(
     ))
 }
 .getCacheFile <- function(name) {
-    # create_time is a column in the DF returned by bfcquery. It is resolved
-    # in the context of the DF inside dplyr::arrange.
-    hits <- dplyr::arrange(
-        bfcquery(.getCache(), name, field = c("rname")),
-        dplyr::desc(create_time)
-    )
+    # Most recent cache entry wins. Ordered with base R rather than
+    # dplyr::arrange(dplyr::desc(create_time)): create_time is a column of
+    # the frame bfcquery() returns, so referring to it bare made R CMD check
+    # report it as an undefined global. Same convention as
+    # .unichemLatestCachedDb().
+    hits <- bfcquery(.getCache(), name, field = c("rname"))
+    hits <- hits[order(hits$create_time, decreasing = TRUE), ]
     if (nrow(hits) == 0L) {
         # Indexing an empty data.frame with [1, ] used to silently yield NA
         # here, which downstream callers then fed into readLines()/file()
@@ -524,8 +525,8 @@ getParalogs <- function(queryBy) {
     ## Added by ThG on 25-Aug-21 to account for missing entries index 
     missing <- unique(as.character(resultDF$ENSEMBL))[!unique(as.character(resultDF$ENSEMBL)) %in% names(index)]
     if(length(missing)>0) {
-        index <- c(index, setNames(rep(1, length(missing)), missing))
-        up_sp <- c(up_sp, setNames(rep("", length(missing)), missing))
+        index <- c(index, stats::setNames(rep(1, length(missing)), missing))
+        up_sp <- c(up_sp, stats::setNames(rep("", length(missing)), missing))
     }
     index <- index[as.character(resultDF$ENSEMBL)]
     up_sp <- up_sp[names(index)]
@@ -544,8 +545,8 @@ getParalogs <- function(queryBy) {
     ## Added by ThG on 25-Aug-21 to account for missing entries index 
     missing <- unique(as.character(resultDF$ENSEMBL))[!unique(as.character(resultDF$ENSEMBL)) %in% names(index)]
     if(length(missing)>0) {
-        index <- c(index, setNames(rep(1, length(missing)), missing))
-        up_sp_tr <- c(up_sp_tr, setNames(rep("", length(missing)), missing))
+        index <- c(index, stats::setNames(rep(1, length(missing)), missing))
+        up_sp_tr <- c(up_sp_tr, stats::setNames(rep("", length(missing)), missing))
     }
     index <- index[as.character(resultDF$ENSEMBL)]
     up_sp_tr <- up_sp_tr[names(index)]

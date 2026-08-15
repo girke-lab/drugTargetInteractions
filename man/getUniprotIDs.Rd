@@ -46,7 +46,7 @@ getUniprotIDs(taxId = 9606, kt = "ENSEMBL", keys, seq_cluster = "UNIREF90", chun
 
 \seealso{
  \code{\link{getParalogs}} 
- \code{\link{UniProt.ws}}
+ \code{\link[UniProt.ws]{UniProt.ws}}
 }
 \examples{
 %%  requires network 
