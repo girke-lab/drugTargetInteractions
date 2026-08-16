@@ -11,7 +11,13 @@ queryMoa(queryBy, sources = names(.dtiMoaSourceSpec), ...)
 \code{\link{queryDrugTargets}}.}
 
 \item{sources}{character vector of sources to query; defaults to the
-three that carry MOA terms (see \code{\link{listMoaSources}}).}
+three that carry MOA terms (see \code{\link{listMoaSources}}). One of
+them, the Broad Repurposing Hub, is read from a local SQLite, so a
+default call needs \code{brhDbPath} (see
+\code{\link{buildBroadRepurposingHubDb}}); without it the call stops
+rather than returning a table quietly missing one of the three MOA
+sources. Pass \code{sources = c("chembl", "opentargets")} to query
+only the two that need no local database.}
 
 \item{...}{further arguments passed to \code{\link{queryDrugTargets}},
 e.g. \code{brhDbPath}, \code{unichemDbPath}, \code{verbose}.}

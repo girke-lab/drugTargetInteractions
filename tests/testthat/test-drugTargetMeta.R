@@ -158,6 +158,23 @@ test_that("queryDrugTargets rejects malformed queryBy without any network calls"
         "sources")
 })
 
+test_that("queryDrugTargets demands the local-SQLite paths up front, before any network call", {
+    ## A missing brhDbPath/ttdDbPath/gtoPdbDbPath used to be raised inside
+    ## the per-source tryCatch, which absorbed it and dropped the source
+    ## from the results silently unless verbose = TRUE.
+    q <- list(molType = "cmp", idType = "chembl_id", ids = "CHEMBL941")
+    expect_error(queryDrugTargets(q, sources = c("chembl", "broad")),
+                 "source 'broad' requires brhDbPath")
+    expect_error(queryDrugTargets(q, sources = c("chembl", "broad", "ttd")),
+                 "sources 'broad', 'ttd' require brhDbPath, ttdDbPath")
+    expect_error(queryDrugTargets(q, sources = "gtopdb"),
+                 "buildGtoPdbDb\\(\\)")
+    ## Sources needing no local database must not trip the check - asserted
+    ## on the message, since actually running them would hit the network.
+    expect_error(queryDrugTargets(q, sources = c("chembl", "dgidb", "broad")),
+                 "^source 'broad'")
+})
+
 test_that("queryDrugTargets: gene direction dispatches to multiple sources and matches their standalone counts", {
     skip_if_offline_dti()
     res <- queryDrugTargets(list(molType = "gene", idType = "symbol", ids = "FGFR1"),
@@ -232,12 +249,19 @@ test_that("queryDrugTargets dispatches to GtoPdb given a local db path, matching
     expect_identical(res$gtopdb, direct)
 })
 
-test_that("queryDrugTargets returns an empty list (not an error) when a required local db path is missing", {
+test_that("queryDrugTargets errors when a required local db path is missing", {
+    ## Until 2026-08-16 this returned an empty list instead: the missing-path
+    ## stop() was raised inside the per-source tryCatch, which absorbed it
+    ## and dropped the source without a word unless verbose = TRUE. That
+    ## tryCatch is for source outages, which are transient and worth
+    ## surviving; a missing path is the caller's to fix and does not
+    ## resolve itself, so it is now checked before any source is queried.
     ## symbol->symbol is a zero-network passthrough, so this needs no
-    ## internet access - the point is purely the missing-ttdDbPath path.
-    res <- queryDrugTargets(list(molType = "gene", idType = "symbol", ids = "FGFR1"),
-                            sources = "ttd")
-    expect_identical(res, structure(list(), resolved = list(ttd = c(FGFR1 = "FGFR1"))))
+    ## internet access either way.
+    expect_error(
+        queryDrugTargets(list(molType = "gene", idType = "symbol", ids = "FGFR1"),
+                         sources = "ttd"),
+        "source 'ttd' requires ttdDbPath")
 })
 
 test_that("queryDrugTargets returns an empty list when nothing resolves for the requested source", {

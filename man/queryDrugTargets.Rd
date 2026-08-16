@@ -36,7 +36,8 @@ included here, see Details).}
 
 \item{ttdDbPath}{character(1) path to a local TTD SQLite (see
 \code{\link{buildTtdDb}}); required if \code{"ttd"} is in
-\code{sources}. Not built automatically - a TTD build is a real,
+\code{sources}, and the function stops before querying anything if it
+is missing. Not built automatically - a TTD build is a real,
 deliberate operation, not something to trigger silently from inside
 a dispatcher.}
 

@@ -343,7 +343,8 @@
 #'   included here, see Details).
 #' @param ttdDbPath character(1) path to a local TTD SQLite (see
 #'   \code{\link{buildTtdDb}}); required if \code{"ttd"} is in
-#'   \code{sources}. Not built automatically - a TTD build is a real,
+#'   \code{sources}, and the function stops before querying anything if it
+#'   is missing. Not built automatically - a TTD build is a real,
 #'   deliberate operation, not something to trigger silently from inside
 #'   a dispatcher.
 #' @param brhDbPath character(1) path to a local Broad Repurposing Hub
@@ -421,6 +422,34 @@ queryDrugTargets <- function(queryBy = list(molType = NULL, idType = NULL, ids =
     isGene <- identical(queryBy$molType, "gene") || identical(queryBy$molType, "protein")
     if (!isGene && !identical(queryBy$molType, "cmp"))
         stop("queryBy$molType must be \"gene\"/\"protein\" or \"cmp\"")
+
+    ## The three local-SQLite sources need their path passed in. That is the
+    ## caller's to fix and will not resolve itself on a retry, unlike the
+    ## transient source outages the per-source tryCatch below exists to
+    ## absorb - so it is checked here, for every requested source at once,
+    ## rather than being raised inside the loop where the tryCatch would
+    ## swallow it and drop the source from the results without a word.
+    ## Checking before the loop also means the caller is not left waiting on
+    ## the network sources first.
+    localDbs <- list(
+        ttd    = list(path = ttdDbPath,    arg = "ttdDbPath",
+                      builder = "buildTtdDb()"),
+        broad  = list(path = brhDbPath,    arg = "brhDbPath",
+                      builder = "buildBroadRepurposingHubDb()"),
+        gtopdb = list(path = gtoPdbDbPath, arg = "gtoPdbDbPath",
+                      builder = "buildGtoPdbDb()"))
+    missingDb <- Filter(function(s) is.null(localDbs[[s]]$path),
+                        intersect(sources, names(localDbs)))
+    if (length(missingDb) > 0L) {
+        args     <- vapply(missingDb, function(s) localDbs[[s]]$arg, character(1))
+        builders <- vapply(missingDb, function(s) localDbs[[s]]$builder, character(1))
+        stop(if (length(missingDb) == 1L) "source " else "sources ",
+             paste0("'", missingDb, "'", collapse = ", "),
+             if (length(missingDb) == 1L) " requires " else " require ",
+             paste(args, collapse = ", "), " - build ",
+             if (length(missingDb) == 1L) "one with " else "them with ",
+             paste(builders, collapse = ", "), call. = FALSE)
+    }
 
     out <- list()
     resolvedBySource <- list()
