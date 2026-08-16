@@ -2920,10 +2920,13 @@ sequence-identity thresholding, so it is a more principled “best hit”
 signal than picking the highest <code>perc_id</code> alone - prefer
 <code>type == &quot;ortholog_one2one&quot;</code> when you need a single best cross-species
 match.</p>
-<pre class="r"><code>getEnsemblParalogs(&quot;NLRP3&quot;)[, c(&quot;homolog_id&quot;, &quot;type&quot;, &quot;perc_id&quot;)]</code></pre>
-<pre><code>## Waiting 4s for retry backoff ■■■■■■■■■■</code></pre>
-<pre><code>## Waiting 4s for retry backoff ■■■■■■■■■■■■■■</code></pre>
-<pre><code>## Waiting 4s for retry backoff ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■</code></pre>
+<pre class="r"><code>paralogs &lt;- drugTargetInteractions:::.dtiLiveOrCached(
+    getEnsemblParalogs(&quot;NLRP3&quot;),
+    fixture = &quot;ensembl_paralogs_nlrp3.rds&quot;, label = &quot;Ensembl&quot;)
+if (isTRUE(attr(paralogs, &quot;dtiCached&quot;)))
+    cat(&quot;&gt; **Note:** Live query to Ensembl failed; showing cached results&quot;,
+        &quot;from&quot;, attr(paralogs, &quot;dtiCachedDate&quot;), &quot;instead.\n\n&quot;)
+paralogs[, c(&quot;homolog_id&quot;, &quot;type&quot;, &quot;perc_id&quot;)]</code></pre>
 <pre><code>##         homolog_id          type  perc_id
 ## 1  ENSG00000167984 other_paralog 20.65730
 ## 2  ENSG00000179583 other_paralog 14.86730
@@ -2945,8 +2948,13 @@ match.</p>
 ## 18 ENSG00000173572 other_paralog 29.53020
 ## 19 ENSG00000174885 other_paralog 25.92590
 ## 20 ENSG00000160505 other_paralog 33.09860</code></pre>
-<pre class="r"><code>getEnsemblOrthologs(&quot;NLRP3&quot;, targetSpecies = &quot;mouse&quot;)[
-    , c(&quot;homolog_id&quot;, &quot;homolog_species&quot;, &quot;type&quot;, &quot;perc_id&quot;)]</code></pre>
+<pre class="r"><code>orthologs &lt;- drugTargetInteractions:::.dtiLiveOrCached(
+    getEnsemblOrthologs(&quot;NLRP3&quot;, targetSpecies = &quot;mouse&quot;),
+    fixture = &quot;ensembl_orthologs_nlrp3_mouse.rds&quot;, label = &quot;Ensembl&quot;)
+if (isTRUE(attr(orthologs, &quot;dtiCached&quot;)))
+    cat(&quot;&gt; **Note:** Live query to Ensembl failed; showing cached results&quot;,
+        &quot;from&quot;, attr(orthologs, &quot;dtiCachedDate&quot;), &quot;instead.\n\n&quot;)
+orthologs[, c(&quot;homolog_id&quot;, &quot;homolog_species&quot;, &quot;type&quot;, &quot;perc_id&quot;)]</code></pre>
 <pre><code>##           homolog_id homolog_species             type perc_id
 ## 1 ENSMUSG00000032691    mus_musculus ortholog_one2one  82.575</code></pre>
 <p>Genes with large families are handled efficiently by the default query,
@@ -3602,11 +3610,11 @@ sapply(combined, nrow)</code></pre>
 ## [1] stats4    stats     graphics  grDevices utils     datasets  methods   base     
 ## 
 ## other attached packages:
-##  [1] EnsDb.Hsapiens.v86_2.99.0     ensembldb_2.37.3              AnnotationFilter_1.37.0      
-##  [4] GenomicFeatures_1.65.0        AnnotationDbi_1.75.0          Biobase_2.73.1               
-##  [7] GenomicRanges_1.65.1          Seqinfo_1.3.0                 IRanges_2.47.2               
-## [10] S4Vectors_0.51.5              BiocGenerics_0.59.10          generics_0.1.4               
-## [13] drugTargetInteractions_1.21.9 BiocStyle_2.41.0             
+##  [1] EnsDb.Hsapiens.v86_2.99.0      ensembldb_2.37.3               AnnotationFilter_1.37.0       
+##  [4] GenomicFeatures_1.65.0         AnnotationDbi_1.75.0           Biobase_2.73.1                
+##  [7] GenomicRanges_1.65.1           Seqinfo_1.3.0                  IRanges_2.47.2                
+## [10] S4Vectors_0.51.5               BiocGenerics_0.59.10           generics_0.1.4                
+## [13] drugTargetInteractions_1.21.10 BiocStyle_2.41.0              
 ## 
 ## loaded via a namespace (and not attached):
 ##  [1] tidyselect_1.2.1            dplyr_1.2.1                 blob_1.3.0                 
