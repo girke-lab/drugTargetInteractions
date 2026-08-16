@@ -246,7 +246,7 @@ follows in the subsections below.
 | `getDgidbDrugTarget()`          | `"cmp"`              | `"name"`          | `"imatinib"`                |
 | `getOpenTargetsDrugTarget()`    | `"gene"`             | `"symbol"`        | `"FGFR1"`                   |
 | `getOpenTargetsDrugTarget()`    | `"cmp"`              | `"name"`          | `"aspirin"`                 |
-| `getPubchemDrugTarget()`        | `"gene"`             | `"symbol"`        | `"KLB"`                     |
+| `getPubchemDrugTarget()`        | `"gene"`             | `"symbol"`        | `"NLRP3"`                   |
 | `getPubchemDrugTarget()`        | `"cmp"`              | `"name"`          | `"aspirin"`                 |
 | `ttdTargetAnnot()`              | `"protein"`          | `"symbol"`        | `"FGFR1"`                   |
 | `ttdTargetAnnot()`              | `"protein"`          | `"uniprot"`       | `"FGFR1_HUMAN"` (mnemonic, not accession) |
@@ -657,7 +657,7 @@ for drug &rarr; target.
 
 ```{r pubchem_target2drug, eval=TRUE}
 pubchem_t2d <- getPubchemDrugTarget(
-    list(molType = "gene", idType = "symbol", ids = "KLB"))
+    list(molType = "gene", idType = "symbol", ids = "NLRP3"))
 head(pubchem_t2d[, c("drug_name", "activity_name", "activity_value_uM")])
 ```
 
@@ -676,6 +676,14 @@ GeneIDs in PubChem), `getPubchemTargets()`/`getPubchemDrugTarget()` filter
 to human (`taxid = 9606`) by default - pass `taxid = NULL` for all species.
 Like ChEMBL's bioassay function, `fields = "core"/"all"/<vector>` and
 `listBioassayFields("pubchem")` are available here too.
+
+Not every gene has compound bioactivity in PubChem. A query for `KLB`
+returns a single row in which every column except the query identifier
+is `NA`. PubChem does hold records for that gene, but they come from
+RNAi screens rather than compound assays, so none of them are potency
+measurements and nothing survives the filters above. Such a row means
+the query was understood and matched nothing, not that the query
+failed.
 
 # ID Translation Layer
 
