@@ -74,6 +74,7 @@ export( "genConfig",
 
     "queryDrugTargets",
     "combineDrugTargets",
+    "addCommonIds",
 
     "assembleMoaTable",
     "assembleMoaTargets",

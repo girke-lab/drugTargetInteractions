@@ -589,7 +589,11 @@ queryDrugTargets <- function(queryBy = list(molType = NULL, idType = NULL, ids =
 #'   column when \code{results} has no \code{"resolved"} attribute).
 #' @param columns character vector of canonical columns to include, any
 #'   of \code{"query_id"}, \code{"gene_symbol"}, \code{"drug_name"},
-#'   \code{"action"}, \code{"source"} (default: all five).
+#'   \code{"action"}, \code{"source"} (default: all five), plus the shared
+#'   join keys \code{"hgnc_id"}, \code{"target_uniprot"} and
+#'   \code{"compound_chembl_id"}. The three keys are not part of any
+#'   source's own output, so asking for one derives it with
+#'   \code{\link{addCommonIds}}, which reads the cached HGNC gene table.
 #' @param resolveGeneSymbol logical(1); if \code{TRUE}, fill ChEMBL's
 #'   otherwise-\code{NA} \code{gene_symbol} by resolving its
 #'   \code{UniProt_ID} column via \code{\link{getUniprotMapping}} (one
@@ -615,7 +619,9 @@ combineDrugTargets <- function(results,
                                           "action", "source"),
                                resolveGeneSymbol = FALSE, taxId = 9606L) {
     columns <- match.arg(columns, c("query_id", "gene_symbol", "drug_name",
-                                    "action", "source"), several.ok = TRUE)
+                                    "action", "source", "hgnc_id",
+                                    "target_uniprot", "compound_chembl_id"),
+                         several.ok = TRUE)
     if (length(results) == 0L)
         return(as.data.frame(stats::setNames(
             replicate(length(columns), character(0), simplify = FALSE), columns)))
@@ -629,6 +635,20 @@ combineDrugTargets <- function(results,
 
     resolvedAttr <- attr(results, "resolved")
     needCols <- union(columns, if (isTRUE(resolveGeneSymbol)) "gene_symbol" else character(0))
+
+    ## The shared join keys are not part of any source's own output, so they
+    ## are derived on demand - only when asked for, since that reads the
+    ## cached HGNC table.
+    keyCols <- setdiff(.dtiCommonIdCols, names(.dtiCombineColMap))
+    if (any(keyCols %in% needCols)) {
+        haveKeys <- vapply(results, function(d)
+            is.data.frame(d) && all(keyCols %in% names(d)), logical(1))
+        if (!all(haveKeys)) {
+            withKeys <- addCommonIds(results)
+            attributes(withKeys) <- attributes(results)  # keep "resolved"
+            results <- withKeys
+        }
+    }
 
     rows <- lapply(names(results), function(src) {
         df <- results[[src]]
@@ -657,8 +677,15 @@ combineDrugTargets <- function(results,
                 stop("combineDrugTargets(): expected column '", srcCol, "' not found ",
                      "in results$", src, " - is this really a ", src, " result from ",
                      "queryDrugTargets()?")
-            out[[col]] <- if (is.na(srcCol)) NA_character_ else as.character(df[[srcCol]])
+            ## srcCol NA means the source has no such column of its own -
+            ## only ChEMBL's gene_symbol. If the shared keys were derived,
+            ## that column is available from there instead of staying NA.
+            out[[col]] <- if (!is.na(srcCol)) as.character(df[[srcCol]])
+                          else if (col %in% names(df)) as.character(df[[col]])
+                          else NA_character_
         }
+        for (col in intersect(needCols, keyCols))
+            out[[col]] <- if (col %in% names(df)) as.character(df[[col]]) else NA_character_
         out
     })
     rows <- Filter(Negate(is.null), rows)

@@ -19,7 +19,11 @@ column when \code{results} has no \code{"resolved"} attribute).}
 
 \item{columns}{character vector of canonical columns to include, any
 of \code{"query_id"}, \code{"gene_symbol"}, \code{"drug_name"},
-\code{"action"}, \code{"source"} (default: all five).}
+\code{"action"}, \code{"source"} (default: all five), plus the shared
+join keys \code{"hgnc_id"}, \code{"target_uniprot"} and
+\code{"compound_chembl_id"}. The three keys are not part of any
+source's own output, so asking for one derives it with
+\code{\link{addCommonIds}}, which reads the cached HGNC gene table.}
 
 \item{resolveGeneSymbol}{logical(1); if \code{TRUE}, fill ChEMBL's
 otherwise-\code{NA} \code{gene_symbol} by resolving its

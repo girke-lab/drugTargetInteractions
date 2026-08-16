@@ -922,6 +922,52 @@ the combined table reflect sources rather than distinct molecules. Each
 source's full original data remains in the list returned by
 `queryDrugTargets()`.
 
+## Shared Identifiers for Merging
+
+Each source reports identifiers in its own vocabulary: ChEMBL uses
+UniProt accessions, Open Targets Ensembl gene IDs, and DGIdb, the Broad
+Hub and GtoPdb gene symbols. `addCommonIds()` adds four columns to every
+table so they can be merged or stacked on the same keys - `hgnc_id`,
+`gene_symbol`, `target_uniprot` and `compound_chembl_id`:
+
+```{r common_ids, eval=TRUE}
+res_keys <- addCommonIds(res_all_live)
+merge(unique(res_keys$chembl[, c("hgnc_id", "compound_chembl_id", "Drug_Name")]),
+      unique(res_keys$opentargets[, c("hgnc_id", "compound_chembl_id", "action_type")]),
+      by = c("hgnc_id", "compound_chembl_id")) |> head(3)
+```
+
+Reduce each side to the columns you need and drop duplicates before
+merging. Both tables carry one row per annotation - per mechanism in
+ChEMBL, per disease in Open Targets - so merging them as they come
+multiplies those rows against each other.
+
+Gene identifiers are resolved against the HGNC gene table, which maps
+symbols, accessions and Ensembl IDs to one another without any network
+access beyond the cached HGNC download. Symbols are normalized to their
+current approved form first, since several sources report whichever
+symbol was current when their records were curated.
+
+Merge on `hgnc_id`. It is the most reliable of the three gene columns: a
+few genes carry several UniProt accessions and a few accessions belong to
+more than one gene, and those rows are left `NA` rather than resolved to
+an arbitrary choice.
+
+`compound_chembl_id` is filled for the sources that already identify
+drugs by ChEMBL ID - ChEMBL, Open Targets, and DGIdb records whose
+concept identifier is a ChEMBL one. TTD, the Broad Hub and GtoPdb
+identify compounds by PubChem CID, InChIKey and IUPHAR ligand ID
+respectively, so their rows carry gene keys but no compound key yet.
+
+The same columns are available from `combineDrugTargets()` for the
+stacked table:
+
+```{r common_ids_combined, eval=TRUE}
+combineDrugTargets(res_all_live,
+                   columns = c("hgnc_id", "gene_symbol", "compound_chembl_id",
+                               "drug_name", "source")) |> head(3)
+```
+
 # Mechanism of Action
 
 A mechanism of action says what a drug does and, in nearly all cases,
