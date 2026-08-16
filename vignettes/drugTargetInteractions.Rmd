@@ -709,12 +709,23 @@ signal than picking the highest `perc_id` alone - prefer
 match.
 
 ```{r ensembl_paralogs, eval=TRUE}
-getEnsemblParalogs("NLRP3")[, c("homolog_id", "type", "perc_id")]
+paralogs <- drugTargetInteractions:::.dtiLiveOrCached(
+    getEnsemblParalogs("NLRP3"),
+    fixture = "ensembl_paralogs_nlrp3.rds", label = "Ensembl")
+if (isTRUE(attr(paralogs, "dtiCached")))
+    cat("> **Note:** Live query to Ensembl failed; showing cached results",
+        "from", attr(paralogs, "dtiCachedDate"), "instead.\n\n")
+paralogs[, c("homolog_id", "type", "perc_id")]
 ```
 
 ```{r ensembl_orthologs, eval=TRUE}
-getEnsemblOrthologs("NLRP3", targetSpecies = "mouse")[
-    , c("homolog_id", "homolog_species", "type", "perc_id")]
+orthologs <- drugTargetInteractions:::.dtiLiveOrCached(
+    getEnsemblOrthologs("NLRP3", targetSpecies = "mouse"),
+    fixture = "ensembl_orthologs_nlrp3_mouse.rds", label = "Ensembl")
+if (isTRUE(attr(orthologs, "dtiCached")))
+    cat("> **Note:** Live query to Ensembl failed; showing cached results",
+        "from", attr(orthologs, "dtiCachedDate"), "instead.\n\n")
+orthologs[, c("homolog_id", "homolog_species", "type", "perc_id")]
 ```
 
 Genes with large families are handled efficiently by the default query,
