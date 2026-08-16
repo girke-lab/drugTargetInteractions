@@ -443,12 +443,18 @@ queryDrugTargets <- function(queryBy = list(molType = NULL, idType = NULL, ids =
     if (length(missingDb) > 0L) {
         args     <- vapply(missingDb, function(s) localDbs[[s]]$arg, character(1))
         builders <- vapply(missingDb, function(s) localDbs[[s]]$builder, character(1))
+        ## Name the argument first and the builder second: the commoner
+        ## mistake is having built the database and not passing its path,
+        ## and an error that only says "build one" reads as though the
+        ## build itself were missing.
         stop(if (length(missingDb) == 1L) "source " else "sources ",
              paste0("'", missingDb, "'", collapse = ", "),
              if (length(missingDb) == 1L) " requires " else " require ",
-             paste(args, collapse = ", "), " - build ",
-             if (length(missingDb) == 1L) "one with " else "them with ",
-             paste(builders, collapse = ", "), call. = FALSE)
+             paste(paste0(args, " = <path>"), collapse = ", "),
+             ". Pass ", if (length(missingDb) == 1L) "it" else "them",
+             " to queryDrugTargets(); build with ",
+             paste(builders, collapse = ", "),
+             " if you have not already.", call. = FALSE)
     }
 
     out <- list()

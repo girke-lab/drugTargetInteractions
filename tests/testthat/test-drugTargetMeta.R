@@ -166,7 +166,8 @@ test_that("queryDrugTargets demands the local-SQLite paths up front, before any 
     expect_error(queryDrugTargets(q, sources = c("chembl", "broad")),
                  "source 'broad' requires brhDbPath")
     expect_error(queryDrugTargets(q, sources = c("chembl", "broad", "ttd")),
-                 "sources 'broad', 'ttd' require brhDbPath, ttdDbPath")
+                 "sources 'broad', 'ttd' require brhDbPath = <path>, ttdDbPath = <path>",
+                 fixed = TRUE)
     expect_error(queryDrugTargets(q, sources = "gtopdb"),
                  "buildGtoPdbDb\\(\\)")
     ## Sources needing no local database must not trip the check - asserted
