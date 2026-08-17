@@ -32,8 +32,10 @@
 #' Per-source columns the canonical keys are derived from
 #'
 #' \code{NA} means the source has no column of that kind at all. The
-#' compound column is the source's own drug identifier; only the entries
-#' flagged in \code{.dtiChemblIdNative} already hold a ChEMBL ID.
+#' compound entry names the source's own drug identifier column; whether
+#' it actually holds a ChEMBL ID is decided per value by
+#' \code{.dtiAsChemblId}, since DGIdb's is a ChEMBL id only when its
+#' prefix says so.
 #' @keywords internal
 #' @noRd
 .dtiCommonIdSpec <- list(
@@ -210,4 +212,167 @@ addCommonIds <- function(results, hgncTable = NULL, symbolMap = NULL,
         results[[src]] <- df
     }
     results
+}
+
+
+## ---------------------------------------------------------------------
+##  Horizontal (column-append) join
+##
+##  combineDrugTargets() stacks the sources; this puts them side by side,
+##  one row per key with each source's columns appended. Every source
+##  reports several rows per gene-drug pair - one per mechanism in ChEMBL,
+##  per disease in Open Targets, per assay in GtoPdb - so a plain merge()
+##  of six such tables multiplies those rows against each other. The many
+##  values are therefore collapsed into one cell per key before anything is
+##  joined, and the result is assembled by aligning each source against the
+##  union of keys with match(), never by merge(), so the declared grain
+##  holds by construction rather than by hope. .assertUniqueKey() then
+##  checks it anyway.
+## ---------------------------------------------------------------------
+
+#' Collapse one source's rows to one row per key
+#'
+#' Returns a list with the unique key rows and, for each carried column, a
+#' list of that key's distinct non-missing values.
+#' @keywords internal
+#' @noRd
+.dtiCollapseBySource <- function(df, by, valueCols) {
+    keyStr <- do.call(paste, c(unname(as.list(df[by])), list(sep = "\r")))
+    idx <- split(seq_len(nrow(df)), factor(keyStr, levels = unique(keyStr)))
+    keys <- df[vapply(idx, `[`, integer(1), 1L), by, drop = FALSE]
+    vals <- lapply(valueCols, function(col) {
+        x <- as.character(df[[col]])
+        lapply(idx, function(i) unique(x[i][!is.na(x[i]) & nzchar(x[i])]))
+    })
+    names(vals) <- valueCols
+    list(key = keyStr[vapply(idx, `[`, integer(1), 1L)], keys = keys, vals = vals)
+}
+
+#' Join the per-source tables side by side, one row per gene-drug pair
+#'
+#' The horizontal counterpart to \code{\link{combineDrugTargets}}, which
+#' stacks the sources on top of one another. This one places them side by
+#' side: one row per key, with each source's own columns appended and
+#' prefixed by the source name.
+#'
+#' Every source reports several rows for the same gene-drug pair - one per
+#' mechanism in ChEMBL, one per disease in Open Targets, one per assay in
+#' GtoPdb - so the values are collapsed to the distinct ones per key before
+#' the sources are put together. Collapsed values are returned as
+#' list-columns, which keep them addressable with \code{lengths()} and
+#' \code{unlist()}; use \code{collapse = "string"} to get them as delimited
+#' text instead, which is what you want for writing the table to a file.
+#'
+#' The key is set by \code{by}. The default, \code{c("hgnc_id",
+#' "compound_chembl_id")}, gives one row per gene-drug pair; \code{by =
+#' "hgnc_id"} gives one row per gene, with each source's drugs collapsed
+#' into that gene's cell. Only three sources currently identify compounds
+#' by ChEMBL ID (see \code{\link{addCommonIds}}), so a query including TTD,
+#' the Broad Hub or GtoPdb keyed on a compound will drop their rows,
+#' reporting how many; key on \code{"hgnc_id"} to keep them.
+#'
+#' @param results a named list of per-source \code{data.frame}s, as
+#'   returned by \code{\link{queryDrugTargets}} or
+#'   \code{\link{buildGenomeWideDrugTargetTable}}. Shared keys are added
+#'   with \code{\link{addCommonIds}} if not already present.
+#' @param by character vector of key columns, any of \code{"hgnc_id"},
+#'   \code{"compound_chembl_id"}, \code{"gene_symbol"},
+#'   \code{"target_uniprot"}.
+#' @param columns character vector of source columns to carry, given
+#'   without the source prefix; the default carries every column each
+#'   source has apart from the keys and \code{QueryIDs}.
+#' @param collapse \code{"list"} (default) for list-columns, or
+#'   \code{"string"} to paste each cell's values together with \code{sep}.
+#' @param sep separator used when \code{collapse = "string"}.
+#' @param verbose logical(1); if TRUE, report per-source row counts and
+#'   anything dropped for want of a key.
+#' @return A \code{\link[S4Vectors]{DataFrame}} with one row per distinct
+#'   \code{by} combination, the key columns first, then \code{n_sources}
+#'   and \code{sources}, then each source's carried columns prefixed with
+#'   its name.
+#' @examples
+#' \donttest{
+#'   res <- queryDrugTargets(list(molType = "gene", idType = "symbol", ids = "FGFR1"),
+#'                           sources = c("chembl", "opentargets"))
+#'   mergeDrugTargets(res, columns = c("Drug_Name", "Action_Type", "action_type"))
+#' }
+#' @seealso \code{\link{combineDrugTargets}} for the row-append form,
+#'   \code{\link{addCommonIds}} for the keys themselves.
+#' @export
+mergeDrugTargets <- function(results, by = c("hgnc_id", "compound_chembl_id"),
+                             columns = NULL, collapse = c("list", "string"),
+                             sep = " | ", verbose = FALSE) {
+    collapse <- match.arg(collapse)
+    by <- match.arg(by, .dtiCommonIdCols, several.ok = TRUE)
+    if (!is.list(results) || is.data.frame(results))
+        stop("'results' must be a named list of per-source data.frames, as ",
+             "returned by queryDrugTargets() or ",
+             "buildGenomeWideDrugTargetTable().")
+    unsupported <- setdiff(names(results), names(.dtiCommonIdSpec))
+    if (length(unsupported))
+        stop("mergeDrugTargets() does not recognise source(s): ",
+             paste(unsupported, collapse = ", "), ". Expected any of: ",
+             paste(names(.dtiCommonIdSpec), collapse = ", "), ".")
+
+    haveKeys <- vapply(results, function(d)
+        is.data.frame(d) && all(.dtiCommonIdCols %in% names(d)), logical(1))
+    if (length(haveKeys) && !all(haveKeys)) results <- addCommonIds(results)
+
+    parts <- list()
+    for (src in names(results)) {
+        df <- results[[src]]
+        if (!is.data.frame(df) || nrow(df) == 0L) next
+        keep <- Reduce(`&`, lapply(df[by], function(x) !is.na(x) & nzchar(x)))
+        if (verbose && any(!keep))
+            message("mergeDrugTargets: ", src, " - dropped ", sum(!keep), "/",
+                    nrow(df), " row(s) with no ", paste(by, collapse = "/"))
+        df <- df[keep, , drop = FALSE]
+        if (nrow(df) == 0L) next
+        valueCols <- setdiff(names(df), c(.dtiCommonIdCols, "QueryIDs"))
+        if (!is.null(columns)) valueCols <- intersect(valueCols, columns)
+        parts[[src]] <- .dtiCollapseBySource(df, by, valueCols)
+        if (verbose)
+            message("mergeDrugTargets: ", src, " - ", nrow(df), " row(s) -> ",
+                    length(parts[[src]]$key), " key(s)")
+    }
+    if (length(parts) == 0L)
+        return(S4Vectors::DataFrame(stats::setNames(
+            replicate(length(by), character(0), simplify = FALSE), by)))
+
+    ## Union of keys, in a deterministic order, then every source aligned
+    ## onto it positionally - no merge(), so no fan-out is possible.
+    keyRows <- unique(do.call(rbind, lapply(parts, `[[`, "keys")))
+    ord <- do.call(order, unname(as.list(keyRows)))
+    keyRows <- keyRows[ord, , drop = FALSE]
+    keyAll <- do.call(paste, c(unname(as.list(keyRows)), list(sep = "\r")))
+    n <- length(keyAll)
+
+    out <- S4Vectors::DataFrame(keyRows, row.names = NULL)
+    present <- lapply(parts, function(p) !is.na(match(keyAll, p$key)))
+    out$n_sources <- Reduce(`+`, lapply(present, as.integer))
+    srcOf <- lapply(seq_len(n), function(i)
+        names(parts)[vapply(present, `[`, logical(1), i)])
+    out$sources <- I(srcOf)
+
+    for (src in names(parts)) {
+        p <- parts[[src]]
+        i <- match(keyAll, p$key)
+        for (col in names(p$vals)) {
+            v <- p$vals[[col]][i]
+            v[is.na(i)] <- list(character(0))
+            out[[paste0(src, "_", col)]] <- I(unname(v))
+        }
+    }
+
+    if (identical(collapse, "string")) {
+        for (col in names(out)) {
+            if (!is.list(out[[col]])) next
+            s <- vapply(out[[col]], function(x)
+                if (length(x) == 0L) NA_character_ else paste(x, collapse = sep),
+                character(1))
+            out[[col]] <- s
+        }
+    }
+    .assertUniqueKey(as.data.frame(keyRows), by, "mergeDrugTargets() result")
+    out
 }

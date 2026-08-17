@@ -116,3 +116,80 @@ test_that("combineDrugTargets can carry the shared keys into the appended table"
     plain <- combineDrugTargets(res["broad"], columns = c("gene_symbol", "source"))
     expect_identical(plain$gene_symbol, "FGFR1")
 })
+
+## --- mergeDrugTargets() (horizontal / column append) -------------------
+
+.mergeFixture <- function() {
+    hgnc <- .commonIdsHgnc()
+    res <- list(
+        ## two mechanisms for one drug, plus a second drug - the many-per-key
+        ## case the collapse exists for
+        chembl = data.frame(
+            QueryIDs = "P11362", UniProt_ID = "P11362",
+            chembl_id = c("CHEMBL941", "CHEMBL941", "CHEMBL1421"),
+            Drug_Name = c("IMATINIB", "IMATINIB", "DASATINIB"),
+            Action_Type = c("INHIBITOR", "BLOCKER", "INHIBITOR"),
+            stringsAsFactors = FALSE),
+        opentargets = data.frame(
+            QueryIDs = "FGFR1", ensembl_id = "ENSG00000077782",
+            approved_symbol = "FGFR1", drug_id = "CHEMBL941",
+            drug_name = "IMATINIB", action_type = "INHIBITOR",
+            stringsAsFactors = FALSE),
+        ## no compound id of its own - contributes only under by = "hgnc_id"
+        broad = data.frame(QueryIDs = "FGFR1", target_gene = "FGFR1",
+                           pert_iname = c("azd4547", "brivanib"),
+                           stringsAsFactors = FALSE))
+    suppressWarnings(addCommonIds(res, hgncTable = hgnc))
+}
+
+test_that("mergeDrugTargets puts sources side by side, one row per gene-drug pair", {
+    out <- mergeDrugTargets(.mergeFixture(),
+                            columns = c("Drug_Name", "Action_Type", "drug_name"))
+    expect_s4_class(out, "DataFrame")
+    ## CHEMBL941 and CHEMBL1421, both for FGFR1 - Broad has no compound id
+    expect_identical(nrow(out), 2L)
+    expect_identical(out$compound_chembl_id, c("CHEMBL1421", "CHEMBL941"))
+    imatinib <- which(out$compound_chembl_id == "CHEMBL941")
+    expect_identical(out$n_sources[imatinib], 2L)
+    expect_setequal(out$sources[[imatinib]], c("chembl", "opentargets"))
+    ## the two ChEMBL mechanisms collapsed into one cell, drug name deduplicated
+    expect_setequal(out$chembl_Action_Type[[imatinib]], c("INHIBITOR", "BLOCKER"))
+    expect_identical(out$chembl_Drug_Name[[imatinib]], "IMATINIB")
+    ## a source absent from a key gets an empty cell, not a missing column
+    dasatinib <- which(out$compound_chembl_id == "CHEMBL1421")
+    expect_identical(out$opentargets_drug_name[[dasatinib]], character(0))
+})
+
+test_that("mergeDrugTargets keyed on the gene keeps sources that have no compound id", {
+    out <- mergeDrugTargets(.mergeFixture(), by = "hgnc_id",
+                            columns = c("Drug_Name", "pert_iname"))
+    expect_identical(nrow(out), 1L)
+    expect_identical(out$n_sources, 3L)
+    expect_setequal(out$chembl_Drug_Name[[1]], c("IMATINIB", "DASATINIB"))
+    expect_setequal(out$broad_pert_iname[[1]], c("azd4547", "brivanib"))
+})
+
+test_that("mergeDrugTargets reports the rows it drops for want of a key", {
+    expect_message(
+        mergeDrugTargets(.mergeFixture(), columns = "Drug_Name", verbose = TRUE),
+        "broad - dropped 2/2 row\\(s\\) with no hgnc_id/compound_chembl_id")
+})
+
+test_that("mergeDrugTargets collapse = 'string' pastes each cell", {
+    out <- mergeDrugTargets(.mergeFixture(), by = "hgnc_id",
+                            columns = "Action_Type", collapse = "string",
+                            sep = " | ")
+    expect_type(out$chembl_Action_Type, "character")
+    expect_identical(out$chembl_Action_Type, "INHIBITOR | BLOCKER")
+})
+
+test_that("mergeDrugTargets validates input and survives having nothing to join", {
+    expect_error(mergeDrugTargets(data.frame(x = 1)), "named list")
+    expect_error(mergeDrugTargets(list(notasource = data.frame(x = 1))),
+                 "does not recognise source")
+    ## every row lacking a key leaves an empty table with the key columns
+    onlyBroad <- .mergeFixture()["broad"]
+    out <- mergeDrugTargets(onlyBroad)
+    expect_identical(nrow(out), 0L)
+    expect_identical(names(out), c("hgnc_id", "compound_chembl_id"))
+})

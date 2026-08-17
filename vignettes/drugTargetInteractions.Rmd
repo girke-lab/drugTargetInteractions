@@ -968,6 +968,46 @@ combineDrugTargets(res_all_live,
                                "drug_name", "source")) |> head(3)
 ```
 
+## Stacking Sources Versus Placing Them Side by Side
+
+`combineDrugTargets()` stacks the sources: every row keeps its source
+label, and a drug reported by three sources appears three times.
+`mergeDrugTargets()` does the opposite, giving one row per key with each
+source's columns appended next to one another:
+
+```{r merge_pairs, eval=TRUE}
+pairs <- mergeDrugTargets(res_all_live,
+                          columns = c("Drug_Name", "Action_Type", "action_type"))
+pairs[1:3, c("hgnc_id", "compound_chembl_id", "n_sources",
+             "chembl_Drug_Name", "opentargets_action_type")]
+```
+
+Each source reports many rows for the same gene-drug pair - one per
+mechanism in ChEMBL, one per disease in Open Targets, one per assay in
+GtoPdb - so the values are collapsed to the distinct ones per key. They
+come back as list-columns, which keep them addressable:
+
+```{r merge_lengths, eval=TRUE}
+lengths(pairs$opentargets_action_type[1:3])
+```
+
+Use `collapse = "string"` to get delimited text instead, which is what
+you want when writing the table to a file.
+
+The key is set by `by`. The default pairs a gene with a drug, so only the
+sources that identify compounds by ChEMBL ID take part; TTD, the Broad
+Hub and GtoPdb rows are dropped, and `verbose = TRUE` reports how many.
+Key on the gene alone to keep all six, each contributing that gene's
+drugs in one cell:
+
+```{r merge_genes, eval=TRUE}
+genes <- mergeDrugTargets(res_all_live, by = "hgnc_id",
+                          columns = c("Drug_Name", "DrugName", "pert_iname",
+                                      "ligandName"))
+genes[, c("hgnc_id", "n_sources")]
+lengths(genes$broad_pert_iname)
+```
+
 # Mechanism of Action
 
 A mechanism of action says what a drug does and, in nearly all cases,
