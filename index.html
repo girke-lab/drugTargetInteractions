@@ -1959,7 +1959,7 @@ function toggle_visibility(id1) {
 
 <h1 class="title toc-ignore">drugTargetInteractions: Mining the Druggable Genome</h1>
 <p class="author-name">Authors: Kevin Horan, Brandon Le, Brendan Gongol, Desmond Cairo, Mohammad Afsharinia, Tandis Salem, Dan Evans, Nicholas Schork and Thomas Girke</p>
-<h4 class="date">Last update: 15 August, 2026</h4>
+<h4 class="date">Last update: 16 August, 2026</h4>
 
 </div>
 
@@ -2364,7 +2364,7 @@ follows in the subsections below.</p>
 <td><code>getPubchemDrugTarget()</code></td>
 <td><code>&quot;gene&quot;</code></td>
 <td><code>&quot;symbol&quot;</code></td>
-<td><code>&quot;KLB&quot;</code></td>
+<td><code>&quot;NLRP3&quot;</code></td>
 </tr>
 <tr class="even">
 <td><code>getPubchemDrugTarget()</code></td>
@@ -2862,10 +2862,22 @@ symbol</strong> (an NCBI GeneID also passes through unresolved) for target →
 drug, a <strong>compound name</strong> (a PubChem CID also passes through unresolved)
 for drug → target.</p>
 <pre class="r"><code>pubchem_t2d &lt;- getPubchemDrugTarget(
-    list(molType = &quot;gene&quot;, idType = &quot;symbol&quot;, ids = &quot;KLB&quot;))
+    list(molType = &quot;gene&quot;, idType = &quot;symbol&quot;, ids = &quot;NLRP3&quot;))
 head(pubchem_t2d[, c(&quot;drug_name&quot;, &quot;activity_name&quot;, &quot;activity_value_uM&quot;)])</code></pre>
-<pre><code>##   drug_name activity_name activity_value_uM
-## 1      &lt;NA&gt;          &lt;NA&gt;              &lt;NA&gt;</code></pre>
+<pre><code>##                                                                            drug_name activity_name
+## 1                         Salicylanilide, 3&#39;-chloro-5-[(2-chloro-4-nitrophenyl)azo]-          IC50
+## 2 4-hydroxy-1-methyl-N&#39;-[(3-methylphenyl)-oxomethyl]-2-oxo-3-quinolinecarbohydrazide          IC50
+## 3                                                  4-Methoxy-5-acetoxy-canthin-6-one          IC50
+## 4                                                                       Triclocarban          IC50
+## 5                               2-(Acetyloxy)-N-(4-chlorophenyl)-3,5-diiodobenzamide          IC50
+## 6                        5-Phenyl-3,4,4a,5,6,10b-hexahydro-2H-pyrano[3,2-c]quinoline          IC50
+##   activity_value_uM
+## 1             0.566
+## 2             0.640
+## 3             0.665
+## 4             0.805
+## 5             0.813
+## 6             0.881</code></pre>
 <pre class="r"><code>pubchem_d2t &lt;- getPubchemDrugTarget(
     list(molType = &quot;cmp&quot;, idType = &quot;name&quot;, ids = &quot;aspirin&quot;))
 pubchem_d2t[, c(&quot;gene_symbol&quot;, &quot;activity_name&quot;, &quot;activity_value_uM&quot;)]</code></pre>
@@ -2888,6 +2900,13 @@ GeneIDs in PubChem), <code>getPubchemTargets()</code>/<code>getPubchemDrugTarget
 to human (<code>taxid = 9606</code>) by default - pass <code>taxid = NULL</code> for all species.
 Like ChEMBL’s bioassay function, <code>fields = &quot;core&quot;/&quot;all&quot;/&lt;vector&gt;</code> and
 <code>listBioassayFields(&quot;pubchem&quot;)</code> are available here too.</p>
+<p>Not every gene has compound bioactivity in PubChem. A query for <code>KLB</code>
+returns a single row in which every column except the query identifier
+is <code>NA</code>. PubChem does hold records for that gene, but they come from
+RNAi screens rather than compound assays, so none of them are potency
+measurements and nothing survives the filters above. Such a row means
+the query was understood and matched nothing, not that the query
+failed.</p>
 </div>
 </div>
 <div id="id-translation-layer" class="section level1" number="5">
@@ -3221,6 +3240,97 @@ under different identifiers stays as one row per source, so counts across
 the combined table reflect sources rather than distinct molecules. Each
 source’s full original data remains in the list returned by
 <code>queryDrugTargets()</code>.</p>
+</div>
+<div id="shared-identifiers-for-merging" class="section level2" number="6.4">
+<h2><span class="header-section-number">6.4</span> Shared Identifiers for Merging</h2>
+<p>Each source reports identifiers in its own vocabulary: ChEMBL uses
+UniProt accessions, Open Targets Ensembl gene IDs, and DGIdb, the Broad
+Hub and GtoPdb gene symbols. <code>addCommonIds()</code> adds four columns to every
+table so they can be merged or stacked on the same keys - <code>hgnc_id</code>,
+<code>gene_symbol</code>, <code>target_uniprot</code> and <code>compound_chembl_id</code>:</p>
+<pre class="r"><code>res_keys &lt;- addCommonIds(res_all_live)</code></pre>
+<pre><code>## Warning: 1268 old symbol(s) map to more than one current symbol; keeping the first (alphabetical) -
+## see attr(., &quot;ambiguous&quot;).</code></pre>
+<pre class="r"><code>merge(unique(res_keys$chembl[, c(&quot;hgnc_id&quot;, &quot;compound_chembl_id&quot;, &quot;Drug_Name&quot;)]),
+      unique(res_keys$opentargets[, c(&quot;hgnc_id&quot;, &quot;compound_chembl_id&quot;, &quot;action_type&quot;)]),
+      by = c(&quot;hgnc_id&quot;, &quot;compound_chembl_id&quot;)) |&gt; head(3)</code></pre>
+<pre><code>##     hgnc_id compound_chembl_id               Drug_Name action_type
+## 1 HGNC:3688      CHEMBL1201733 PAZOPANIB HYDROCHLORIDE   INHIBITOR
+## 2 HGNC:3688      CHEMBL1834657  INFIGRATINIB PHOSPHATE   INHIBITOR
+## 3 HGNC:3688      CHEMBL1852688            INFIGRATINIB   INHIBITOR</code></pre>
+<p>Reduce each side to the columns you need and drop duplicates before
+merging. Both tables carry one row per annotation - per mechanism in
+ChEMBL, per disease in Open Targets - so merging them as they come
+multiplies those rows against each other.</p>
+<p>Gene identifiers are resolved against the HGNC gene table, which maps
+symbols, accessions and Ensembl IDs to one another without any network
+access beyond the cached HGNC download. Symbols are normalized to their
+current approved form first, since several sources report whichever
+symbol was current when their records were curated.</p>
+<p>Merge on <code>hgnc_id</code>. It is the most reliable of the three gene columns: a
+few genes carry several UniProt accessions and a few accessions belong to
+more than one gene, and those rows are left <code>NA</code> rather than resolved to
+an arbitrary choice.</p>
+<p><code>compound_chembl_id</code> is filled for the sources that already identify
+drugs by ChEMBL ID - ChEMBL, Open Targets, and DGIdb records whose
+concept identifier is a ChEMBL one. TTD, the Broad Hub and GtoPdb
+identify compounds by PubChem CID, InChIKey and IUPHAR ligand ID
+respectively, so their rows carry gene keys but no compound key yet.</p>
+<p>The same columns are available from <code>combineDrugTargets()</code> for the
+stacked table:</p>
+<pre class="r"><code>combineDrugTargets(res_all_live,
+                   columns = c(&quot;hgnc_id&quot;, &quot;gene_symbol&quot;, &quot;compound_chembl_id&quot;,
+                               &quot;drug_name&quot;, &quot;source&quot;)) |&gt; head(3)</code></pre>
+<pre><code>## Warning: 1268 old symbol(s) map to more than one current symbol; keeping the first (alphabetical) -
+## see attr(., &quot;ambiguous&quot;).</code></pre>
+<pre><code>##     hgnc_id gene_symbol compound_chembl_id               drug_name source
+## 1 HGNC:3688       FGFR1      CHEMBL1201733 PAZOPANIB HYDROCHLORIDE ChEMBL
+## 2 HGNC:3688       FGFR1      CHEMBL1834657  INFIGRATINIB PHOSPHATE ChEMBL
+## 3 HGNC:3688       FGFR1      CHEMBL1852688            INFIGRATINIB ChEMBL</code></pre>
+</div>
+<div id="stacking-sources-versus-placing-them-side-by-side" class="section level2" number="6.5">
+<h2><span class="header-section-number">6.5</span> Stacking Sources Versus Placing Them Side by Side</h2>
+<p><code>combineDrugTargets()</code> stacks the sources: every row keeps its source
+label, and a drug reported by three sources appears three times.
+<code>mergeDrugTargets()</code> does the opposite, giving one row per key with each
+source’s columns appended next to one another:</p>
+<pre class="r"><code>pairs &lt;- mergeDrugTargets(res_all_live,
+                          columns = c(&quot;Drug_Name&quot;, &quot;Action_Type&quot;, &quot;action_type&quot;))</code></pre>
+<pre><code>## Warning: 1268 old symbol(s) map to more than one current symbol; keeping the first (alphabetical) -
+## see attr(., &quot;ambiguous&quot;).</code></pre>
+<pre class="r"><code>pairs[1:3, c(&quot;hgnc_id&quot;, &quot;compound_chembl_id&quot;, &quot;n_sources&quot;,
+             &quot;chembl_Drug_Name&quot;, &quot;opentargets_action_type&quot;)]</code></pre>
+<pre><code>## DataFrame with 3 rows and 5 columns
+##       hgnc_id compound_chembl_id n_sources       chembl_Drug_Name opentargets_action_type
+##   &lt;character&gt;        &lt;character&gt; &lt;integer&gt;                 &lt;AsIs&gt;                  &lt;AsIs&gt;
+## 1   HGNC:3688      CHEMBL1201733         3 PAZOPANIB HYDROCHLOR..               INHIBITOR
+## 2   HGNC:3688      CHEMBL1516890         1                                               
+## 3   HGNC:3688      CHEMBL1725279         1</code></pre>
+<p>Each source reports many rows for the same gene-drug pair - one per
+mechanism in ChEMBL, one per disease in Open Targets, one per assay in
+GtoPdb - so the values are collapsed to the distinct ones per key. They
+come back as list-columns, which keep them addressable:</p>
+<pre class="r"><code>lengths(pairs$opentargets_action_type[1:3])</code></pre>
+<pre><code>## [1] 1 0 0</code></pre>
+<p>Use <code>collapse = &quot;string&quot;</code> to get delimited text instead, which is what
+you want when writing the table to a file.</p>
+<p>The key is set by <code>by</code>. The default pairs a gene with a drug, so only the
+sources that identify compounds by ChEMBL ID take part; TTD, the Broad
+Hub and GtoPdb rows are dropped, and <code>verbose = TRUE</code> reports how many.
+Key on the gene alone to keep all six, each contributing that gene’s
+drugs in one cell:</p>
+<pre class="r"><code>genes &lt;- mergeDrugTargets(res_all_live, by = &quot;hgnc_id&quot;,
+                          columns = c(&quot;Drug_Name&quot;, &quot;DrugName&quot;, &quot;pert_iname&quot;,
+                                      &quot;ligandName&quot;))</code></pre>
+<pre><code>## Warning: 1268 old symbol(s) map to more than one current symbol; keeping the first (alphabetical) -
+## see attr(., &quot;ambiguous&quot;).</code></pre>
+<pre class="r"><code>genes[, c(&quot;hgnc_id&quot;, &quot;n_sources&quot;)]</code></pre>
+<pre><code>## DataFrame with 1 row and 2 columns
+##       hgnc_id n_sources
+##   &lt;character&gt; &lt;integer&gt;
+## 1   HGNC:3688         6</code></pre>
+<pre class="r"><code>lengths(genes$broad_pert_iname)</code></pre>
+<pre><code>## [1] 37</code></pre>
 </div>
 </div>
 <div id="mechanism-of-action" class="section level1" number="7">
@@ -3614,7 +3724,7 @@ sapply(combined, nrow)</code></pre>
 ##  [4] GenomicFeatures_1.65.0         AnnotationDbi_1.75.0           Biobase_2.73.1                
 ##  [7] GenomicRanges_1.65.1           Seqinfo_1.3.0                  IRanges_2.47.2                
 ## [10] S4Vectors_0.51.5               BiocGenerics_0.59.10           generics_0.1.4                
-## [13] drugTargetInteractions_1.21.10 BiocStyle_2.41.0              
+## [13] drugTargetInteractions_1.21.11 BiocStyle_2.41.0              
 ## 
 ## loaded via a namespace (and not attached):
 ##  [1] tidyselect_1.2.1            dplyr_1.2.1                 blob_1.3.0                 
