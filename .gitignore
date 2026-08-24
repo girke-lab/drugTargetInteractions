@@ -1,3 +1,13 @@
 doc
 Meta
 *.swo
+
+# Vignette render artifacts. rmarkdown::render() leaves these in
+# vignettes/; the rendered page is published from the gh-pages branch, not
+# tracked here. Scoped to vignettes/ deliberately - gh-pages keeps the
+# page as a root-level index.html and must stay committable.
+vignettes/*.html
+vignettes/*_cache/
+vignettes/*_files/
+vignettes/*.knit.md
+vignettes/*.utf8.md
