@@ -54,6 +54,11 @@ identify drugs by ChEMBL ID: ChEMBL itself, Open Targets, and DGIdb
 records whose concept identifier is a ChEMBL one. TTD, the Broad Hub
 and GtoPdb identify compounds by PubChem CID, InChIKey and IUPHAR
 ligand ID, and are left \code{NA} here.
+
+A table that already carries an \code{hgnc_id} keeps it; only rows
+where it is missing are resolved here. A genome-wide build records the
+gene each row was queried from, and that is a better answer than
+anything recoverable from the identifiers a source reports back.
 }
 \examples{
 \donttest{

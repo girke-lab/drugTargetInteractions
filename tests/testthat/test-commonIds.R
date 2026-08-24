@@ -193,3 +193,38 @@ test_that("mergeDrugTargets validates input and survives having nothing to join"
     expect_identical(nrow(out), 0L)
     expect_identical(names(out), c("hgnc_id", "compound_chembl_id"))
 })
+
+test_that("addCommonIds keeps an hgnc_id it was given and only fills the gaps", {
+    hgnc <- .commonIdsHgnc()
+    ## Row 1 arrives already keyed, row 2 does not. Re-deriving row 1 from
+    ## its symbol would move it to FGFR1; a genome-wide build records the
+    ## gene each row was queried from, so what it supplies must stand.
+    res <- list(ttd = data.frame(
+        hgnc_id = c("HGNC:6121", NA_character_),
+        GeneName = c("FGFR1", "ABL1"), Uniprot_acc = NA_character_,
+        stringsAsFactors = FALSE))
+    out <- suppressWarnings(addCommonIds(res, hgncTable = hgnc))
+
+    expect_identical(out$ttd$hgnc_id, c("HGNC:6121", "HGNC:76"))
+    ## The dependent columns follow the hgnc_id that was kept.
+    expect_identical(out$ttd$gene_symbol, c("KLB", "ABL1"))
+    expect_identical(nrow(out$ttd), 2L)
+})
+
+test_that("addCommonIds is unchanged for tables that carry no hgnc_id", {
+    hgnc <- .commonIdsHgnc()
+    res <- list(chembl = data.frame(UniProt_ID = c("P11362", "P00519"),
+                                    chembl_id = c("CHEMBL941", "CHEMBL1421"),
+                                    stringsAsFactors = FALSE))
+    out <- suppressWarnings(addCommonIds(res, hgncTable = hgnc))
+    expect_identical(out$chembl$hgnc_id, c("HGNC:3688", "HGNC:76"))
+})
+
+test_that("addCommonIds is idempotent", {
+    hgnc <- .commonIdsHgnc()
+    res <- list(chembl = data.frame(UniProt_ID = "P11362", chembl_id = "CHEMBL941",
+                                    stringsAsFactors = FALSE))
+    once  <- suppressWarnings(addCommonIds(res, hgncTable = hgnc))
+    twice <- suppressWarnings(addCommonIds(once, hgncTable = hgnc))
+    expect_identical(once, twice)
+})

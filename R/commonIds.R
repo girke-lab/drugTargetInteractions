@@ -134,6 +134,11 @@
 #' and GtoPdb identify compounds by PubChem CID, InChIKey and IUPHAR
 #' ligand ID, and are left \code{NA} here.
 #'
+#' A table that already carries an \code{hgnc_id} keeps it; only rows
+#' where it is missing are resolved here. A genome-wide build records the
+#' gene each row was queried from, and that is a better answer than
+#' anything recoverable from the identifiers a source reports back.
+#'
 #' @param results a named list of per-source \code{data.frame}s, as
 #'   returned by \code{\link{queryDrugTargets}} or
 #'   \code{\link{buildGenomeWideDrugTargetTable}}.
@@ -186,14 +191,24 @@ addCommonIds <- function(results, hgncTable = NULL, symbolMap = NULL,
         if (!is.null(sym)) sym <- as.character(normalizeGeneSymbols(
             sym, symbolMap = symbolMap, hgncTable = hgncTable))
 
-        ## Most specific identifier first: an accession or Ensembl id names
-        ## one gene, a symbol is a label that may have been renamed.
-        hgnc <- rep(NA_character_, n)
+        ## An hgnc_id that is already there is kept. buildGenomeWideDrugTargetTable()
+        ## tags every row with the gene it queried *from*, which is more
+        ## reliable than anything recoverable from what the source echoed
+        ## back: re-deriving it recovers only a quarter of ChEMBL's rows,
+        ## since many UniProt accessions name more than one gene, and for
+        ## TTD it moves rows to the wrong gene outright (rows queried as
+        ## ADRA1A resolve to HGNC:280 = ADRA1D, because ADRA1A is also a
+        ## previous symbol of that gene). Gaps are still filled below.
+        hgnc <- if ("hgnc_id" %in% names(df)) as.character(df$hgnc_id)
+                else rep(NA_character_, n)
+        kept <- sum(!is.na(hgnc))
         fill <- function(hgnc, keys, lookup) {
             todo <- is.na(hgnc) & !is.na(keys)
             if (any(todo)) hgnc[todo] <- unname(lookup[keys[todo]])
             hgnc
         }
+        ## Most specific identifier first: an accession or Ensembl id names
+        ## one gene, a symbol is a label that may have been renamed.
         if (!is.null(acc)) hgnc <- fill(hgnc, acc, lk$byAcc)
         if (!is.null(ens)) hgnc <- fill(hgnc, ens, lk$byEnsembl)
         if (!is.null(sym)) hgnc <- fill(hgnc, sym, lk$bySymbol)
@@ -207,7 +222,9 @@ addCommonIds <- function(results, hgncTable = NULL, symbolMap = NULL,
         stopifnot(nrow(df) == n)  # lookups only - the grain must not change
         if (verbose)
             message("addCommonIds: ", src, " - ", sum(!is.na(df$hgnc_id)), "/", n,
-                    " rows got an hgnc_id, ", sum(!is.na(df$compound_chembl_id)),
+                    " rows got an hgnc_id", if (kept > 0L)
+                        paste0(" (", kept, " kept as supplied)") else "",
+                    ", ", sum(!is.na(df$compound_chembl_id)),
                     " a compound_chembl_id")
         results[[src]] <- df
     }
