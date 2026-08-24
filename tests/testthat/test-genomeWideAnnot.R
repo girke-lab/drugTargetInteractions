@@ -87,12 +87,48 @@ test_that("buildHgncSymbolMap handles a table with no prev/alias symbols at all"
     expect_length(attr(map, "ambiguous"), 0L)
 })
 
+test_that("buildHgncSymbolMap can be built without the map-wide warning", {
+    hgncTable <- .syntheticHgncTable()
+    ## The count describes the HGNC snapshot, so callers translating a
+    ## handful of symbols suppress it and report what those symbols hit.
+    expect_silent(map <- buildHgncSymbolMap(hgncTable, warn = FALSE))
+    ## Suppressing the warning must not change the map or its attribute.
+    expect_identical(map, suppressWarnings(buildHgncSymbolMap(hgncTable)))
+    expect_true("SHARED" %in% names(attr(map, "ambiguous")))
+})
+
 test_that("normalizeGeneSymbols passes through current symbols and resolves old ones", {
     hgncTable <- .syntheticHgncTable()
-    out <- normalizeGeneSymbols(c("FGFR1", "FLT2", "ABL", "NOTAREALSYMBOL"),
-                                hgncTable = hgncTable)
+    ## None of these is ambiguous, so translating them says nothing - the
+    ## map holding an ambiguous entry elsewhere is not this caller's problem.
+    expect_silent(out <- normalizeGeneSymbols(
+        c("FGFR1", "FLT2", "ABL", "NOTAREALSYMBOL"), hgncTable = hgncTable))
     expect_identical(as.character(out), c("FGFR1", "FGFR1", "ABL1", NA_character_))
     expect_identical(attr(out, "unmapped"), "NOTAREALSYMBOL")
+    expect_length(attr(out, "ambiguous"), 0L)
+})
+
+test_that("normalizeGeneSymbols warns only about the symbols it was given", {
+    hgncTable <- .syntheticHgncTable()
+    ## "SHARED" is claimed by both ABL1 and KLB.
+    expect_warning(out <- normalizeGeneSymbols(c("FGFR1", "SHARED"),
+                                               hgncTable = hgncTable),
+                   "1 of the symbol\\(s\\) given")
+    expect_identical(as.character(out), c("FGFR1", "ABL1"))
+    ## The reported ambiguity is scoped to what was asked about, and names it.
+    expect_identical(names(attr(out, "ambiguous")), "SHARED")
+    expect_setequal(attr(out, "ambiguous")[["SHARED"]], c("ABL1", "KLB"))
+})
+
+test_that("a symbol that is already current is never reported as ambiguous", {
+    hgncTable <- .syntheticHgncTable()
+    ## Make "SHARED" both an approved symbol and an ambiguous alias: it is
+    ## passed through untouched, so the alias collision cannot apply to it.
+    hgncTable[4, "symbol"] <- "SHARED"
+    hgncTable$prev_symbol[[4]] <- character(0)
+    hgncTable$alias_symbol[[4]] <- character(0)
+    expect_silent(out <- normalizeGeneSymbols("SHARED", hgncTable = hgncTable))
+    expect_identical(as.character(out), "SHARED")
 })
 
 ## --- buildGenomeWideDrugTargetTable() checkpointing/resume ------------

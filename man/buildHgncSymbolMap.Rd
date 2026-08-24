@@ -4,21 +4,28 @@
 \alias{buildHgncSymbolMap}
 \title{Build a prev/alias-symbol -> current-symbol normalization map}
 \usage{
-buildHgncSymbolMap(hgncTable)
+buildHgncSymbolMap(hgncTable, warn = TRUE)
 }
 \arguments{
 \item{hgncTable}{data.frame as returned by \code{\link{getHgncGeneTable}}
 (must have \code{symbol}, \code{prev_symbol}, \code{alias_symbol}
 list-columns).}
+
+\item{warn}{logical(1); if \code{TRUE} (default), raise a
+\code{warning()} reporting how many of the map's entries are
+ambiguous. That count describes the HGNC snapshot as a whole, not
+any particular set of symbols, so functions that build a map only to
+translate a handful of symbols pass \code{FALSE} and let
+\code{\link{normalizeGeneSymbols}} report the ambiguities those
+symbols actually run into.}
 }
 \value{
 A named character vector (old symbol -> current symbol).
   Old symbols that map to more than one current symbol (real cases
   exist, e.g. shared paralog aliases) keep only the first
   (alphabetically, for determinism) and are also reported via
-  \code{attr(., "ambiguous")} (a named list of all candidate current
-  symbols for each flagged old symbol); a \code{warning()} is raised
-  if any ambiguity is found.
+  \code{attr(., "ambiguous")}, a named list of all candidate current
+  symbols for each flagged old symbol.
 }
 \description{
 DGIdb and TTD (and potentially any other external gene list) echo
@@ -33,6 +40,7 @@ through it before joining back to an HGNC-anchored table.
 \donttest{
   hgncTable <- getHgncGeneTable()
   symbolMap <- buildHgncSymbolMap(hgncTable)
+  length(attr(symbolMap, "ambiguous"))
 }
 }
 \seealso{

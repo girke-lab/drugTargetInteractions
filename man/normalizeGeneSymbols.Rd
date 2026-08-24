@@ -19,7 +19,14 @@ symbols) when \code{symbolMap} is not supplied directly. Fetched
 automatically if neither argument is given.}
 }
 \value{
-character vector, same length/order as \code{symbols}.
+character vector, same length/order as \code{symbols}. Symbols
+  that could not be resolved at all are \code{NA} and are listed in
+  \code{attr(., "unmapped")}. Symbols that resolve to more than one
+  current symbol keep the first (alphabetically) and are listed in
+  \code{attr(., "ambiguous")}, with a \code{warning()}. Only the
+  symbols given are considered: a symbol that is already current is
+  passed straight through and never counts as ambiguous, so translating
+  unaffected symbols is silent.
 }
 \description{
 Passes already-current symbols straight through; resolves anything

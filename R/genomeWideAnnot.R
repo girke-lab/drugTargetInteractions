@@ -177,21 +177,28 @@ getHgncGeneTable <- function(proteinCodingOnly = TRUE, archiveFile = NULL,
 #' @param hgncTable data.frame as returned by \code{\link{getHgncGeneTable}}
 #'   (must have \code{symbol}, \code{prev_symbol}, \code{alias_symbol}
 #'   list-columns).
+#' @param warn logical(1); if \code{TRUE} (default), raise a
+#'   \code{warning()} reporting how many of the map's entries are
+#'   ambiguous. That count describes the HGNC snapshot as a whole, not
+#'   any particular set of symbols, so functions that build a map only to
+#'   translate a handful of symbols pass \code{FALSE} and let
+#'   \code{\link{normalizeGeneSymbols}} report the ambiguities those
+#'   symbols actually run into.
 #' @return A named character vector (old symbol -> current symbol).
 #'   Old symbols that map to more than one current symbol (real cases
 #'   exist, e.g. shared paralog aliases) keep only the first
 #'   (alphabetically, for determinism) and are also reported via
-#'   \code{attr(., "ambiguous")} (a named list of all candidate current
-#'   symbols for each flagged old symbol); a \code{warning()} is raised
-#'   if any ambiguity is found.
+#'   \code{attr(., "ambiguous")}, a named list of all candidate current
+#'   symbols for each flagged old symbol.
 #' @examples
 #' \donttest{
 #'   hgncTable <- getHgncGeneTable()
 #'   symbolMap <- buildHgncSymbolMap(hgncTable)
+#'   length(attr(symbolMap, "ambiguous"))
 #' }
 #' @seealso \code{\link{getHgncGeneTable}}, \code{\link{normalizeGeneSymbols}}
 #' @export
-buildHgncSymbolMap <- function(hgncTable) {
+buildHgncSymbolMap <- function(hgncTable, warn = TRUE) {
     stopifnot(is.data.frame(hgncTable),
              all(c("symbol", "prev_symbol", "alias_symbol") %in% names(hgncTable)))
     pairs <- Map(function(sym, prev, alias) {
@@ -209,7 +216,7 @@ buildHgncSymbolMap <- function(hgncTable) {
     }
     agg <- split(pairs$current, pairs$old)
     ambiguous <- agg[lengths(lapply(agg, unique)) > 1L]
-    if (length(ambiguous)) {
+    if (isTRUE(warn) && length(ambiguous)) {
         warning(length(ambiguous), " old symbol(s) map to more than one current ",
                 "symbol; keeping the first (alphabetical) - see attr(., \"ambiguous\").",
                 call. = FALSE)
@@ -235,7 +242,14 @@ buildHgncSymbolMap <- function(hgncTable) {
 #'   used to build \code{symbolMap} (and to recognise already-current
 #'   symbols) when \code{symbolMap} is not supplied directly. Fetched
 #'   automatically if neither argument is given.
-#' @return character vector, same length/order as \code{symbols}.
+#' @return character vector, same length/order as \code{symbols}. Symbols
+#'   that could not be resolved at all are \code{NA} and are listed in
+#'   \code{attr(., "unmapped")}. Symbols that resolve to more than one
+#'   current symbol keep the first (alphabetically) and are listed in
+#'   \code{attr(., "ambiguous")}, with a \code{warning()}. Only the
+#'   symbols given are considered: a symbol that is already current is
+#'   passed straight through and never counts as ambiguous, so translating
+#'   unaffected symbols is silent.
 #' @examples
 #' \donttest{
 #'   hgncTable <- getHgncGeneTable()
@@ -246,13 +260,27 @@ buildHgncSymbolMap <- function(hgncTable) {
 normalizeGeneSymbols <- function(symbols, symbolMap = NULL, hgncTable = NULL) {
     stopifnot(is.character(symbols))
     if (is.null(hgncTable) && is.null(symbolMap)) hgncTable <- getHgncGeneTable()
-    if (is.null(symbolMap)) symbolMap <- buildHgncSymbolMap(hgncTable)
+    ## warn = FALSE: how many entries the whole HGNC snapshot has that are
+    ## ambiguous says nothing about the symbols being translated here. The
+    ## ones that matter are reported below.
+    if (is.null(symbolMap)) symbolMap <- buildHgncSymbolMap(hgncTable, warn = FALSE)
 
     out <- symbols
     isCurrent <- if (!is.null(hgncTable)) out %in% hgncTable$symbol else rep(FALSE, length(out))
     needsMap <- !isCurrent
     out[needsMap] <- unname(symbolMap[out[needsMap]])
     attr(out, "unmapped") <- unique(symbols[needsMap & is.na(out)])
+
+    ## Only symbols actually being translated can hit an ambiguous entry;
+    ## one already current is passed straight through untouched.
+    hit <- intersect(unique(symbols[needsMap]), names(attr(symbolMap, "ambiguous")))
+    attr(out, "ambiguous") <- attr(symbolMap, "ambiguous")[hit]
+    if (length(hit))
+        warning(length(hit), " of the symbol(s) given map to more than one ",
+                "current symbol; keeping the first (alphabetical) - ",
+                paste(utils::head(hit, 5), collapse = ", "),
+                if (length(hit) > 5L) ", ..." else "",
+                ". See attr(., \"ambiguous\").", call. = FALSE)
     out
 }
 

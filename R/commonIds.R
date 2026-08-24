@@ -175,7 +175,10 @@ addCommonIds <- function(results, hgncTable = NULL, symbolMap = NULL,
              paste(names(.dtiCommonIdSpec), collapse = ", "), ".")
 
     if (is.null(hgncTable)) hgncTable <- getHgncGeneTable()
-    if (is.null(symbolMap)) symbolMap <- buildHgncSymbolMap(hgncTable)
+    ## warn = FALSE: the map's own ambiguity count is a property of the
+    ## HGNC snapshot, not of these tables. normalizeGeneSymbols() below
+    ## reports the ambiguities the symbols in them actually hit.
+    if (is.null(symbolMap)) symbolMap <- buildHgncSymbolMap(hgncTable, warn = FALSE)
     lk <- .dtiHgncLookups(hgncTable)
 
     for (src in names(results)) {

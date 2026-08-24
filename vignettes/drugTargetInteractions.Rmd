@@ -1148,7 +1148,11 @@ nontrivial fraction are now outdated relative to HGNC. `buildHgncSymbolMap()`
 builds a lookup from every historical `prev_symbol`/`alias_symbol` to its
 gene's current approved symbol; `normalizeGeneSymbols()` applies it
 (flagging any symbol it still can't resolve, rather than silently
-dropping it):
+dropping it). A few old symbols were reused across genes and so resolve
+to more than one current symbol. When one of the symbols you pass is such
+a case, you get a warning naming it, and `attr(., "ambiguous")` lists the
+genes it could mean; the value returned is the alphabetically first, so
+the result stays reproducible.
 
 ```{r hgnc_symbol_map, eval=FALSE}
 symbolMap <- buildHgncSymbolMap(hgncTable)
