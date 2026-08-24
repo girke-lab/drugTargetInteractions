@@ -1164,10 +1164,88 @@ downloads than through this package's live-API functions.
 
 The result is a named list - one data.frame per source, each row tagged
 with `hgnc_id`/`symbol`/`ensembl_gene_id` alongside that source's own
-native columns, so nothing from the individual sources is dropped. Apply
-`combineDrugTargets()` afterwards for the aligned cross-source view. The
+native columns, so nothing from the individual sources is dropped. The
 result is cached with `BiocFileCache`, so a completed build can be reused
 across sessions and machines without recomputing it.
+
+## Assembling the Build Into One Table
+
+`combineGenomeWideDrugTargets()` stacks those per-source tables into a
+single table. Columns holding the same content under different names are
+aligned onto one shared column - a drug name is `Drug_Name` in ChEMBL,
+`DrugName` in TTD and `ligandName` in GtoPdb, and all three become
+`drug_name`. Columns belonging to only one source are kept as their own
+columns, named after the source they came from, and are empty for every
+other source's rows:
+
+```{r genomewide_combine, eval=FALSE}
+flatTable <- combineGenomeWideDrugTargets(masterTable)
+dim(flatTable)
+table(flatTable$source)
+head(flatTable[, c("symbol", "source", "drug_name", "action", "max_phase")])
+```
+
+Set `native = FALSE` for just the shared columns, without each source's
+own.
+
+Every row keeps the gene it was built from, in `hgnc_id`, `symbol` and
+`ensembl_gene_id`, so you can go straight to a genome-wide question -
+which of a set of genes have drugs annotated, and by which sources:
+
+```{r genomewide_query, eval=FALSE}
+genes <- c("FGFR1", "KLB", "NLRP3")
+subset(flatTable, symbol %in% genes,
+       select = c("symbol", "source", "drug_name", "compound_chembl_id"))
+```
+
+`symbol` is HGNC's current symbol for that gene. `gene_symbol` is what
+the source itself called it, which is occasionally an older name, so the
+two are kept side by side.
+
+Some columns share a concept without sharing a vocabulary. `max_phase`
+is the clearest case: ChEMBL reports a number from -1 to 4, Open Targets
+a token such as `"PHASE_3"`, and TTD and the Broad Repurposing Hub a
+phrase such as `"Approved"`. Read that column together with `source`.
+
+## Adjusting the Column Mapping
+
+Which columns count as holding the same content is decided by a mapping
+table you can see and change. `drugTargetColumnMap()` returns it as an
+ordinary data.frame, one row per shared column and source:
+
+```{r column_map}
+colMap <- drugTargetColumnMap()
+subset(colMap, canonical %in% c("drug_name", "max_phase"))
+```
+
+Passing a build to it additionally reports what that build carries beyond
+the mapping: candidate groups found by matching column names, marked
+`proposed`, and columns belonging to no group at all, marked `unmatched`.
+Proposals arrive inactive, because columns whose names look alike do not
+always hold the same content - Open Targets' `drug_id` and TTD's `DrugID`
+are a case in point, one being a ChEMBL identifier and the other internal
+to TTD. Review them, set `active` to `TRUE` on the ones you want, and
+pass the edited table back:
+
+```{r column_map_edit, eval=FALSE}
+colMap <- drugTargetColumnMap(masterTable)
+subset(colMap, status != "curated")
+
+colMap$active[colMap$canonical == "drugid"] <- TRUE
+flatTable <- combineGenomeWideDrugTargets(masterTable, colMap = colMap)
+```
+
+You can also add rows of your own to align columns the package does not,
+or set `active` to `FALSE` to stop aligning a group - a deactivated
+group's columns are then kept separately, one per source. The mapping is
+an ordinary data.frame, so it writes to a CSV file and reads back with
+`write.csv()`/`read.csv()` if you want to keep an edited version
+alongside a build.
+
+Two columns are not part of the mapping: `hgnc_id` and
+`compound_chembl_id` are cross-source keys resolved by `addCommonIds()`
+against HGNC and UniChem rather than by matching column names. They are
+added for you unless you pass `keys = FALSE`.
 
 # Supplement
 

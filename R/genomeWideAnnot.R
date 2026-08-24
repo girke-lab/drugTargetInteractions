@@ -460,3 +460,188 @@ buildGenomeWideDrugTargetTable <- function(hgncTable = NULL,
     attr(out, "cachePath") <- bfcrpath(bfc, rids = rid)
     out
 }
+
+
+## ---------------------------------------------------------------------
+## Assembling the build into one table
+## ---------------------------------------------------------------------
+## buildGenomeWideDrugTargetTable() returns one table per source, each
+## with that source's own columns. Stacking them into a single table
+## needs a mapping from those columns onto shared ones, which
+## drugTargetColumnMap() supplies and the user can edit (columnMap.R).
+##
+## The rule that shapes this function: the gene identity a genome-wide
+## build attaches is correct by construction - every row was queried
+## *from* a known HGNC gene - and is therefore carried through untouched,
+## never recomputed from what the source echoed back. Recomputing it is
+## strictly worse and sometimes wrong. Measured on a real four-source
+## build, re-deriving hgnc_id from each source's own identifiers recovers
+## only 497 of 2000 ChEMBL rows (many UniProt accessions name more than
+## one gene, so the honest answer is NA), and for TTD it produces 98 rows
+## keyed to the wrong gene entirely: rows queried as ADRA1A come back as
+## HGNC:280, which is ADRA1D, because ADRA1A is also a previous symbol of
+## that gene and the tie-break picks alphabetically.
+
+#' Append a genome-wide build's per-source tables into one table
+#'
+#' \code{\link{buildGenomeWideDrugTargetTable}} returns one table per
+#' source, each keeping that source's own columns. This stacks them into
+#' a single table: columns holding the same content under different names
+#' are aligned onto one shared column, and columns belonging to only one
+#' source are carried through as their own columns, empty for every other
+#' source's rows.
+#'
+#' Which columns hold the same content is decided by \code{colMap}, an
+#' ordinary data.frame from \code{\link{drugTargetColumnMap}} that you can
+#' edit to change the alignment or to add groups of your own.
+#'
+#' Each row keeps the HGNC gene it was queried from, in \code{hgnc_id},
+#' \code{symbol} and \code{ensembl_gene_id}. Those are taken from the
+#' build unchanged. \code{symbol} is HGNC's current symbol for that gene;
+#' \code{gene_symbol} is what the source itself called it, and the two
+#' can differ where a source reports an older symbol.
+#'
+#' Some columns share a concept without sharing a vocabulary.
+#' \code{max_phase} is the clearest case: ChEMBL reports a number from
+#' -1 to 4, Open Targets a token such as \code{"PHASE_3"}, TTD and the
+#' Broad Repurposing Hub a phrase such as \code{"Approved"}. Read that
+#' column together with \code{source}.
+#'
+#' @param results a named list of per-source data.frames from
+#'   \code{\link{buildGenomeWideDrugTargetTable}}, or any similarly-shaped
+#'   list such as \code{\link{queryDrugTargets}}' output.
+#' @param colMap the column mapping to apply; default
+#'   \code{\link{drugTargetColumnMap}()}, the curated mapping the package
+#'   ships. Rows with \code{active = FALSE} are ignored.
+#' @param native logical(1); if \code{TRUE} (default), columns belonging
+#'   to a single source are carried through as \code{source.column}
+#'   (\code{ttd.Smiles}, \code{opentargets.disease_id}) rather than
+#'   dropped, so nothing in the build is lost. Set \code{FALSE} for just
+#'   the shared columns.
+#' @param keys logical(1); if \code{TRUE} (default), make sure
+#'   \code{hgnc_id} and \code{compound_chembl_id} are present, deriving
+#'   with \code{\link{addCommonIds}} only what is missing. Values already
+#'   in \code{results} are never overwritten.
+#' @param hgncTable optional HGNC table from
+#'   \code{\link{getHgncGeneTable}}, passed to \code{\link{addCommonIds}}
+#'   when keys have to be derived.
+#' @param verbose logical(1); report per-source row counts and any
+#'   columns the mapping does not cover (default \code{FALSE}).
+#' @return A single \code{data.frame}: the gene identity columns present
+#'   in \code{results}, then \code{source}, then one column per shared
+#'   group in \code{colMap}, then \code{compound_chembl_id}, then each
+#'   source's own remaining columns when \code{native = TRUE}.
+#' @examples
+#' \donttest{
+#'   res <- buildGenomeWideDrugTargetTable(
+#'     hgncTable = getHgncGeneTable()[1:3, ],
+#'     sources = c("dgidb", "opentargets"), outDir = tempfile("dti_"))
+#'
+#'   ## Shared columns only
+#'   combineGenomeWideDrugTargets(res, native = FALSE)
+#'
+#'   ## Everything, with each source's own columns kept
+#'   tbl <- combineGenomeWideDrugTargets(res)
+#'   table(tbl$source)
+#' }
+#' @seealso \code{\link{buildGenomeWideDrugTargetTable}},
+#'   \code{\link{drugTargetColumnMap}}, \code{\link{addCommonIds}},
+#'   \code{\link{mergeDrugTargets}}
+#' @export
+combineGenomeWideDrugTargets <- function(results,
+                                         colMap = drugTargetColumnMap(),
+                                         native = TRUE, keys = TRUE,
+                                         hgncTable = NULL, verbose = FALSE) {
+    if (!is.list(results) || is.data.frame(results))
+        stop("'results' must be a named list of per-source data.frames, as ",
+             "returned by buildGenomeWideDrugTargetTable() or ",
+             "queryDrugTargets().")
+    if (length(results) == 0L) return(data.frame())
+    unsupported <- setdiff(names(results), names(.dtiCombineSourceLabel))
+    if (length(unsupported))
+        stop("combineGenomeWideDrugTargets() does not recognise source(s): ",
+             paste(unsupported, collapse = ", "), ". Expected any of: ",
+             paste(names(.dtiCombineSourceLabel), collapse = ", "), ".")
+
+    colMap <- .dtiValidateColumnMap(colMap)
+
+    ## Derive only the keys that are actually missing. addCommonIds()
+    ## leaves an hgnc_id that is already there alone, so a genome-wide
+    ## build keeps the gene identity it established.
+    if (isTRUE(keys)) {
+        lacking <- vapply(results, function(d)
+            is.data.frame(d) && nrow(d) > 0L &&
+            !all(.dtiKeyOwnedCols %in% names(d)), logical(1))
+        if (any(lacking))
+            results <- addCommonIds(results, hgncTable = hgncTable,
+                                    verbose = verbose)
+    }
+
+    nonEmpty <- vapply(results, function(d)
+        is.data.frame(d) && nrow(d) > 0L, logical(1))
+    results <- results[nonEmpty]
+    if (length(results) == 0L) return(data.frame())
+
+    ## Layout, left to right.
+    idCols <- .dtiIdentityCols[vapply(.dtiIdentityCols, function(cl)
+        any(vapply(results, function(d) cl %in% names(d), logical(1))), logical(1))]
+    canonCols <- unique(colMap$canonical)
+    keyCols <- if (isTRUE(keys)) "compound_chembl_id" else character(0)
+    keyCols <- keyCols[vapply(keyCols, function(cl)
+        any(vapply(results, function(d) cl %in% names(d), logical(1))), logical(1))]
+
+    ## Native columns are whatever a source carries that neither the
+    ## identity block, the derived keys, nor an active mapping row
+    ## already accounts for.
+    nativeBySrc <- lapply(names(results), function(src) {
+        if (!isTRUE(native)) return(character(0))
+        mapped <- colMap$column[colMap$source == src]
+        setdiff(names(results[[src]]),
+                c(.dtiIdentityCols, .dtiCommonIdCols, mapped))
+    })
+    names(nativeBySrc) <- names(results)
+    nativeCols <- unlist(lapply(names(results), function(src)
+        if (length(nativeBySrc[[src]])) paste(src, nativeBySrc[[src]], sep = ".")
+        else NULL), use.names = FALSE)
+    nativeCols <- unique(c(nativeCols))
+
+    outCols <- c(idCols, "source", canonCols, keyCols, nativeCols)
+
+    blocks <- lapply(names(results), function(src) {
+        df <- results[[src]]
+        n <- nrow(df)
+        out <- data.frame(row.names = seq_len(n))
+        ## Identity and derived keys: verbatim, never recomputed here.
+        for (cl in c(idCols, keyCols))
+            out[[cl]] <- if (cl %in% names(df)) as.character(df[[cl]]) else NA_character_
+        out$source <- .dtiCombineSourceLabel[[src]]
+        ## Shared columns: as.character() throughout, since sources that
+        ## share a concept do not always share its type (Max_Phase is a
+        ## number in ChEMBL and a phrase in TTD).
+        for (cl in canonCols) {
+            srcCol <- colMap$column[colMap$canonical == cl & colMap$source == src]
+            out[[cl]] <- if (length(srcCol) == 1L && srcCol %in% names(df))
+                as.character(df[[srcCol]]) else NA_character_
+        }
+        ## Source-unique columns keep their own type - each belongs to
+        ## exactly one source, so nothing has to be reconciled.
+        for (cl in nativeCols) out[[cl]] <- NA
+        for (cl in nativeBySrc[[src]]) out[[paste(src, cl, sep = ".")]] <- df[[cl]]
+        if (verbose) {
+            unmapped <- setdiff(names(df), c(.dtiIdentityCols, .dtiCommonIdCols,
+                                             colMap$column[colMap$source == src]))
+            message("combineGenomeWideDrugTargets: ", src, " - ", n, " row(s)",
+                    if (length(unmapped))
+                        paste0(", ", length(unmapped), " column(s) outside the ",
+                               "mapping: ", paste(unmapped, collapse = ", "),
+                               if (isTRUE(native)) " (carried through)"
+                               else " (dropped)")
+                    else "")
+        }
+        out[, outCols, drop = FALSE]
+    })
+
+    out <- do.call(rbind, blocks)
+    rownames(out) <- NULL
+    out
+}

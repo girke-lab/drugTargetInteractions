@@ -90,5 +90,7 @@ export( "genConfig",
     "getHgncGeneTable",
     "buildHgncSymbolMap",
     "normalizeGeneSymbols",
-    "buildGenomeWideDrugTargetTable"
+    "buildGenomeWideDrugTargetTable",
+    "combineGenomeWideDrugTargets",
+    "drugTargetColumnMap"
 )

@@ -542,19 +542,23 @@ queryDrugTargets <- function(queryBy = list(molType = NULL, idType = NULL, ids =
 #' the user's *original* query token rather than each source's own,
 #' possibly-translated \code{QueryIDs}; source is always a constant, see
 #' \code{.dtiCombineSourceLabel}, not looked up per row).
+#'
+#' Derived from \code{.dtiCuratedColumnMap} (columnMap.R), which is the
+#' single source of truth for column alignment, so the mapping
+#' \code{combineDrugTargets()} applies and the one
+#' \code{\link{drugTargetColumnMap}} shows a user cannot drift apart.
+#' Only the three canonical columns this function has always carried are
+#' taken; the curated map covers more.
 #' @keywords internal
 #' @noRd
-.dtiCombineColMap <- list(
-    gene_symbol = c(chembl = NA, dgidb = "gene_name",
-                    opentargets = "approved_symbol", ttd = "GeneName",
-                    broad = "target_gene", gtopdb = "target_gene"),
-    drug_name   = c(chembl = "Drug_Name", dgidb = "drug_name",
-                    opentargets = "drug_name", ttd = "DrugName",
-                    broad = "pert_iname", gtopdb = "ligandName"),
-    action      = c(chembl = "Action_Type", dgidb = "interaction_types",
-                    opentargets = "action_type", ttd = "MOA",
-                    broad = "moa", gtopdb = "action")
-)
+.dtiCombineColMap <- local({
+    keep <- c("gene_symbol", "drug_name", "action")
+    m <- .dtiCuratedColumnMap[.dtiCuratedColumnMap$canonical %in% keep, ]
+    stats::setNames(lapply(keep, function(cl) {
+        rows <- m[m$canonical == cl, ]
+        stats::setNames(rows$column, rows$source)
+    }), keep)
+})
 
 #' Combine \code{\link{queryDrugTargets}} results into one table
 #'
