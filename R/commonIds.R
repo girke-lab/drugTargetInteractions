@@ -265,6 +265,21 @@ addCommonIds <- function(results, hgncTable = NULL, symbolMap = NULL,
     list(key = keyStr[vapply(idx, `[`, integer(1), 1L)], keys = keys, vals = vals)
 }
 
+#' Resolve a canonical column name to one source's own column name
+#'
+#' \code{columns} may name a shared column from the mapping table
+#' (\code{"drug_name"}) or a source's own column (\code{"Drug_Name"}).
+#' The first is expanded here into whatever that source calls it; the
+#' second is passed through untouched, so calls written before the
+#' mapping existed behave exactly as they did.
+#' @keywords internal
+#' @noRd
+.dtiExpandColumns <- function(columns, colMap, src) {
+    if (is.null(columns)) return(NULL)
+    mapped <- colMap$column[colMap$canonical %in% columns & colMap$source == src]
+    unique(c(columns, mapped[!is.na(mapped)]))
+}
+
 #' Join the per-source tables side by side, one row per gene-drug pair
 #'
 #' The horizontal counterpart to \code{\link{combineDrugTargets}}, which
@@ -288,6 +303,13 @@ addCommonIds <- function(results, hgncTable = NULL, symbolMap = NULL,
 #' the Broad Hub or GtoPdb keyed on a compound will drop their rows,
 #' reporting how many; key on \code{"hgnc_id"} to keep them.
 #'
+#' \code{n_sources} counts the sources that returned a row for that key,
+#' which is not the same as the sources that found a drug. A genome-wide
+#' build queries every gene everywhere, so most of its genes carry a row
+#' from every source with the drug columns empty. To count the sources
+#' that actually found something, test the cells:
+#' \code{lengths(x$chembl_Drug_Name) > 0}.
+#'
 #' @param results a named list of per-source \code{data.frame}s, as
 #'   returned by \code{\link{queryDrugTargets}} or
 #'   \code{\link{buildGenomeWideDrugTargetTable}}. Shared keys are added
@@ -295,29 +317,39 @@ addCommonIds <- function(results, hgncTable = NULL, symbolMap = NULL,
 #' @param by character vector of key columns, any of \code{"hgnc_id"},
 #'   \code{"compound_chembl_id"}, \code{"gene_symbol"},
 #'   \code{"target_uniprot"}.
-#' @param columns character vector of source columns to carry, given
-#'   without the source prefix; the default carries every column each
-#'   source has apart from the keys and \code{QueryIDs}.
+#' @param columns character vector of columns to carry, given without the
+#'   source prefix; the default carries every column each source has
+#'   apart from the keys and \code{QueryIDs}. A shared column name from
+#'   \code{colMap} (\code{"drug_name"}) selects whatever each source calls
+#'   it, so you do not have to name all six variants; a source's own
+#'   column name (\code{"Drug_Name"}) also works.
+#' @param colMap the column mapping used to resolve shared names in
+#'   \code{columns}; default \code{\link{drugTargetColumnMap}()}.
 #' @param collapse \code{"list"} (default) for list-columns, or
 #'   \code{"string"} to paste each cell's values together with \code{sep}.
 #' @param sep separator used when \code{collapse = "string"}.
 #' @param verbose logical(1); if TRUE, report per-source row counts and
 #'   anything dropped for want of a key.
 #' @return A \code{\link[S4Vectors]{DataFrame}} with one row per distinct
-#'   \code{by} combination, the key columns first, then \code{n_sources}
-#'   and \code{sources}, then each source's carried columns prefixed with
-#'   its name.
+#'   \code{by} combination: the key columns first, then any gene identity
+#'   the tables carry (\code{symbol}, \code{ensembl_gene_id} - once, not
+#'   once per source), then \code{n_sources} and \code{sources}, then each
+#'   source's carried columns prefixed with its name.
 #' @examples
 #' \donttest{
 #'   res <- queryDrugTargets(list(molType = "gene", idType = "symbol", ids = "FGFR1"),
 #'                           sources = c("chembl", "opentargets"))
+#'   ## Each source's own column names...
 #'   mergeDrugTargets(res, columns = c("Drug_Name", "Action_Type", "action_type"))
+#'   ## ...or the shared names, which resolve to the same columns.
+#'   mergeDrugTargets(res, columns = c("drug_name", "action"))
 #' }
 #' @seealso \code{\link{combineDrugTargets}} for the row-append form,
 #'   \code{\link{addCommonIds}} for the keys themselves.
 #' @export
 mergeDrugTargets <- function(results, by = c("hgnc_id", "compound_chembl_id"),
-                             columns = NULL, collapse = c("list", "string"),
+                             columns = NULL, colMap = drugTargetColumnMap(),
+                             collapse = c("list", "string"),
                              sep = " | ", verbose = FALSE) {
     collapse <- match.arg(collapse)
     by <- match.arg(by, .dtiCommonIdCols, several.ok = TRUE)
@@ -334,6 +366,15 @@ mergeDrugTargets <- function(results, by = c("hgnc_id", "compound_chembl_id"),
     haveKeys <- vapply(results, function(d)
         is.data.frame(d) && all(.dtiCommonIdCols %in% names(d)), logical(1))
     if (length(haveKeys) && !all(haveKeys)) results <- addCommonIds(results)
+    colMap <- .dtiValidateColumnMap(colMap)
+
+    ## A genome-wide build tags every source's rows with the same gene
+    ## identity, so prefixing it per source would repeat one answer once
+    ## per source. It is collapsed like any other column but emitted once,
+    ## beside the key.
+    idCols <- setdiff(unique(unlist(lapply(results, function(d)
+        if (is.data.frame(d)) intersect(.dtiIdentityCols, names(d)))),
+        use.names = FALSE), c(.dtiCommonIdCols, "QueryIDs", by))
 
     parts <- list()
     for (src in names(results)) {
@@ -345,9 +386,12 @@ mergeDrugTargets <- function(results, by = c("hgnc_id", "compound_chembl_id"),
                     nrow(df), " row(s) with no ", paste(by, collapse = "/"))
         df <- df[keep, , drop = FALSE]
         if (nrow(df) == 0L) next
-        valueCols <- setdiff(names(df), c(.dtiCommonIdCols, "QueryIDs"))
-        if (!is.null(columns)) valueCols <- intersect(valueCols, columns)
-        parts[[src]] <- .dtiCollapseBySource(df, by, valueCols)
+        valueCols <- setdiff(names(df), c(.dtiCommonIdCols, "QueryIDs", idCols))
+        if (!is.null(columns))
+            valueCols <- intersect(valueCols,
+                                   .dtiExpandColumns(columns, colMap, src))
+        parts[[src]] <- .dtiCollapseBySource(
+            df, by, union(intersect(idCols, names(df)), valueCols))
         if (verbose)
             message("mergeDrugTargets: ", src, " - ", nrow(df), " row(s) -> ",
                     length(parts[[src]]$key), " key(s)")
@@ -365,6 +409,21 @@ mergeDrugTargets <- function(results, by = c("hgnc_id", "compound_chembl_id"),
     n <- length(keyAll)
 
     out <- S4Vectors::DataFrame(keyRows, row.names = NULL)
+
+    ## Gene identity: one column, holding what the sources agree on. Keyed
+    ## on hgnc_id that is a single value per cell; keyed on a compound it
+    ## is legitimately every gene that drug hits.
+    for (col in idCols) {
+        vs <- replicate(n, character(0), simplify = FALSE)
+        for (p in parts) {
+            if (is.null(p$vals[[col]])) next
+            i <- match(keyAll, p$key)
+            v <- p$vals[[col]][i]
+            for (j in which(!is.na(i))) vs[[j]] <- union(vs[[j]], v[[j]])
+        }
+        out[[col]] <- I(vs)
+    }
+
     present <- lapply(parts, function(p) !is.na(match(keyAll, p$key)))
     out$n_sources <- Reduce(`+`, lapply(present, as.integer))
     srcOf <- lapply(seq_len(n), function(i)
@@ -374,7 +433,7 @@ mergeDrugTargets <- function(results, by = c("hgnc_id", "compound_chembl_id"),
     for (src in names(parts)) {
         p <- parts[[src]]
         i <- match(keyAll, p$key)
-        for (col in names(p$vals)) {
+        for (col in setdiff(names(p$vals), idCols)) {
             v <- p$vals[[col]][i]
             v[is.na(i)] <- list(character(0))
             out[[paste0(src, "_", col)]] <- I(unname(v))

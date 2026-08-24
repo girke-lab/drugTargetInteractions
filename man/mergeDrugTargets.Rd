@@ -8,6 +8,7 @@ mergeDrugTargets(
   results,
   by = c("hgnc_id", "compound_chembl_id"),
   columns = NULL,
+  colMap = drugTargetColumnMap(),
   collapse = c("list", "string"),
   sep = " | ",
   verbose = FALSE
@@ -23,9 +24,15 @@ with \code{\link{addCommonIds}} if not already present.}
 \code{"compound_chembl_id"}, \code{"gene_symbol"},
 \code{"target_uniprot"}.}
 
-\item{columns}{character vector of source columns to carry, given
-without the source prefix; the default carries every column each
-source has apart from the keys and \code{QueryIDs}.}
+\item{columns}{character vector of columns to carry, given without the
+source prefix; the default carries every column each source has
+apart from the keys and \code{QueryIDs}. A shared column name from
+\code{colMap} (\code{"drug_name"}) selects whatever each source calls
+it, so you do not have to name all six variants; a source's own
+column name (\code{"Drug_Name"}) also works.}
+
+\item{colMap}{the column mapping used to resolve shared names in
+\code{columns}; default \code{\link{drugTargetColumnMap}()}.}
 
 \item{collapse}{\code{"list"} (default) for list-columns, or
 \code{"string"} to paste each cell's values together with \code{sep}.}
@@ -37,9 +44,10 @@ anything dropped for want of a key.}
 }
 \value{
 A \code{\link[S4Vectors]{DataFrame}} with one row per distinct
-  \code{by} combination, the key columns first, then \code{n_sources}
-  and \code{sources}, then each source's carried columns prefixed with
-  its name.
+  \code{by} combination: the key columns first, then any gene identity
+  the tables carry (\code{symbol}, \code{ensembl_gene_id} - once, not
+  once per source), then \code{n_sources} and \code{sources}, then each
+  source's carried columns prefixed with its name.
 }
 \description{
 The horizontal counterpart to \code{\link{combineDrugTargets}}, which
@@ -63,12 +71,22 @@ into that gene's cell. Only three sources currently identify compounds
 by ChEMBL ID (see \code{\link{addCommonIds}}), so a query including TTD,
 the Broad Hub or GtoPdb keyed on a compound will drop their rows,
 reporting how many; key on \code{"hgnc_id"} to keep them.
+
+\code{n_sources} counts the sources that returned a row for that key,
+which is not the same as the sources that found a drug. A genome-wide
+build queries every gene everywhere, so most of its genes carry a row
+from every source with the drug columns empty. To count the sources
+that actually found something, test the cells:
+\code{lengths(x$chembl_Drug_Name) > 0}.
 }
 \examples{
 \donttest{
   res <- queryDrugTargets(list(molType = "gene", idType = "symbol", ids = "FGFR1"),
                           sources = c("chembl", "opentargets"))
+  ## Each source's own column names...
   mergeDrugTargets(res, columns = c("Drug_Name", "Action_Type", "action_type"))
+  ## ...or the shared names, which resolve to the same columns.
+  mergeDrugTargets(res, columns = c("drug_name", "action"))
 }
 }
 \seealso{

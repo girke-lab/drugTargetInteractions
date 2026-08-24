@@ -976,11 +976,17 @@ label, and a drug reported by three sources appears three times.
 source's columns appended next to one another:
 
 ```{r merge_pairs, eval=TRUE}
-pairs <- mergeDrugTargets(res_all_live,
-                          columns = c("Drug_Name", "Action_Type", "action_type"))
+pairs <- mergeDrugTargets(res_all_live, columns = c("drug_name", "action"))
 pairs[1:3, c("hgnc_id", "compound_chembl_id", "n_sources",
              "chembl_Drug_Name", "opentargets_action_type")]
 ```
+
+`columns` accepts either a shared column name from
+`drugTargetColumnMap()`, as above, or a source's own column name
+(`"Drug_Name"`, `"action_type"`). The shared name selects whatever each
+source calls that column, so you do not have to know all six variants.
+The columns still come back one per source - this view exists to let you
+compare what each source says, so it does not merge them.
 
 Each source reports many rows for the same gene-drug pair - one per
 mechanism in ChEMBL, one per disease in Open Targets, one per assay in
@@ -1001,12 +1007,25 @@ Key on the gene alone to keep all six, each contributing that gene's
 drugs in one cell:
 
 ```{r merge_genes, eval=TRUE}
-genes <- mergeDrugTargets(res_all_live, by = "hgnc_id",
-                          columns = c("Drug_Name", "DrugName", "pert_iname",
-                                      "ligandName"))
+genes <- mergeDrugTargets(res_all_live, by = "hgnc_id", columns = "drug_name")
 genes[, c("hgnc_id", "n_sources")]
 lengths(genes$broad_pert_iname)
 ```
+
+`n_sources` counts the sources that returned a row for that key, which is
+not the same as the sources that found a drug - a genome-wide build
+queries every gene everywhere, so most of its genes carry a row from
+every source with the drug columns empty. Count the cells instead when
+that is what you mean:
+
+```{r merge_counts, eval=TRUE}
+lengths(genes$chembl_Drug_Name) > 0
+```
+
+When the tables carry gene identity - as a genome-wide build's do -
+`symbol` and `ensembl_gene_id` appear once, next to the key, rather than
+once per source. Keyed on a gene each holds a single value; keyed on a
+compound, `symbol` holds every gene that drug hits.
 
 # Mechanism of Action
 

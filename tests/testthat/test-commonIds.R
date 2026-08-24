@@ -228,3 +228,77 @@ test_that("addCommonIds is idempotent", {
     twice <- suppressWarnings(addCommonIds(once, hgncTable = hgnc))
     expect_identical(once, twice)
 })
+
+## mergeDrugTargets() derives keys with addCommonIds() only when a table
+## lacks them, and addCommonIds() takes its HGNC table as an argument
+## while mergeDrugTargets() does not. The tests below therefore hand it
+## tables that already carry all four key columns, which keeps them
+## network-free - and is what a genome-wide build supplies anyway.
+
+test_that("mergeDrugTargets carries gene identity once, not once per source", {
+    ## Both sources tag their rows with the same gene identity, the way a
+    ## genome-wide build does.
+    ident <- function(...) data.frame(
+        hgnc_id = "HGNC:3688", symbol = "FGFR1",
+        ensembl_gene_id = "ENSG00000077782", gene_symbol = "FGFR1",
+        target_uniprot = "P11362", ..., stringsAsFactors = FALSE)
+    res <- list(
+        chembl = ident(compound_chembl_id = "CHEMBL941", Drug_Name = "IMATINIB"),
+        ttd    = ident(compound_chembl_id = NA_character_, DrugName = "Debio 1347"))
+    out <- mergeDrugTargets(res, by = "hgnc_id")
+
+    expect_identical(names(out)[1:5],
+                     c("hgnc_id", "symbol", "ensembl_gene_id", "n_sources", "sources"))
+    expect_identical(out$symbol[[1]], "FGFR1")
+    expect_identical(out$ensembl_gene_id[[1]], "ENSG00000077782")
+    ## No per-source copies of what the key already determines.
+    expect_length(grep("_(symbol|ensembl_gene_id)$", names(out)), 0L)
+    ## The values themselves still arrive, per source.
+    expect_identical(out$chembl_Drug_Name[[1]], "IMATINIB")
+    expect_identical(out$ttd_DrugName[[1]], "Debio 1347")
+})
+
+test_that("mergeDrugTargets keeps every gene when the key is a compound", {
+    ## One drug against two genes: keyed on the compound, `symbol` is
+    ## legitimately both of them rather than one arbitrary winner.
+    res <- list(chembl = data.frame(
+        hgnc_id = c("HGNC:3688", "HGNC:76"), symbol = c("FGFR1", "ABL1"),
+        ensembl_gene_id = c("ENSG00000077782", "ENSG00000097007"),
+        gene_symbol = c("FGFR1", "ABL1"), target_uniprot = c("P11362", "P00519"),
+        compound_chembl_id = "CHEMBL941", Drug_Name = "IMATINIB",
+        stringsAsFactors = FALSE))
+    out <- mergeDrugTargets(res, by = "compound_chembl_id")
+
+    expect_identical(nrow(out), 1L)
+    expect_identical(sort(out$symbol[[1]]), c("ABL1", "FGFR1"))
+    expect_identical(sort(out$ensembl_gene_id[[1]]),
+                     c("ENSG00000077782", "ENSG00000097007"))
+})
+
+test_that("mergeDrugTargets resolves a shared column name to each source's own", {
+    keyed <- function(...) data.frame(
+        hgnc_id = "HGNC:3688", gene_symbol = "FGFR1", target_uniprot = "P11362",
+        ..., stringsAsFactors = FALSE)
+    res <- list(
+        chembl = keyed(compound_chembl_id = "CHEMBL941", Drug_Name = "IMATINIB",
+                       Action_Type = "INHIBITOR", Max_Phase = 4L),
+        ttd    = keyed(compound_chembl_id = NA_character_, DrugName = "Debio 1347",
+                       MOA = "Inhibitor", Highest_status = "Phase 2"))
+
+    ## "drug_name" picks up Drug_Name and DrugName without naming either.
+    byShared <- mergeDrugTargets(res, by = "hgnc_id", columns = "drug_name")
+    expect_true(all(c("chembl_Drug_Name", "ttd_DrugName") %in% names(byShared)))
+    expect_false(any(grepl("Action_Type|Max_Phase", names(byShared))))
+
+    ## Naming each source's own column still works exactly as before.
+    byNative <- mergeDrugTargets(res, by = "hgnc_id",
+                                 columns = c("Drug_Name", "DrugName"))
+    expect_identical(names(byShared), names(byNative))
+
+    ## The two forms mix freely, and a shared name spanning two concepts
+    ## brings each source's variant of both.
+    both <- mergeDrugTargets(res, by = "hgnc_id",
+                             columns = c("drug_name", "action", "Max_Phase"))
+    expect_true(all(c("chembl_Drug_Name", "ttd_DrugName", "chembl_Action_Type",
+                      "ttd_MOA", "chembl_Max_Phase") %in% names(both)))
+})
