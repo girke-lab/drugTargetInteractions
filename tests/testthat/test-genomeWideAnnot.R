@@ -183,3 +183,29 @@ test_that("buildGenomeWideDrugTargetTable checkpoints per chunk and resumes corr
     ## default rname matching is substring-based, not exact).
     expect_false(is.null(attr(res2, "cachePath")))
 })
+
+test_that("an unrecognised source is rejected, not silently dropped", {
+    hgncTable <- data.frame(hgnc_id = "HGNC:1", symbol = "A",
+                            ensembl_gene_id = "ENSG1", stringsAsFactors = FALSE)
+    hgncTable$uniprot_ids <- list("P1")
+    ## match.arg(several.ok = TRUE) used to drop a value it could not match
+    ## whenever some other value matched, so a mis-cased source name built
+    ## a table quietly missing that source.
+    expect_error(
+        buildGenomeWideDrugTargetTable(hgncTable = hgncTable,
+                                       sources = c("chembl", "GtoPdb"),
+                                       outDir = tempfile("dti_")),
+        "does not recognise: GtoPdb")
+    ## Case-only mismatches say which name was meant.
+    expect_error(
+        buildGenomeWideDrugTargetTable(hgncTable = hgncTable,
+                                       sources = c("chembl", "GtoPdb"),
+                                       outDir = tempfile("dti_")),
+        'Did you mean "gtopdb"')
+    ## A real typo just lists the valid names.
+    expect_error(
+        buildGenomeWideDrugTargetTable(hgncTable = hgncTable,
+                                       sources = "gtopbd",
+                                       outDir = tempfile("dti_")),
+        "does not recognise: gtopbd")
+})

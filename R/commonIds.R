@@ -355,7 +355,7 @@ mergeDrugTargets <- function(results, by = c("hgnc_id", "compound_chembl_id"),
                              collapse = c("list", "string"),
                              sep = " | ", verbose = FALSE) {
     collapse <- match.arg(collapse)
-    by <- match.arg(by, .dtiCommonIdCols, several.ok = TRUE)
+    by <- .dtiMatchSet(by, .dtiCommonIdCols, "by")
     if (!is.list(results) || is.data.frame(results))
         stop("'results' must be a named list of per-source data.frames, as ",
              "returned by queryDrugTargets() or ",

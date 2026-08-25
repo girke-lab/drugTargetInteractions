@@ -622,10 +622,10 @@ combineDrugTargets <- function(results,
                                columns = c("query_id", "gene_symbol", "drug_name",
                                           "action", "source"),
                                resolveGeneSymbol = FALSE, taxId = 9606L) {
-    columns <- match.arg(columns, c("query_id", "gene_symbol", "drug_name",
-                                    "action", "source", "hgnc_id",
-                                    "target_uniprot", "compound_chembl_id"),
-                         several.ok = TRUE)
+    columns <- .dtiMatchSet(columns, c("query_id", "gene_symbol", "drug_name",
+                                       "action", "source", "hgnc_id",
+                                       "target_uniprot", "compound_chembl_id"),
+                            "columns")
     if (length(results) == 0L)
         return(as.data.frame(stats::setNames(
             replicate(length(columns), character(0), simplify = FALSE), columns)))

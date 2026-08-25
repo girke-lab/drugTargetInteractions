@@ -383,9 +383,8 @@ buildGenomeWideDrugTargetTable <- function(hgncTable = NULL,
                                            rerun = FALSE, verbose = TRUE, ...) {
     if (missing(outDir) || !is.character(outDir) || length(outDir) != 1L)
         stop("'outDir' must be supplied (a single directory path).")
-    sources <- match.arg(sources, c("chembl", "dgidb", "opentargets", "ttd",
-                                    "broad", "gtopdb"),
-                         several.ok = TRUE)
+    sources <- .dtiMatchSet(sources, c("chembl", "dgidb", "opentargets", "ttd",
+                                       "broad", "gtopdb"), "sources")
     if ("ttd" %in% sources && is.null(ttdDbPath))
         stop("'ttd' requires ttdDbPath (see buildTtdDb()).")
     if ("broad" %in% sources && is.null(brhDbPath))

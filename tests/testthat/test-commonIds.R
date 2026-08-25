@@ -302,3 +302,25 @@ test_that("mergeDrugTargets resolves a shared column name to each source's own",
     expect_true(all(c("chembl_Drug_Name", "ttd_DrugName", "chembl_Action_Type",
                       "ttd_MOA", "chembl_Max_Phase") %in% names(both)))
 })
+
+test_that("mergeDrugTargets rejects an unrecognised key instead of dropping it", {
+    res <- list(chembl = data.frame(hgnc_id = "HGNC:3688", gene_symbol = "FGFR1",
+                                    target_uniprot = "P11362",
+                                    compound_chembl_id = "CHEMBL941",
+                                    Drug_Name = "IMATINIB", stringsAsFactors = FALSE))
+    expect_error(mergeDrugTargets(res, by = c("hgnc_id", "HGNC_ID")),
+                 'Did you mean "hgnc_id"')
+    expect_error(mergeDrugTargets(res, by = "not_a_key"),
+                 "does not recognise: not_a_key")
+})
+
+test_that("mergeDrugTargets rejects an unrecognised key instead of dropping it", {
+    res <- list(chembl = data.frame(hgnc_id = "HGNC:3688", gene_symbol = "FGFR1",
+                                    target_uniprot = "P11362",
+                                    compound_chembl_id = "CHEMBL941",
+                                    Drug_Name = "IMATINIB", stringsAsFactors = FALSE))
+    expect_error(mergeDrugTargets(res, by = c("hgnc_id", "HGNC_ID")),
+                 'Did you mean "hgnc_id"')
+    expect_error(mergeDrugTargets(res, by = "not_a_key"),
+                 "does not recognise: not_a_key")
+})

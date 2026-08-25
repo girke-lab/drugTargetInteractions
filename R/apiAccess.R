@@ -287,6 +287,34 @@
 ## trips up Rd's checkRd (\name should not contain !, | or @).
 `%||%` <- function(a, b) if (is.null(a) || length(a) == 0L) b else a
 
+#' Validate a set-valued argument, rejecting anything unrecognised
+#'
+#' Used instead of \code{match.arg(several.ok = TRUE)}, which drops values
+#' it cannot match as long as at least one other value matches - so
+#' \code{sources = c("chembl", "GtoPdb")} silently builds without GtoPdb
+#' rather than complaining. Matching is exact and case-sensitive, as in
+#' \code{\link{queryDrugTargets}}; a value differing only in case gets
+#' told so, since every accepted name here is lower-case.
+#' @keywords internal
+#' @noRd
+.dtiMatchSet <- function(arg, choices, what) {
+    if (!is.character(arg))
+        stop("'", what, "' must be a character vector. Expected any of: ",
+             paste(choices, collapse = ", "), ".", call. = FALSE)
+    bad <- setdiff(arg, choices)
+    if (length(bad)) {
+        near <- choices[match(tolower(bad), tolower(choices), nomatch = 0L)]
+        stop("'", what, "' does not recognise: ", paste(bad, collapse = ", "),
+             if (length(near))
+                 paste0(". Did you mean ", paste0("\"", near, "\"", collapse = ", "),
+                        "? These names are lower-case")
+             else "",
+             ". Expected any of: ", paste(choices, collapse = ", "), ".",
+             call. = FALSE)
+    }
+    unique(arg)
+}
+
 
 ## ---------------------------------------------------------------------
 ## Field-selection infrastructure (shared across all four get*DrugTarget()
