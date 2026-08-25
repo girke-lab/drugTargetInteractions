@@ -82,6 +82,7 @@ export( "genConfig",
     "queryMoa",
     "moaWide",
     "listMoaSources",
+    "buildMoaMasterTable",
 
     "listDrugTargetFields",
     "listBioassayFields",

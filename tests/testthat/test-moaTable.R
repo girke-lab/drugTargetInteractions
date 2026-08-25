@@ -321,3 +321,85 @@ test_that("live: resolveGeneSymbol aligns ChEMBL accessions with symbols", {
     expect_identical(filled$target_uniprot, plain$target_uniprot)
     expect_identical(filled$moa_text, plain$moa_text)
 })
+
+
+## --- buildMoaMasterTable() -------------------------------------------
+## The Broad half reads a local SQLite, so it is exercised against a
+## synthetic one and needs no network. Only the ChEMBL sweep is guarded.
+
+.moaSyntheticBroadDb <- function() {
+    path <- tempfile(fileext = ".db")
+    con <- RSQLite::dbConnect(RSQLite::SQLite(), path)
+    on.exit(RSQLite::dbDisconnect(con))
+    RSQLite::dbWriteTable(con, "broad_interactions", data.frame(
+        pert_iname = c("drugA", "drugA", "drugB", "drugC", "drugD"),
+        ## drugA is annotated against two genes; drugB packs two
+        ## mechanisms into one string; drugC has a mechanism but no
+        ## target at all; drugD has a target but no mechanism.
+        target_gene = c("FGFR1", "KLB", "", NA_character_, "ABL1"),
+        moa = c("kinase inhibitor", "kinase inhibitor",
+                "dopamine receptor antagonist | serotonin receptor antagonist",
+                "antitumor agent", ""),
+        stringsAsFactors = FALSE))
+    path
+}
+
+test_that("buildMoaMasterTable enumerates Broad drugs, one row per mechanism", {
+    out <- buildMoaMasterTable(sources = "broad",
+                               brhDbPath = .moaSyntheticBroadDb(), verbose = FALSE)
+    expect_identical(names(out), c("drug_id", "drug_name", "moa", "action",
+                                   "source", "has_target"))
+    expect_true(all(out$source == "broad"))
+    ## drugD has no mechanism, so it is not a row here at all.
+    expect_setequal(unique(out$drug_id), c("drugA", "drugB", "drugC"))
+    ## drugA's two target rows collapse to one mechanism row.
+    expect_identical(sum(out$drug_id == "drugA"), 1L)
+    ## drugB's packed string becomes two rows, one mechanism each.
+    expect_setequal(out$moa[out$drug_id == "drugB"],
+                    c("dopamine receptor antagonist", "serotonin receptor antagonist"))
+    expect_false(any(grepl("|", out$moa, fixed = TRUE)))
+    ## Broad records no action type of its own.
+    expect_true(all(is.na(out$action)))
+})
+
+test_that("buildMoaMasterTable reports whether a target was named", {
+    out <- buildMoaMasterTable(sources = "broad",
+                               brhDbPath = .moaSyntheticBroadDb(), verbose = FALSE)
+    expect_true(out$has_target[out$drug_id == "drugA"])
+    ## Empty string and NA both count as no target named.
+    expect_false(any(out$has_target[out$drug_id == "drugB"]))
+    expect_false(out$has_target[out$drug_id == "drugC"])
+})
+
+test_that("buildMoaMasterTable holds one row per source, drug and mechanism", {
+    out <- buildMoaMasterTable(sources = "broad",
+                               brhDbPath = .moaSyntheticBroadDb(), verbose = FALSE)
+    expect_false(any(duplicated(out[, c("source", "drug_id", "moa")])))
+    expect_false(any(is.na(out$moa) | !nzchar(out$moa)))
+})
+
+test_that("buildMoaMasterTable validates its arguments", {
+    expect_error(buildMoaMasterTable(sources = "Broad"), 'Did you mean "broad"')
+    expect_error(buildMoaMasterTable(sources = "opentargets"),
+                 "does not recognise: opentargets")
+    expect_error(buildMoaMasterTable(sources = "broad"), "brhDbPath")
+})
+
+test_that("buildMoaMasterTable sweeps ChEMBL's mechanism collection", {
+    skip_if_offline_dti()
+    out <- buildMoaMasterTable(sources = "chembl", resolveDrugNames = FALSE,
+                               verbose = FALSE)
+    expect_gt(nrow(out), 5000L)
+    expect_true(all(out$source == "chembl"))
+    expect_true(all(grepl("^CHEMBL", out$drug_id)))
+    ## "Unknown" is a placeholder, not a mechanism.
+    expect_false(any(tolower(out$moa) == "unknown"))
+    expect_true(any(tolower(buildMoaMasterTable(
+        sources = "chembl", resolveDrugNames = FALSE, includeUnknown = TRUE,
+        verbose = FALSE)$moa) == "unknown"))
+    ## The population this table exists to reach: annotated, untargeted.
+    expect_true(any(!out$has_target))
+    ## Known answer: methazolamide is a carbonic anhydrase inhibitor.
+    expect_true(any(out$drug_id == "CHEMBL19" &
+                    grepl("Carbonic anhydrase", out$moa)))
+})

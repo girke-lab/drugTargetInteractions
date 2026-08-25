@@ -1099,6 +1099,59 @@ different sources are kept separate even when they describe the same
 mechanism, so a mechanism confirmed by both ChEMBL and Open Targets
 appears twice, once per source.
 
+## A Master Table of Mechanisms
+
+The functions above answer "what is this drug's mechanism?" for drugs you
+name. `buildMoaMasterTable()` answers the other question: which drugs
+have a mechanism recorded at all. It sweeps the sources that can be read
+end to end and returns one row per drug and mechanism.
+
+```{r moa_master, eval=FALSE}
+brhDbPath <- buildBroadRepurposingHubDb(rerun = FALSE)
+moaMaster <- buildMoaMasterTable(brhDbPath = brhDbPath)
+dim(moaMaster)
+table(moaMaster$source)
+head(moaMaster)
+```
+
+A mechanism belongs to the drug, not to a drug-target pair, so many drugs
+have one recorded without any target being named. Those drugs are absent
+from a gene-anchored build such as `buildGenomeWideDrugTargetTable()` -
+there is no gene to find them under - which is the main reason to build
+this table separately:
+
+```{r moa_master_untargeted, eval=FALSE}
+untargeted <- subset(moaMaster, !has_target)
+length(unique(untargeted$drug_id))
+head(unique(untargeted[, c("drug_name", "moa", "source")]))
+```
+
+ChEMBL is read over the network from its mechanism collection and needs
+no local database; the Broad Repurposing Hub is read from the SQLite file
+you built earlier. Passing `sources = "chembl"` alone therefore works
+with no setup:
+
+```{r moa_master_chembl, eval=FALSE}
+chemblMoa <- buildMoaMasterTable(sources = "chembl")
+head(sort(table(chemblMoa$moa), decreasing = TRUE), 5)
+```
+
+Open Targets also reports mechanisms, but its interface answers questions
+about drugs you name rather than listing every drug it knows, so it is
+not part of this sweep. Use `queryMoa()` for it.
+
+The two sources are kept side by side rather than merged, because they
+identify drugs differently: `drug_id` is a ChEMBL identifier on ChEMBL
+rows and the Repurposing Hub's own drug name on Broad rows, and one drug
+can appear once per source. They also word mechanisms differently, and
+not only in capitalisation - ChEMBL names the specific protein
+(`"Carbonic anhydrase VII inhibitor"`) where the Repurposing Hub names
+the family (`"carbonic anhydrase inhibitor"`). Almost no term is shared
+verbatim, so count and group the `moa` column one source at a time.
+
+Where a drug's mechanism does name a target, `assembleMoaTargets()`
+retrieves it.
+
 
 # Genome-Wide Master Table
 

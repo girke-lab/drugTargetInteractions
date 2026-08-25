@@ -230,6 +230,45 @@
     allRecs
 }
 
+#' Page a whole ChEMBL list resource, with no `__in` filter
+#'
+#' \code{.dtiBatchGET} fetches records for a known set of IDs. This walks
+#' a collection end to end instead, for the case where the point is to
+#' enumerate everything it holds - \code{buildMoaMasterTable()} sweeping
+#' \code{/mechanism} being the reason it exists. Stops on
+#' \code{page_meta$total_count}, and refuses to loop forever if a
+#' malformed response ever reports a count it does not deliver.
+#'
+#' @param url character(1) resource URL, e.g. `.../mechanism.json`.
+#' @param resultsField character(1) list field holding the records.
+#' @param extraQuery named list of additional fixed query parameters.
+#' @param pageSize integer(1) records per request (ChEMBL caps at 1000).
+#' @param verbose logical(1); message progress per page.
+#' @return a flat list of record lists, pooled across pages.
+#' @keywords internal
+#' @noRd
+.dtiPageAll <- function(url, resultsField, extraQuery = list(),
+                        pageSize = 1000L, verbose = FALSE) {
+    allRecs <- list()
+    offset <- 0L
+    total <- NA_integer_
+    repeat {
+        q <- extraQuery
+        q$limit <- pageSize
+        q$offset <- offset
+        res <- .dtiApiGET(url, query = q)
+        recs <- res[[resultsField]] %||% list()
+        if (length(recs) == 0L) break
+        allRecs <- c(allRecs, recs)
+        offset <- offset + length(recs)
+        total <- res$page_meta$total_count %||% offset
+        if (verbose)
+            message("  ", basename(url), ": ", offset, "/", total)
+        if (offset >= total) break
+    }
+    allRecs
+}
+
 #' Perform a GraphQL POST with retry + polite throttling
 #'
 #' Shared by any GraphQL-backed source (DGIdb, and later Open Targets).

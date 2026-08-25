@@ -540,3 +540,177 @@ moaWide <- function(x) {
              paste(missing, collapse = ", "), ".")
     invisible(TRUE)
 }
+
+
+## ---------------------------------------------------------------------
+## Drug-centric MOA master table
+## ---------------------------------------------------------------------
+## assembleMoaTable() shapes whatever queryDrugTargets() was asked for. It
+## cannot tell you which drugs have a mechanism in the first place, because
+## you have to name them going in. This enumerates instead.
+##
+## A mechanism belongs to the drug, so the natural sweep is over drugs, not
+## over genes - and the difference is not academic. Measured 2026-08-24:
+## 1,470 of the Broad Hub's 6,855 drugs with a mechanism (21%) name no
+## target gene at all, as do 556 of ChEMBL's 5,954. A target-anchored run
+## like buildGenomeWideDrugTargetTable() cannot reach roughly two thousand
+## annotated drugs, whatever it does with the genes it does cover.
+##
+## Only the two enumerable MOA sources are swept. ChEMBL's /mechanism is a
+## pageable collection (~7,500 records, seconds); the Broad Hub is already
+## a local SQLite. Open Targets carries real MOA too but its GraphQL has no
+## clean enumeration path, and its drug annotations derive largely from
+## ChEMBL - so it is left to queryMoa() for targeted lookups.
+
+#' Build a drug-centric master table of mechanisms of action
+#'
+#' Sweeps every drug that the enumerable MOA sources annotate, and returns
+#' one row per drug and mechanism. Unlike \code{\link{queryMoa}}, which
+#' looks up mechanisms for drugs you already name, this discovers the drugs
+#' as well - including the many whose mechanism is recorded without any
+#' target being named, which a gene-anchored build such as
+#' \code{\link{buildGenomeWideDrugTargetTable}} cannot reach.
+#'
+#' Two sources are covered. ChEMBL is read from its mechanism collection
+#' over the network; the Broad Repurposing Hub is read from the local
+#' SQLite built by \code{\link{buildBroadRepurposingHubDb}}. Open Targets
+#' also records mechanisms but cannot be enumerated the same way, so use
+#' \code{\link{queryMoa}} for it.
+#'
+#' The sources are kept side by side rather than merged: they identify
+#' drugs differently, so \code{drug_id} means a ChEMBL identifier on ChEMBL
+#' rows and the Repurposing Hub's own drug name on Broad rows, and the same
+#' drug can appear once per source. Compare them on \code{drug_name} if you
+#' need to, keeping in mind that names are not a reliable key across
+#' databases.
+#'
+#' The Broad Hub sometimes records several mechanisms for one drug in a
+#' single \code{"a | b"} string. These are split, so each row carries one
+#' mechanism and counting or grouping the \code{moa} column gives real
+#' terms rather than combinations.
+#'
+#' The two sources word mechanisms differently, and not only in
+#' capitalisation: ChEMBL names the specific protein
+#' (\code{"Carbonic anhydrase VII inhibitor"}) where the Repurposing Hub
+#' names the family (\code{"carbonic anhydrase inhibitor"}). Almost no
+#' term is shared verbatim. Group or count the \code{moa} column within
+#' one source at a time; comparing terms across the two needs them
+#' matched deliberately, not just lower-cased.
+#'
+#' @param sources character vector, any of \code{"chembl"} and
+#'   \code{"broad"} (default: both).
+#' @param brhDbPath character(1) path to a Broad Repurposing Hub SQLite
+#'   (see \code{\link{buildBroadRepurposingHubDb}}); required if
+#'   \code{"broad"} is in \code{sources}.
+#' @param resolveDrugNames logical(1); if \code{TRUE} (default), look up
+#'   ChEMBL's preferred drug names, which costs one extra batch of requests.
+#'   \code{FALSE} leaves \code{drug_name} empty on ChEMBL rows, where the
+#'   identifier alone is enough.
+#' @param includeUnknown logical(1); ChEMBL records \code{"Unknown"} as the
+#'   mechanism for some drugs. These are dropped by default as placeholders
+#'   rather than mechanisms; set \code{TRUE} to keep them.
+#' @param verbose logical(1); report progress and per-source counts
+#'   (default \code{TRUE}, since the ChEMBL sweep takes a moment).
+#' @return A \code{data.frame} with one row per drug and mechanism:
+#'   \code{drug_id}, \code{drug_name}, \code{moa}, \code{action} (ChEMBL's
+#'   coarse action label, empty for Broad, which records no such field),
+#'   \code{source}, and \code{has_target}, which says whether that source
+#'   names a target for the mechanism. Use
+#'   \code{\link{assembleMoaTargets}} to get the targets themselves.
+#' @examples
+#' \donttest{
+#'   ## ChEMBL alone needs no local database
+#'   moa <- buildMoaMasterTable(sources = "chembl")
+#'   nrow(moa)
+#'   head(sort(table(moa$moa), decreasing = TRUE))       # commonest mechanisms
+#'   sum(!moa$has_target)                                # annotated, no target
+#'
+#'   ## Both sources
+#'   brhDbPath <- buildBroadRepurposingHubDb(rerun = FALSE)
+#'   moa <- buildMoaMasterTable(brhDbPath = brhDbPath)
+#'   table(moa$source)
+#' }
+#' @seealso \code{\link{queryMoa}} for mechanisms of named drugs,
+#'   \code{\link{assembleMoaTargets}} for the targets a mechanism acts
+#'   through, \code{\link{listMoaSources}}
+#' @export
+buildMoaMasterTable <- function(sources = c("chembl", "broad"),
+                                brhDbPath = NULL, resolveDrugNames = TRUE,
+                                includeUnknown = FALSE, verbose = TRUE) {
+    sources <- .dtiMatchSet(sources, c("chembl", "broad"), "sources")
+    if ("broad" %in% sources && is.null(brhDbPath))
+        stop("'broad' requires brhDbPath (see buildBroadRepurposingHubDb()).")
+
+    cols <- c("drug_id", "drug_name", "moa", "action", "source", "has_target")
+    empty <- data.frame(drug_id = character(0), drug_name = character(0),
+                        moa = character(0), action = character(0),
+                        source = character(0), has_target = logical(0),
+                        stringsAsFactors = FALSE)
+    parts <- list()
+
+    if ("chembl" %in% sources) {
+        if (verbose) message("buildMoaMasterTable: sweeping ChEMBL mechanisms")
+        recs <- .dtiPageAll(paste0(.dtiEndpoints()$chembl, "/mechanism.json"),
+                            "mechanisms", verbose = verbose)
+        fld <- function(k) vapply(recs, function(r)
+            r[[k]] %||% NA_character_, character(1), USE.NAMES = FALSE)
+        df <- data.frame(drug_id = fld("molecule_chembl_id"),
+                         drug_name = NA_character_,
+                         moa = fld("mechanism_of_action"),
+                         action = fld("action_type"),
+                         source = "chembl",
+                         has_target = !is.na(fld("target_chembl_id")),
+                         stringsAsFactors = FALSE)
+        df <- df[!is.na(df$moa) & nzchar(df$moa), , drop = FALSE]
+        if (!isTRUE(includeUnknown))
+            df <- df[tolower(df$moa) != "unknown", , drop = FALSE]
+        df <- unique(df)
+        if (isTRUE(resolveDrugNames) && nrow(df) > 0L) {
+            ids <- unique(stats::na.omit(df$drug_id))
+            if (verbose)
+                message("buildMoaMasterTable: resolving ", length(ids),
+                        " ChEMBL drug name(s)")
+            nm <- getChemblMolecule(ids, verbose = FALSE)
+            df$drug_name <- nm$pref_name[match(df$drug_id, nm$chembl_id)]
+        }
+        parts$chembl <- df
+    }
+
+    if ("broad" %in% sources) {
+        if (verbose) message("buildMoaMasterTable: reading Broad mechanisms")
+        con <- dbConnect(SQLite(), brhDbPath)
+        on.exit(dbDisconnect(con), add = TRUE)
+        b <- dbGetQuery(con, paste(
+            "select pert_iname,",
+            "  max(moa) as moa,",
+            "  max(case when target_gene is not null and target_gene != ''",
+            "           then 1 else 0 end) as has_target",
+            "from broad_interactions",
+            "where moa is not null and moa != ''",
+            "group by pert_iname"))
+        ## One drug can carry several mechanisms packed into one "a | b"
+        ## string; split so a row is a mechanism, not a combination.
+        n <- lengths(strsplit(b$moa, "|", fixed = TRUE))
+        terms <- trimws(unlist(strsplit(b$moa, "|", fixed = TRUE),
+                               use.names = FALSE))
+        df <- data.frame(drug_id = rep(b$pert_iname, n),
+                         drug_name = rep(b$pert_iname, n),
+                         moa = terms, action = NA_character_,
+                         source = "broad",
+                         has_target = rep(b$has_target == 1L, n),
+                         stringsAsFactors = FALSE)
+        df <- unique(df[nzchar(df$moa), , drop = FALSE])
+        parts$broad <- df
+    }
+
+    out <- if (length(parts)) do.call(rbind, parts) else empty
+    rownames(out) <- NULL
+    if (verbose && nrow(out) > 0L)
+        for (s in unique(out$source))
+            message("buildMoaMasterTable: ", s, " - ", sum(out$source == s),
+                    " row(s), ", length(unique(out$drug_id[out$source == s])),
+                    " drug(s), ", length(unique(out$moa[out$source == s])),
+                    " mechanism(s), ",
+                    sum(!out$has_target[out$source == s]), " row(s) with no target")
+    out[, cols, drop = FALSE]
+}
