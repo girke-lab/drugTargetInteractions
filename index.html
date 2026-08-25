@@ -1959,7 +1959,7 @@ function toggle_visibility(id1) {
 
 <h1 class="title toc-ignore">drugTargetInteractions: Mining the Druggable Genome</h1>
 <p class="author-name">Authors: Kevin Horan, Brandon Le, Brendan Gongol, Desmond Cairo, Mohammad Afsharinia, Tandis Salem, Dan Evans, Nicholas Schork and Thomas Girke</p>
-<h4 class="date">Last update: 23 August, 2026</h4>
+<h4 class="date">Last update: 24 August, 2026</h4>
 
 </div>
 
@@ -3426,6 +3426,45 @@ different sources are kept separate even when they describe the same
 mechanism, so a mechanism confirmed by both ChEMBL and Open Targets
 appears twice, once per source.</p>
 </div>
+<div id="a-master-table-of-mechanisms" class="section level2" number="7.2">
+<h2><span class="header-section-number">7.2</span> A Master Table of Mechanisms</h2>
+<p>The functions above answer “what is this drug’s mechanism?” for drugs you
+name. <code>buildMoaMasterTable()</code> answers the other question: which drugs
+have a mechanism recorded at all. It sweeps the sources that can be read
+end to end and returns one row per drug and mechanism.</p>
+<pre class="r"><code>brhDbPath &lt;- buildBroadRepurposingHubDb(rerun = FALSE)
+moaMaster &lt;- buildMoaMasterTable(brhDbPath = brhDbPath)
+dim(moaMaster)
+table(moaMaster$source)
+head(moaMaster)</code></pre>
+<p>A mechanism belongs to the drug, not to a drug-target pair, so many drugs
+have one recorded without any target being named. Those drugs are absent
+from a gene-anchored build such as <code>buildGenomeWideDrugTargetTable()</code> -
+there is no gene to find them under - which is the main reason to build
+this table separately:</p>
+<pre class="r"><code>untargeted &lt;- subset(moaMaster, !has_target)
+length(unique(untargeted$drug_id))
+head(unique(untargeted[, c(&quot;drug_name&quot;, &quot;moa&quot;, &quot;source&quot;)]))</code></pre>
+<p>ChEMBL is read over the network from its mechanism collection and needs
+no local database; the Broad Repurposing Hub is read from the SQLite file
+you built earlier. Passing <code>sources = &quot;chembl&quot;</code> alone therefore works
+with no setup:</p>
+<pre class="r"><code>chemblMoa &lt;- buildMoaMasterTable(sources = &quot;chembl&quot;)
+head(sort(table(chemblMoa$moa), decreasing = TRUE), 5)</code></pre>
+<p>Open Targets also reports mechanisms, but its interface answers questions
+about drugs you name rather than listing every drug it knows, so it is
+not part of this sweep. Use <code>queryMoa()</code> for it.</p>
+<p>The two sources are kept side by side rather than merged, because they
+identify drugs differently: <code>drug_id</code> is a ChEMBL identifier on ChEMBL
+rows and the Repurposing Hub’s own drug name on Broad rows, and one drug
+can appear once per source. They also word mechanisms differently, and
+not only in capitalisation - ChEMBL names the specific protein
+(<code>&quot;Carbonic anhydrase VII inhibitor&quot;</code>) where the Repurposing Hub names
+the family (<code>&quot;carbonic anhydrase inhibitor&quot;</code>). Almost no term is shared
+verbatim, so count and group the <code>moa</code> column one source at a time.</p>
+<p>Where a drug’s mechanism does name a target, <code>assembleMoaTargets()</code>
+retrieves it.</p>
+</div>
 </div>
 <div id="genome-wide-master-table" class="section level1" number="8">
 <h1><span class="header-section-number">8</span> Genome-Wide Master Table</h1>
@@ -3804,7 +3843,7 @@ sapply(combined, nrow)</code></pre>
 ##  [4] GenomicFeatures_1.65.0         AnnotationDbi_1.75.0           Biobase_2.73.1                
 ##  [7] GenomicRanges_1.65.1           Seqinfo_1.3.0                  IRanges_2.47.2                
 ## [10] S4Vectors_0.51.5               BiocGenerics_0.59.10           generics_0.1.4                
-## [13] drugTargetInteractions_1.21.12 BiocStyle_2.41.0              
+## [13] drugTargetInteractions_1.21.14 BiocStyle_2.41.0              
 ## 
 ## loaded via a namespace (and not attached):
 ##  [1] tidyselect_1.2.1            dplyr_1.2.1                 blob_1.3.0                 
