@@ -1,2 +1,33 @@
+Changes in version 1.21.15 (2026-10-13)
++ buildGtoPdbDb() now builds from the public GtoPdb bulk download files
+  (interactions.tsv and GtP_to_HGNC_mapping.tsv) instead of the
+  /services/interactions REST endpoint, which requires a registered API
+  key as of 2026 and returned HTTP 401 on any machine without one. No
+  key is needed for the default build.
++ downloadGtoPdb() and buildGtoPdbDb() gained useServices and apiKey
+  arguments for building from GtoPdb's authenticated REST endpoint
+  instead; apiKey defaults to the GTOPDB_API_KEY environment variable. A
+  missing or rejected key is now reported as an authentication failure
+  rather than an opaque bfcadd() error.
++ The gtp_interactions table and gtoPdbTargetAnnot() now report pubmedId,
+  the PubMed ID of each interaction's reference, in place of refIds,
+  GtoPdb's internal reference IDs. The REST route cannot supply pubmedId.
++ buildGtoPdbDb() gained a paths argument for building from local copies
+  of the two bulk files. A small extract of both now ships in
+  inst/extdata, so the GtoPdb examples and vignette section run without
+  network access.
++ A field named through 'fields' that a source documents but a given
+  response does not carry is now returned as an NA column instead of
+  raising an error. Previously a transient outage at ChEMBL, PubChem,
+  DGIdb or Open Targets turned any fields = c(...) request into a hard
+  error, which could fail a vignette build. A name no source documents is
+  still rejected.
++ Repurposing Hub downloads pass the supplemental CA bundle as a
+  per-request option rather than setting CURL_CA_BUNDLE in the session.
++ getSymEnsUp() loads its EnsDb package namespace instead of attaching it
+  with require(), and reports a missing package.
++ Added runnable examples throughout; most man pages now demonstrate
+  their function without network access.
+
 Changes in version 0.99.0 (2021-01-11)
 + Submitted to Bioconductor

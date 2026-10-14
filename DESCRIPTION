@@ -1,12 +1,20 @@
 Package: drugTargetInteractions
 Type: Package
 Title: drugTargetInteractions: Mining the Druggable Genome
-Version: 1.21.14
-Date: 2026-08-24
+Version: 1.21.15
+Date: 2026-10-13
 Authors@R: c(
     person("Thomas", "Girke", email="thomas.girke@ucr.edu", role=c("cre", "aut"), comment=c(ORCID="0000-0003-0710-3777")),
     person("Kevin", "Horan", role="ctb"))
-Description: Utilities for identifying known drug-target interactions for a sets of query drug and/or target protein (gene) identifiers. The interaction information is obained from a series of drug/target databases.
+Description: Utilities for identifying known drug-target interactions for
+    sets of query drug and/or target protein (gene) identifiers. The
+    interaction information is obtained from a series of drug and target
+    databases, including ChEMBL, PubChem, DGIdb, Open Targets, the
+    Therapeutic Target Database, the Broad Institute Drug Repurposing Hub
+    and the IUPHAR/BPS Guide to PHARMACOLOGY. Each source can be queried
+    on its own, or several of them combined into a single table anchored
+    on HGNC gene identifiers. Identifier translation utilities map query
+    identifiers onto the native identifier types each source expects.
 Depends: methods, R (>= 4.1)
 Imports: utils, stats, RSQLite, UniProt.ws, biomaRt,ensembldb, BiocFileCache,rappdirs, AnnotationFilter, S4Vectors, httr2, readxl, jsonlite
 Suggests: RUnit, BiocStyle, knitr, rmarkdown, ggplot2, reshape2, DT, EnsDb.Hsapiens.v86, testthat (>= 3.0.0)
@@ -15,7 +23,8 @@ License: Artistic-2.0
 Encoding: UTF-8
 NeedsCompilation: no
 URL: https://github.com/girke-lab/drugTargetInteractions
-biocViews: Cheminformatics, BiomedicalInformatics, Pharmacogenetics, Pharmacogenomics, Proteomics, Metabolomics
+biocViews: Cheminformatics, BiomedicalInformatics, Pharmacogenetics,
+    Pharmacogenomics, Proteomics, Metabolomics, GeneTarget, Network
 Config/testthat/edition: 3
 BugReports: https://github.com/girke-lab/drugTargetInteractions
 Config/roxygen2/version: 8.0.0
