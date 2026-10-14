@@ -39,6 +39,9 @@ UniProt accessions (e.g. \code{"P12345-2"}) are stripped defensively,
 though HGNC's own cross-references are already canonical-only.
 }
 \examples{
+## Downloaded files are cached here and reused by later calls:
+rappdirs::user_cache_dir("drugTargetInteractions")
+
 \donttest{
   hgncTable <- getHgncGeneTable()
   nrow(hgncTable)

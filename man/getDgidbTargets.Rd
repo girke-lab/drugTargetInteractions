@@ -37,6 +37,10 @@ for the reverse. Same columns/shape as \code{\link{getDgidbDrugs}}
 since \code{Interaction} nodes always carry both endpoints.
 }
 \examples{
+## Columns this source can return; any subset of them can be
+## requested through 'fields'.
+listDrugTargetFields("dgidb")
+
 \donttest{
   df <- getDgidbTargets(c("imatinib", "aspirin"))
   table(df$drug_name, useNA = "no")

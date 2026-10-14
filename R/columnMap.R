@@ -186,6 +186,11 @@
 #'   \code{active} (whether \code{\link{combineGenomeWideDrugTargets}}
 #'   will use the row).
 #' @examples
+#' ## Which per-source column each shared concept resolves to:
+#' cmap <- drugTargetColumnMap()
+#' head(cmap)
+#' cmap[cmap$canonical == "drug_name", ]
+#'
 #' \donttest{
 #'   drugTargetColumnMap()
 #'

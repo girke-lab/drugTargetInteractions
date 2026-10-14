@@ -150,6 +150,9 @@
 #' @return A named list of local file paths: \code{targets}, \code{drugs},
 #'   \code{mapping}, \code{crossmatch}, \code{drugDisease}.
 #' @examples
+#' ## Downloaded files are cached here and reused by later calls:
+#' rappdirs::user_cache_dir("drugTargetInteractions")
+#'
 #' \donttest{
 #'   paths <- downloadTTD()
 #'   paths
@@ -568,6 +571,9 @@ downloadTTD <- function(rerun = TRUE, config = genConfig()) {
 #'   note. \code{\link{ttdTargetAnnot}} attaches this as
 #'   \code{attr(result, "ttd_release")}.
 #' @examples
+#' ## Downloaded files are cached here and reused by later calls:
+#' rappdirs::user_cache_dir("drugTargetInteractions")
+#'
 #' \donttest{
 #'   dbPath <- buildTtdDb()
 #'   dbPath
@@ -703,6 +709,10 @@ buildTtdDb <- function(rerun = FALSE, config = genConfig()) {
 #'   date)} release stamp (see \code{\link{buildTtdDb}}); \code{NULL} for
 #'   a \code{ttdDbPath} built before this attribute was added.
 #' @examples
+#' ## Columns this source can return; any subset of them can be
+#' ## requested through 'fields'.
+#' listDrugTargetFields("ttd")
+#'
 #' \donttest{
 #'   dbPath <- buildTtdDb()
 #'   ttdTargetAnnot(list(molType = "protein", idType = "symbol",

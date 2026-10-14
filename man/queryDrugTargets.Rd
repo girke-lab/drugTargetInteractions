@@ -116,6 +116,10 @@ function raised an error (e.g. a required local database path was not
 supplied) - set \code{verbose = TRUE} to see why.
 }
 \examples{
+## The sources this can query, and the columns each of them returns:
+vapply(c("chembl", "dgidb", "opentargets", "ttd", "broad", "gtopdb"),
+       function(s) length(listDrugTargetFields(s)), integer(1))
+
 \donttest{
   ## target -> drug, starting from an Ensembl gene ID, all live sources
   res <- queryDrugTargets(

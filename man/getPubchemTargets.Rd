@@ -54,6 +54,10 @@ each target GeneID to a gene symbol - filtered to \code{taxid}
 each assay used (see file header note).
 }
 \examples{
+## Columns this source can return; any subset of them can be
+## requested through 'fields'.
+listDrugTargetFields("pubchem")
+
 \donttest{
   df <- getPubchemTargets("aspirin")
   df[, c("drug_name", "gene_symbol", "activity_name", "activity_value_uM")]

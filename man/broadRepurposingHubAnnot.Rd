@@ -84,6 +84,10 @@ as a real one-to-many resolution (all matching compounds' full
 target sets are returned) rather than collapsed to one or errored on.
 }
 \examples{
+## Columns this source can return; any subset of them can be
+## requested through 'fields'.
+listDrugTargetFields("broad")
+
 \donttest{
   dbPath <- buildBroadRepurposingHubDb()
   broadRepurposingHubAnnot(list(molType = "protein", idType = "symbol",

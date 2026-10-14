@@ -504,11 +504,28 @@
 #' @return data.frame, a column subset of \code{wide}.
 #' @keywords internal
 #' @noRd
-.dtiSelectFields <- function(wide, fields, coreCols) {
+.dtiSelectFields <- function(wide, fields, coreCols, knownCols = NULL) {
     if (identical(fields, "core")) return(wide[, coreCols, drop = FALSE])
     if (identical(fields, "all")) return(wide)
     stopifnot(is.character(fields))
-    unknown <- setdiff(fields, names(wide))
+    absent <- setdiff(fields, names(wide))
+    ## A field the source documents but this particular response does not
+    ## carry is not a bad request. Which fields come back depends on what
+    ## the query matched and on the record type (a protein-family ChEMBL
+    ## target exposes different fields than a single protein), and a
+    ## source that was unreachable carries none at all. Returning those
+    ## as empty columns keeps the result's shape tied to what was asked
+    ## for rather than to one response, so a transient upstream outage
+    ## degrades to NA instead of erroring. Only a name the source does
+    ## not document at all is a genuine mistake.
+    ##
+    ## 'knownCols' is the source's documented field list (what
+    ## listDrugTargetFields() reports). The local-SQLite sources leave it
+    ## NULL, their 'coreCols' already being the complete list, so for
+    ## those any absent field really is unknown.
+    documented <- intersect(absent, knownCols)
+    for (nm in documented) wide[[nm]] <- rep(NA, nrow(wide))
+    unknown <- setdiff(absent, documented)
     if (length(unknown)) {
         stop("Unknown field(s) requested: ", paste(unknown, collapse = ", "),
              ". See listDrugTargetFields() for available names.")
@@ -921,6 +938,10 @@ getChemblBioactivities <- function(targetChemblId, standardType = NA,
 #'   Query IDs that return no rows still appear as a single row with all
 #'   other fields \code{NA}.
 #' @examples
+#' ## Columns this can return; any subset of them can be requested
+#' ## through 'fields'.
+#' listBioassayFields("chembl")
+#'
 #' \donttest{
 #'   ## target -> drug bioassay: FGFR1
 #'   getChemblBioassay(list(molType = "protein", idType = "Uniprot",
@@ -991,11 +1012,15 @@ getChemblBioassay <- function(queryBy = list(molType = NULL, idType = NULL, ids 
 
     if (isTarget) {
         tgt <- .dtiChemblAccessionToTargetId(queryBy$ids, base, chunkSize, verbose)
-        if (nrow(tgt) == 0L) return(.dtiSelectFields(emptyDF, fields, emptyCols))
+        if (nrow(tgt) == 0L)
+            return(.dtiSelectFields(emptyDF, fields, emptyCols,
+                                    .dtiChemblBioassayAllCols))
         recs <- .dtiBatchGET(paste0(base, "/activity.json"), "target_chembl_id__in",
                              unique(tgt$ChEMBL_TID), "activities", chunkSize = chunkSize,
                              extraQuery = extraQuery, verbose = verbose)
-        if (length(recs) == 0L) return(.dtiSelectFields(emptyDF, fields, emptyCols))
+        if (length(recs) == 0L)
+            return(.dtiSelectFields(emptyDF, fields, emptyCols,
+                                    .dtiChemblBioassayAllCols))
         act <- .dtiRbindFill(lapply(recs, flattenActivity))
         out <- merge(tgt, act, by = "ChEMBL_TID")
         out$UniProt_ID <- out$QueryIDs
@@ -1003,7 +1028,9 @@ getChemblBioassay <- function(queryBy = list(molType = NULL, idType = NULL, ids 
         recs <- .dtiBatchGET(paste0(base, "/activity.json"), "molecule_chembl_id__in",
                              queryBy$ids, "activities", chunkSize = chunkSize,
                              extraQuery = extraQuery, verbose = verbose)
-        if (length(recs) == 0L) return(.dtiSelectFields(emptyDF, fields, emptyCols))
+        if (length(recs) == 0L)
+            return(.dtiSelectFields(emptyDF, fields, emptyCols,
+                                    .dtiChemblBioassayAllCols))
         act <- .dtiRbindFill(lapply(recs, flattenActivity))
         act$QueryIDs <- act$chembl_id
         meta <- .dtiChemblTargetMeta(unique(act$ChEMBL_TID), base, chunkSize, verbose)
@@ -1157,6 +1184,10 @@ getChemblBioassay <- function(queryBy = list(molType = NULL, idType = NULL, ids 
 #'   Under \code{fields = "all"} the underlying record is still visible
 #'   unchanged in \code{mechanism.molecule_chembl_id}.
 #' @examples
+#' ## Columns this source can return; any subset of them can be
+#' ## requested through 'fields'.
+#' listDrugTargetFields("chembl")
+#'
 #' \donttest{
 #'   ## target -> drug: FGFR1
 #'   getChemblDrugTarget(list(molType = "protein", idType = "Uniprot",
@@ -1453,7 +1484,7 @@ getChemblDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
     }
     out <- out[order(match(out$QueryIDs, queryBy$ids)), , drop = FALSE]
     rownames(out) <- NULL
-    .dtiSelectFields(out, fields, emptyCols)
+    .dtiSelectFields(out, fields, emptyCols, .dtiChemblAllCols)
 }
 
 #' Documented, best-effort column list for \code{listDrugTargetFields("chembl")}
@@ -1762,6 +1793,10 @@ getChemblDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
 #'   \code{activity_value_uM}, \code{assay_name}, \code{db}. Empty if
 #'   none / offline.
 #' @examples
+#' ## Columns this source can return; any subset of them can be
+#' ## requested through 'fields'.
+#' listDrugTargetFields("pubchem")
+#'
 #' \donttest{
 #'   df <- getPubchemDrugs(c("FGFR1", "KLB"))
 #'   table(df$gene_symbol)
@@ -1808,7 +1843,8 @@ getPubchemDrugs <- function(genes, taxid = 9606L,
         empty <- as.data.frame(stats::setNames(
             replicate(length(.dtiPubchemDrugsCols), character(0), simplify = FALSE),
             .dtiPubchemDrugsCols), stringsAsFactors = FALSE)
-        return(.dtiSelectFields(empty, fields, .dtiPubchemDrugsCols))
+        return(.dtiSelectFields(empty, fields, .dtiPubchemDrugsCols,
+                                .dtiPubchemAllCols))
     }
     out <- .dtiRbindFill(rows)
     out$target_accession  <- out$TargetAccession
@@ -1818,7 +1854,7 @@ getPubchemDrugs <- function(genes, taxid = 9606L,
     out$assay_name          <- out$AssayName
     out$db <- "PubChem"
     rownames(out) <- NULL
-    .dtiSelectFields(out, fields, .dtiPubchemDrugsCols)
+    .dtiSelectFields(out, fields, .dtiPubchemDrugsCols, .dtiPubchemAllCols)
 }
 
 #' Retrieve PubChem bioactivities for one or more drugs (drug -> target)
@@ -1848,6 +1884,10 @@ getPubchemDrugs <- function(genes, taxid = 9606L,
 #'   \code{activity_value_uM}, \code{assay_name}, \code{db}. Empty if
 #'   none / offline.
 #' @examples
+#' ## Columns this source can return; any subset of them can be
+#' ## requested through 'fields'.
+#' listDrugTargetFields("pubchem")
+#'
 #' \donttest{
 #'   df <- getPubchemTargets("aspirin")
 #'   df[, c("drug_name", "gene_symbol", "activity_name", "activity_value_uM")]
@@ -1877,11 +1917,15 @@ getPubchemTargets <- function(drugs, taxid = 9606L,
     }
     names(cidFor) <- drugs
     cids <- unique(stats::na.omit(cidFor))
-    if (length(cids) == 0L) return(.dtiSelectFields(empty, fields, .dtiPubchemTargetsCols))
+    if (length(cids) == 0L)
+        return(.dtiSelectFields(empty, fields, .dtiPubchemTargetsCols,
+                                .dtiPubchemAllCols))
 
     raw <- .dtiPubchemAssaySummary(cids, chunkSize = maxCidsPerBatch)
     df  <- .dtiPubchemFilterRows(raw$cols, raw$rows, keepActivities, keepAllCols = wantAll)
-    if (nrow(df) == 0L) return(.dtiSelectFields(empty, fields, .dtiPubchemTargetsCols))
+    if (nrow(df) == 0L)
+        return(.dtiSelectFields(empty, fields, .dtiPubchemTargetsCols,
+                                .dtiPubchemAllCols))
     df <- df[order(df$ActivityValueuM), , drop = FALSE]
     df <- df[!duplicated(paste(df$CID, df$TargetGeneID)), , drop = FALSE]
 
@@ -1889,7 +1933,9 @@ getPubchemTargets <- function(drugs, taxid = 9606L,
     df$gene_symbol <- genes$Symbol[match(df$TargetGeneID, genes$GeneID)]
     df$taxid       <- genes$Taxid[match(df$TargetGeneID, genes$GeneID)]
     if (!is.null(taxid)) df <- df[!is.na(df$taxid) & df$taxid == taxid, , drop = FALSE]
-    if (nrow(df) == 0L) return(.dtiSelectFields(empty, fields, .dtiPubchemTargetsCols))
+    if (nrow(df) == 0L)
+        return(.dtiSelectFields(empty, fields, .dtiPubchemTargetsCols,
+                                .dtiPubchemAllCols))
 
     drugNameFor <- stats::setNames(names(cidFor), cidFor)
     df$drug_name <- unname(drugNameFor[df$CID])
@@ -1902,7 +1948,7 @@ getPubchemTargets <- function(drugs, taxid = 9606L,
     df$assay_name          <- df$AssayName
     df$db <- "PubChem"
     rownames(df) <- NULL
-    .dtiSelectFields(df, fields, .dtiPubchemTargetsCols)
+    .dtiSelectFields(df, fields, .dtiPubchemTargetsCols, .dtiPubchemAllCols)
 }
 
 #' Curated column vector for \code{fields = "core"} on \code{getPubchemDrugs()}
@@ -1972,6 +2018,10 @@ getPubchemTargets <- function(drugs, taxid = 9606L,
 #'   appear as a single row with all other fields \code{NA}, so callers can
 #'   always confirm which of their input IDs were resolved.
 #' @examples
+#' ## Columns this source can return; any subset of them can be
+#' ## requested through 'fields'.
+#' listDrugTargetFields("pubchem")
+#'
 #' \donttest{
 #'   ## target -> drug: FGFR1, KLB
 #'   getPubchemDrugTarget(list(molType = "gene", idType = "symbol",
@@ -2335,6 +2385,10 @@ getPubchemDrugTarget <- function(queryBy = list(molType = NULL, idType = NULL,
 #'   \code{evidence_score}, \code{sources} (upstream provenance),
 #'   \code{db}. Empty if none / offline.
 #' @examples
+#' ## Columns this source can return; any subset of them can be
+#' ## requested through 'fields'.
+#' listDrugTargetFields("dgidb")
+#'
 #' \donttest{
 #'   df <- getDgidbDrugs(c("FGFR1", "KLB"))
 #'   table(df$gene_name)
@@ -2360,7 +2414,7 @@ getDgidbDrugs <- function(genes, pageSize = 500L, maxRows = 5000L, verbose = FAL
     nodes <- .dtiDgidbFetch(genes, by = "gene", pageSize = pageSize,
                             maxRows = maxRows, verbose = verbose, wantAll = wantAll)
     .dtiSelectFields(.dtiParseDgidbInteractions(nodes, wantAll = wantAll),
-                     fields, .dtiDgidbCols)
+                     fields, .dtiDgidbCols, .dtiDgidbAllCols)
 }
 
 #' Retrieve DGIdb target interactions for one or more drugs
@@ -2381,6 +2435,10 @@ getDgidbDrugs <- function(genes, pageSize = 500L, maxRows = 5000L, verbose = FAL
 #'   argument.
 #' @return A \code{data.frame}; see \code{\link{getDgidbDrugs}} for columns.
 #' @examples
+#' ## Columns this source can return; any subset of them can be
+#' ## requested through 'fields'.
+#' listDrugTargetFields("dgidb")
+#'
 #' \donttest{
 #'   df <- getDgidbTargets(c("imatinib", "aspirin"))
 #'   table(df$drug_name, useNA = "no")
@@ -2394,7 +2452,7 @@ getDgidbTargets <- function(drugs, pageSize = 500L, maxRows = 5000L, verbose = F
     nodes <- .dtiDgidbFetch(drugs, by = "drug", pageSize = pageSize,
                             maxRows = maxRows, verbose = verbose, wantAll = wantAll)
     .dtiSelectFields(.dtiParseDgidbInteractions(nodes, wantAll = wantAll),
-                     fields, .dtiDgidbCols)
+                     fields, .dtiDgidbCols, .dtiDgidbAllCols)
 }
 
 #' Query DGIdb interaction data via the uniform queryBy interface
@@ -2425,6 +2483,10 @@ getDgidbTargets <- function(drugs, pageSize = 500L, maxRows = 5000L, verbose = F
 #'   token each row case-insensitively matched to. Query IDs that returned
 #'   no rows still appear as a single row with all other fields \code{NA}.
 #' @examples
+#' ## Columns this source can return; any subset of them can be
+#' ## requested through 'fields'.
+#' listDrugTargetFields("dgidb")
+#'
 #' \donttest{
 #'   ## target -> drug: FGFR1, KLB
 #'   getDgidbDrugTarget(list(molType = "gene", idType = "symbol",
@@ -2781,6 +2843,10 @@ getOpenTargetsIds <- function(symbols, chunkSize = 100L, pause = 0.1,
 #'   no known drugs simply contribute no rows. Empty \code{data.frame} if
 #'   nothing / offline.
 #' @examples
+#' ## Columns this source can return; any subset of them can be
+#' ## requested through 'fields'.
+#' listDrugTargetFields("opentargets")
+#'
 #' \donttest{
 #'   drugs <- getOpenTargetsDrugs(c("FGFR1", "KLB"))
 #'   head(drugs[, c("drug_name", "mechanism_of_action", "max_clinical_stage")])
@@ -2816,7 +2882,9 @@ getOpenTargetsDrugs <- function(genes, expand = c("mechanism", "disease", "drug"
     }
     keep <- !is.na(ensg) & nzchar(ensg)
     ensg <- unique(ensg[keep])
-    if (length(ensg) == 0L) return(.dtiSelectFields(.dtiEmptyDrugs(), fields, .dtiDrugCols))
+    if (length(ensg) == 0L)
+        return(.dtiSelectFields(.dtiEmptyDrugs(), fields, .dtiDrugCols,
+                                .dtiOpenTargetsAllCols))
 
     acc <- vector("list", length(ensg)); k <- 0L
     chunks <- .dtiChunk(ensg, chunkSize)
@@ -2838,10 +2906,12 @@ getOpenTargetsDrugs <- function(genes, expand = c("mechanism", "disease", "drug"
         }
         if (pause > 0 && i < length(chunks)) Sys.sleep(pause)
     }
-    if (k == 0L) return(.dtiSelectFields(.dtiEmptyDrugs(), fields, .dtiDrugCols))
+    if (k == 0L)
+        return(.dtiSelectFields(.dtiEmptyDrugs(), fields, .dtiDrugCols,
+                                .dtiOpenTargetsAllCols))
     out <- .dtiRbindFill(acc[seq_len(k)])
     rownames(out) <- NULL
-    .dtiSelectFields(out, fields, .dtiDrugCols)
+    .dtiSelectFields(out, fields, .dtiDrugCols, .dtiOpenTargetsAllCols)
 }
 
 #' Resolve many drug names to ChEMBL IDs in batched GraphQL requests
@@ -3080,6 +3150,10 @@ getOpenTargetsDrugIds <- function(names, chunkSize = 100L, pause = 0.1,
 #'   known targets simply contribute no rows. Empty \code{data.frame} if
 #'   nothing / offline.
 #' @examples
+#' ## Columns this source can return; any subset of them can be
+#' ## requested through 'fields'.
+#' listDrugTargetFields("opentargets")
+#'
 #' \donttest{
 #'   tgts <- getOpenTargetsTargets("aspirin")
 #'   tgts[, c("approved_symbol", "mechanism_of_action")]
@@ -3109,7 +3183,9 @@ getOpenTargetsTargets <- function(drugs, expand = c("target", "mechanism"),
     }
     keep <- !is.na(chemblId) & nzchar(chemblId)
     chemblId <- unique(chemblId[keep])
-    if (length(chemblId) == 0L) return(.dtiSelectFields(.dtiEmptyTargets(), fields, .dtiTargetCols))
+    if (length(chemblId) == 0L)
+        return(.dtiSelectFields(.dtiEmptyTargets(), fields, .dtiTargetCols,
+                                .dtiOpenTargetsAllCols))
 
     acc <- vector("list", length(chemblId)); k <- 0L
     chunks <- .dtiChunk(chemblId, chunkSize)
@@ -3131,10 +3207,12 @@ getOpenTargetsTargets <- function(drugs, expand = c("target", "mechanism"),
         }
         if (pause > 0 && i < length(chunks)) Sys.sleep(pause)
     }
-    if (k == 0L) return(.dtiSelectFields(.dtiEmptyTargets(), fields, .dtiTargetCols))
+    if (k == 0L)
+        return(.dtiSelectFields(.dtiEmptyTargets(), fields, .dtiTargetCols,
+                                .dtiOpenTargetsAllCols))
     out <- .dtiRbindFill(acc[seq_len(k)])
     rownames(out) <- NULL
-    .dtiSelectFields(out, fields, .dtiTargetCols)
+    .dtiSelectFields(out, fields, .dtiTargetCols, .dtiOpenTargetsAllCols)
 }
 
 #' Query Open Targets drug/target data via the uniform queryBy interface
@@ -3171,6 +3249,10 @@ getOpenTargetsTargets <- function(drugs, expand = c("target", "mechanism"),
 #'   returned no rows still appear as a single row with all other fields
 #'   \code{NA}.
 #' @examples
+#' ## Columns this source can return; any subset of them can be
+#' ## requested through 'fields'.
+#' listDrugTargetFields("opentargets")
+#'
 #' \donttest{
 #'   ## target -> drug: FGFR1, KLB
 #'   getOpenTargetsDrugTarget(list(molType = "gene", idType = "symbol",

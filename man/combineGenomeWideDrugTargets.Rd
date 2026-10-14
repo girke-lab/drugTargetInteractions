@@ -72,6 +72,31 @@ Broad Repurposing Hub a phrase such as \code{"Approved"}. Read that
 column together with \code{source}.
 }
 \examples{
+## A stand-in for getHgncGeneTable()'s output: prev_symbol,
+## alias_symbol and uniprot_ids are list-columns there.
+hgnc <- data.frame(
+    hgnc_id = c("HGNC:3688", "HGNC:3689", "HGNC:3690"),
+    symbol = c("FGFR1", "FGFR2", "FGFR3"),
+    ensembl_gene_id = c("ENSG00000077782", "ENSG00000066468",
+                        "ENSG00000068078"),
+    stringsAsFactors = FALSE)
+hgnc$prev_symbol <- list("FLT2", "BEK", "CEK2")
+hgnc$alias_symbol <- list("CD331", "CD332", "CD333")
+hgnc$uniprot_ids <- list("P11362", "P21802", "P22607")
+
+## One source's results, built from the GtoPdb extract that ships with
+## the package so nothing is downloaded.
+dbPath <- buildGtoPdbDb(paths = list(
+    interactions = system.file("extdata", "gtopdb_interactions_example.tsv",
+                               package = "drugTargetInteractions"),
+    hgncMapping = system.file("extdata", "gtopdb_hgnc_mapping_example.tsv",
+                              package = "drugTargetInteractions")))
+res <- list(gtopdb = gtoPdbTargetAnnot(
+    list(molType = "cmp", idType = "name", ids = "pemigatinib"), dbPath))
+
+## One HGNC-anchored table across the sources given:
+combineGenomeWideDrugTargets(res, hgncTable = hgnc, native = FALSE)
+
 \donttest{
   res <- buildGenomeWideDrugTargetTable(
     hgncTable = getHgncGeneTable()[1:3, ],

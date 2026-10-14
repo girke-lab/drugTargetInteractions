@@ -116,6 +116,29 @@ genConfig <- function(
     bfcrpath(bfc, rids = rid)
 }
 
+#' Add (or refresh) an already-downloaded local file in the package cache
+#'
+#' \code{.downloadFile()} hands a URL straight to \code{bfcadd()}, which
+#' cannot attach request headers or per-request curl options. The two
+#' places that need those - GtoPdb's authenticated REST route and the
+#' Broad Repurposing Hub's supplemental-CA retry - fetch to a temp file
+#' themselves and hand the result here, so the file still ends up cached
+#' under the usual resource name and later \code{.getCacheFile()} lookups
+#' find it.
+#' @keywords internal
+#' @noRd
+.dtiCacheLocalFile <- function(name, path) {
+    bfc <- .getCache()
+    rid <- bfcquery(bfc, name, "rname")$rid
+    if (length(rid) == 0L) {
+        rid <- names(bfcadd(bfc, name, path, action = "copy"))
+    } else {
+        rid <- rid[[1]]
+        file.copy(path, bfcrpath(bfc, rids = rid), overwrite = TRUE)
+    }
+    bfcrpath(bfc, rids = rid)
+}
+
 .downloadWithRetries <- function(bfc, rid, name, tries = 2) {
     tries <- as.integer(tries)
     stopifnot(length(tries) == 1L, !is.na(tries))
@@ -366,10 +389,8 @@ getUniprotIDs <- function(taxId = 9606, kt = "ENSEMBL", keys,
             }
         }
         ## Status message
-        print(paste(
-            "Processed", chunksize * i, "keys of total of", length(keys),
-            "keys."
-        ))
+        message("Processed ", chunksize * i, " keys of total of ",
+                length(keys), " keys.")
     }
     ## Assemble and return results
     res_list[[1]] <- do.call("rbind", res_list[[1]])
@@ -1205,13 +1226,21 @@ drugTargetBioactivity <- function(queryBy = list(
 ## up_ens_id, and up_gene_id.  Currently, the query IDs can be Gene Names,
 ## Ensembl Gene IDs and UniProt IDs.
 getSymEnsUp <- function(EnsDb = "EnsDb.Hsapiens.v86", ids, idtype) {
-    require(EnsDb, character.only = TRUE)
+    ## The EnsDb package is named at call time, so it is loaded (not
+    ## attached) here and the annotation object of the same name is taken
+    ## from its namespace - attaching it with require() would alter the
+    ## caller's search path as a side effect of a lookup.
+    if (!requireNamespace(EnsDb, quietly = TRUE))
+        stop("getSymEnsUp() needs the '", EnsDb, "' package; install it ",
+             "first (e.g. BiocManager::install(\"", EnsDb, "\")).",
+             call. = FALSE)
+    edb <- get(EnsDb, envir = asNamespace(EnsDb))
     ## ID columns to return
     idcolumns <- c("gene_id", "gene_name", "uniprot_id", "protein_id")
 
     ## With gene names
     if (idtype == "GENE_NAME") {
-        idDF <- ensembldb::genes(get(EnsDb),
+        idDF <- ensembldb::genes(edb,
             filter = AnnotationFilter::GeneNameFilter(ids),
             columns = idcolumns
         )
@@ -1219,7 +1248,7 @@ getSymEnsUp <- function(EnsDb = "EnsDb.Hsapiens.v86", ids, idtype) {
         idDF <- S4Vectors::values(idDF)
         ## With ENSEBML Gene IDs
     } else if (idtype == "ENSEMBL_GENE_ID") {
-        idDF <- ensembldb::genes(get(EnsDb),
+        idDF <- ensembldb::genes(edb,
             filter = AnnotationFilter::GeneIdFilter(ids),
             columns = idcolumns
         )
@@ -1227,7 +1256,7 @@ getSymEnsUp <- function(EnsDb = "EnsDb.Hsapiens.v86", ids, idtype) {
         idDF <- S4Vectors::values(idDF)
         ## With UniProt IDs
     } else if (idtype == "UNIPROT_ID") {
-        idDF <- ensembldb::proteins(get(EnsDb),
+        idDF <- ensembldb::proteins(edb,
             filter = AnnotationFilter::UniprotFilter(ids),
             columns = idcolumns
         )

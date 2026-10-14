@@ -29,6 +29,9 @@ structures, ~13.4GB) is deliberately not downloaded - see the file
 header.
 }
 \examples{
+## Downloaded files are cached here and reused by later calls:
+rappdirs::user_cache_dir("drugTargetInteractions")
+
 \donttest{
   paths <- downloadUnichemTables()
   paths

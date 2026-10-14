@@ -708,3 +708,35 @@ test_that("getOpenTargetsDrugTarget(fields = 'all') adds target./drug.-prefixed 
     expect_true("target.biotype" %in% names(all))
     expect_true("drug.description" %in% names(all))
 })
+
+test_that(".dtiSelectFields returns documented-but-absent fields as NA columns, no network", {
+    core <- c("QueryIDs", "chembl_id", "Drug_Name")
+    known <- listDrugTargetFields("chembl")
+    mk <- function(n) {
+        d <- data.frame(QueryIDs = rep("CHEMBL25", n), chembl_id = rep(NA, n),
+                        Drug_Name = rep(NA, n), stringsAsFactors = FALSE)
+        d[seq_len(n), , drop = FALSE]
+    }
+
+    ## A response that came back empty (source unreachable, or nothing
+    ## matched) still yields the requested columns rather than erroring.
+    empty <- .dtiSelectFields(mk(0L), c("Drug_Name", "molecule.molecule_type"),
+                              core, known)
+    expect_identical(names(empty), c("QueryIDs", "Drug_Name", "molecule.molecule_type"))
+    expect_equal(nrow(empty), 0L)
+
+    ## Same for the single all-NA row an unmatched query ID produces.
+    one <- .dtiSelectFields(mk(1L), c("Drug_Name", "target.organism"), core, known)
+    expect_identical(names(one), c("QueryIDs", "Drug_Name", "target.organism"))
+    expect_true(is.na(one$target.organism))
+
+    ## A name no source documents is still an error...
+    expect_error(
+        .dtiSelectFields(mk(0L), c("Drug_Name", "no.such.field"), core, known),
+        "Unknown field")
+    ## ...as is any absent field when no documented list is supplied, which
+    ## is how the local-SQLite sources call this.
+    expect_error(
+        .dtiSelectFields(mk(0L), c("Drug_Name", "molecule.molecule_type"), core),
+        "Unknown field")
+})

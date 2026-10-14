@@ -153,6 +153,33 @@
 #' @return \code{results} with the four columns above added to each
 #'   table, in the same order and with the same number of rows.
 #' @examples
+#' ## A stand-in for getHgncGeneTable()'s output: prev_symbol,
+#' ## alias_symbol and uniprot_ids are list-columns there.
+#' hgnc <- data.frame(
+#'     hgnc_id = c("HGNC:3688", "HGNC:3689", "HGNC:3690"),
+#'     symbol = c("FGFR1", "FGFR2", "FGFR3"),
+#'     ensembl_gene_id = c("ENSG00000077782", "ENSG00000066468",
+#'                         "ENSG00000068078"),
+#'     stringsAsFactors = FALSE)
+#' hgnc$prev_symbol <- list("FLT2", "BEK", "CEK2")
+#' hgnc$alias_symbol <- list("CD331", "CD332", "CD333")
+#' hgnc$uniprot_ids <- list("P11362", "P21802", "P22607")
+#'
+#' ## One source's results, built from the GtoPdb extract that ships with
+#' ## the package so nothing is downloaded.
+#' dbPath <- buildGtoPdbDb(paths = list(
+#'     interactions = system.file("extdata", "gtopdb_interactions_example.tsv",
+#'                                package = "drugTargetInteractions"),
+#'     hgncMapping = system.file("extdata", "gtopdb_hgnc_mapping_example.tsv",
+#'                               package = "drugTargetInteractions")))
+#' res <- list(gtopdb = gtoPdbTargetAnnot(
+#'     list(molType = "cmp", idType = "name", ids = "pemigatinib"), dbPath))
+#'
+#' ## The canonical key columns are added to each source's own table:
+#' withIds <- addCommonIds(res, hgncTable = hgnc)
+#' withIds$gtopdb[, c("QueryIDs", "target_gene", "hgnc_id", "gene_symbol",
+#'                    "target_uniprot")]
+#'
 #' \donttest{
 #'   res <- queryDrugTargets(list(molType = "gene", idType = "symbol", ids = "FGFR1"),
 #'                           sources = c("chembl", "opentargets", "dgidb"))
@@ -339,6 +366,32 @@ addCommonIds <- function(results, hgncTable = NULL, symbolMap = NULL,
 #'   once per source), then \code{n_sources} and \code{sources}, then each
 #'   source's carried columns prefixed with its name.
 #' @examples
+#' ## A stand-in for getHgncGeneTable()'s output: prev_symbol,
+#' ## alias_symbol and uniprot_ids are list-columns there.
+#' hgnc <- data.frame(
+#'     hgnc_id = c("HGNC:3688", "HGNC:3689", "HGNC:3690"),
+#'     symbol = c("FGFR1", "FGFR2", "FGFR3"),
+#'     ensembl_gene_id = c("ENSG00000077782", "ENSG00000066468",
+#'                         "ENSG00000068078"),
+#'     stringsAsFactors = FALSE)
+#' hgnc$prev_symbol <- list("FLT2", "BEK", "CEK2")
+#' hgnc$alias_symbol <- list("CD331", "CD332", "CD333")
+#' hgnc$uniprot_ids <- list("P11362", "P21802", "P22607")
+#'
+#' ## One source's results, built from the GtoPdb extract that ships with
+#' ## the package so nothing is downloaded.
+#' dbPath <- buildGtoPdbDb(paths = list(
+#'     interactions = system.file("extdata", "gtopdb_interactions_example.tsv",
+#'                                package = "drugTargetInteractions"),
+#'     hgncMapping = system.file("extdata", "gtopdb_hgnc_mapping_example.tsv",
+#'                               package = "drugTargetInteractions")))
+#' res <- list(gtopdb = gtoPdbTargetAnnot(
+#'     list(molType = "cmp", idType = "name", ids = "pemigatinib"), dbPath))
+#'
+#' ## One row per gene, with each source's columns side by side:
+#' mergeDrugTargets(addCommonIds(res, hgncTable = hgnc), by = "hgnc_id",
+#'                  columns = c("drug_name", "action"))
+#'
 #' \donttest{
 #'   res <- queryDrugTargets(list(molType = "gene", idType = "symbol", ids = "FGFR1"),
 #'                           sources = c("chembl", "opentargets"))

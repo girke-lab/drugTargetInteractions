@@ -38,6 +38,13 @@ also covers true cross-species orthologs - see
 \code{type}/\code{taxonomy_level} interpretation.
 }
 \examples{
+## The shape of the result, from a small snapshot shipped with the
+## package (the live query below needs Ensembl):
+fx <- readRDS(system.file("extdata", "fixtures",
+                          "ensembl_orthologs_nlrp3_mouse.rds",
+                          package = "drugTargetInteractions"))
+fx$result
+
 \donttest{
   getEnsemblOrthologs("NLRP3", targetSpecies = "mouse")
 }

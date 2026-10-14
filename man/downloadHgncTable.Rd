@@ -44,6 +44,9 @@ character(1) local file path to the cached TSV.
 Download (and cache) an HGNC complete-gene-set TSV snapshot
 }
 \examples{
+## Downloaded files are cached here and reused by later calls:
+rappdirs::user_cache_dir("drugTargetInteractions")
+
 \donttest{
   hgncPath <- downloadHgncTable()
 }

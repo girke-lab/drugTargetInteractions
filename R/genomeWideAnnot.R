@@ -78,6 +78,9 @@
 #' @param verbose logical(1).
 #' @return character(1) local file path to the cached TSV.
 #' @examples
+#' ## Downloaded files are cached here and reused by later calls:
+#' rappdirs::user_cache_dir("drugTargetInteractions")
+#'
 #' \donttest{
 #'   hgncPath <- downloadHgncTable()
 #' }
@@ -123,6 +126,9 @@ downloadHgncTable <- function(archiveFile = NULL, current = FALSE,
 #'   (list-column), \code{locus_group}. \code{attr(., "hgncSource")}
 #'   records the source filename for provenance.
 #' @examples
+#' ## Downloaded files are cached here and reused by later calls:
+#' rappdirs::user_cache_dir("drugTargetInteractions")
+#'
 #' \donttest{
 #'   hgncTable <- getHgncGeneTable()
 #'   nrow(hgncTable)
@@ -191,6 +197,17 @@ getHgncGeneTable <- function(proteinCodingOnly = TRUE, archiveFile = NULL,
 #'   \code{attr(., "ambiguous")}, a named list of all candidate current
 #'   symbols for each flagged old symbol.
 #' @examples
+#' ## prev_symbol and alias_symbol are list-columns, as in
+#' ## getHgncGeneTable()'s output. The result maps every retired or
+#' ## alias symbol to the gene's current symbol.
+#' hgnc <- data.frame(
+#'     hgnc_id = c("HGNC:3688", "HGNC:16400"),
+#'     symbol = c("FGFR1", "NLRP3"),
+#'     stringsAsFactors = FALSE)
+#' hgnc$prev_symbol <- list("FLT2", "CIAS1")
+#' hgnc$alias_symbol <- list("CD331", "NALP3")
+#' buildHgncSymbolMap(hgnc)
+#'
 #' \donttest{
 #'   hgncTable <- getHgncGeneTable()
 #'   symbolMap <- buildHgncSymbolMap(hgncTable)
@@ -251,6 +268,18 @@ buildHgncSymbolMap <- function(hgncTable, warn = TRUE) {
 #'   passed straight through and never counts as ambiguous, so translating
 #'   unaffected symbols is silent.
 #' @examples
+#' ## Retired and alias symbols are rewritten to the current symbol. A
+#' ## symbol that is already current passes through unchanged; one HGNC
+#' ## does not know at all comes back NA.
+#' hgnc <- data.frame(
+#'     hgnc_id = c("HGNC:3688", "HGNC:16400"),
+#'     symbol = c("FGFR1", "NLRP3"),
+#'     stringsAsFactors = FALSE)
+#' hgnc$prev_symbol <- list("FLT2", "CIAS1")
+#' hgnc$alias_symbol <- list("CD331", "NALP3")
+#' normalizeGeneSymbols(c("FLT2", "NALP3", "FGFR1", "NOTASYMBOL"),
+#'                      hgncTable = hgnc)
+#'
 #' \donttest{
 #'   hgncTable <- getHgncGeneTable()
 #'   normalizeGeneSymbols(c("FGFR1", "ABL"), hgncTable = hgncTable)
@@ -362,6 +391,9 @@ normalizeGeneSymbols <- function(symbols, symbolMap = NULL, hgncTable = NULL) {
 #'   build is reusable without recomputation; the cache path is recorded
 #'   in \code{attr(., "cachePath")}.
 #' @examples
+#' ## Downloaded files are cached here and reused by later calls:
+#' rappdirs::user_cache_dir("drugTargetInteractions")
+#'
 #' \donttest{
 #'   ## Small illustrative run, not genome-wide - see the "Genome-Wide
 #'   ## Master Table" vignette section for the full workflow (takes
@@ -559,6 +591,31 @@ buildGenomeWideDrugTargetTable <- function(hgncTable = NULL,
 #'   group in \code{colMap}, then \code{compound_chembl_id}, then each
 #'   source's own remaining columns when \code{native = TRUE}.
 #' @examples
+#' ## A stand-in for getHgncGeneTable()'s output: prev_symbol,
+#' ## alias_symbol and uniprot_ids are list-columns there.
+#' hgnc <- data.frame(
+#'     hgnc_id = c("HGNC:3688", "HGNC:3689", "HGNC:3690"),
+#'     symbol = c("FGFR1", "FGFR2", "FGFR3"),
+#'     ensembl_gene_id = c("ENSG00000077782", "ENSG00000066468",
+#'                         "ENSG00000068078"),
+#'     stringsAsFactors = FALSE)
+#' hgnc$prev_symbol <- list("FLT2", "BEK", "CEK2")
+#' hgnc$alias_symbol <- list("CD331", "CD332", "CD333")
+#' hgnc$uniprot_ids <- list("P11362", "P21802", "P22607")
+#'
+#' ## One source's results, built from the GtoPdb extract that ships with
+#' ## the package so nothing is downloaded.
+#' dbPath <- buildGtoPdbDb(paths = list(
+#'     interactions = system.file("extdata", "gtopdb_interactions_example.tsv",
+#'                                package = "drugTargetInteractions"),
+#'     hgncMapping = system.file("extdata", "gtopdb_hgnc_mapping_example.tsv",
+#'                               package = "drugTargetInteractions")))
+#' res <- list(gtopdb = gtoPdbTargetAnnot(
+#'     list(molType = "cmp", idType = "name", ids = "pemigatinib"), dbPath))
+#'
+#' ## One HGNC-anchored table across the sources given:
+#' combineGenomeWideDrugTargets(res, hgncTable = hgnc, native = FALSE)
+#'
 #' \donttest{
 #'   res <- buildGenomeWideDrugTargetTable(
 #'     hgncTable = getHgncGeneTable()[1:3, ],

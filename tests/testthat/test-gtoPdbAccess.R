@@ -1,7 +1,10 @@
-## Network-guarded tests for the Guide to PHARMACOLOGY (GtoPdb) bulk-REST
-## download / local-SQLite build / query path. All network-touching tests
-## skip cleanly when offline (BiocCheck penalises unguarded network calls).
-## Defined locally (not shared from test-apiAccess.R) so this file runs
+## Tests for the Guide to PHARMACOLOGY (GtoPdb) bulk-download /
+## local-SQLite build / query path. The build-and-query tests run offline
+## against the small extract of GtoPdb's two bulk files that ships in
+## inst/extdata; only the tests that genuinely exercise the download are
+## network-guarded, and those skip cleanly when offline (BiocCheck
+## penalises unguarded network calls). The guard helper is defined
+## locally (not shared from test-apiAccess.R) so this file runs
 ## standalone too.
 
 ## skip_on_bioc() is a deliberate, temporary over-correction for this
@@ -14,13 +17,24 @@ skip_if_offline_dti <- function() {
         testthat::skip("No internet / API unreachable")
 }
 
-## Builds (or reuses a cached) GtoPdb SQLite once per test run and shares
-## it across every test_that() below, rather than re-downloading/
-## rebuilding per test - buildGtoPdbDb() is not free the way a single
-## REST GET is (the bulk interactions pull is ~12MB).
+## The small extract of GtoPdb's two bulk files that ships with the
+## package. It covers FGFR1 and NLRP3 plus pemigatinib's FGFR rows -
+## exactly the subset these tests assert on - so the build-and-query
+## path can be exercised in full without touching the network.
+.getGtoPdbExamplePaths <- function() {
+    list(
+        interactions = system.file("extdata", "gtopdb_interactions_example.tsv",
+                                   package = "drugTargetInteractions"),
+        hgncMapping = system.file("extdata", "gtopdb_hgnc_mapping_example.tsv",
+                                  package = "drugTargetInteractions"))
+}
+
+## Builds the SQLite once per test run and shares it across every
+## test_that() below rather than rebuilding per test.
 .gtoPdbTestDb <- new.env(parent = emptyenv())
 .getGtoPdbTestDbPath <- function() {
-    if (is.null(.gtoPdbTestDb$path)) .gtoPdbTestDb$path <- buildGtoPdbDb()
+    if (is.null(.gtoPdbTestDb$path))
+        .gtoPdbTestDb$path <- buildGtoPdbDb(paths = .getGtoPdbExamplePaths())
     .gtoPdbTestDb$path
 }
 
@@ -65,7 +79,6 @@ test_that("downloadGtoPdb fetches/caches the bulk interactions + HGNC mapping fi
 })
 
 test_that("buildGtoPdbDb builds a queryable local SQLite with the expected table", {
-    skip_if_offline_dti()
     dbPath <- .getGtoPdbTestDbPath()
     expect_true(file.exists(dbPath))
     con <- dbConnect(SQLite(), dbPath)
@@ -75,14 +88,13 @@ test_that("buildGtoPdbDb builds a queryable local SQLite with the expected table
     expect_identical(cols, c("target_gene", "targetId", "targetName", "species",
                              "primaryTarget", "ligandId", "ligandName", "type",
                              "action", "affinity", "affinityParameter",
-                             "selectivity", "refIds"))
+                             "selectivity", "pubmedId"))
     ## species filter applied at build time
     allSpecies <- dbGetQuery(con, "SELECT DISTINCT species FROM gtp_interactions")$species
     expect_identical(allSpecies, "Human")
 })
 
 test_that("gtoPdbTargetAnnot matches the validated 8-gene coverage, NA-padding uncovered targets", {
-    skip_if_offline_dti()
     dbPath <- .getGtoPdbTestDbPath()
     genes <- c("FGF21", "KLB", "FGFR1", "NLRP3", "IL1B", "TFEB", "ADIPOR1", "ADIPOR2")
     df <- gtoPdbTargetAnnot(list(molType = "protein", idType = "symbol", ids = genes), dbPath)
@@ -90,7 +102,7 @@ test_that("gtoPdbTargetAnnot matches the validated 8-gene coverage, NA-padding u
     expect_identical(names(df), c("QueryIDs", "target_gene", "targetId", "targetName",
                                   "species", "primaryTarget", "ligandId", "ligandName",
                                   "type", "action", "affinity", "affinityParameter",
-                                  "selectivity", "refIds"))
+                                  "selectivity", "pubmedId"))
     ## Live-validated 2026-07-19: only FGFR1 and NLRP3 are covered by
     ## GtoPdb of these 8 (a more targeted/curated resource than TTD/Broad,
     ## not exhaustive) - the other 6 are NA-padded.
@@ -101,7 +113,6 @@ test_that("gtoPdbTargetAnnot matches the validated 8-gene coverage, NA-padding u
 })
 
 test_that("gtoPdbTargetAnnot resolves pemigatinib's known FGFR targets (drug -> target)", {
-    skip_if_offline_dti()
     dbPath <- .getGtoPdbTestDbPath()
     df <- gtoPdbTargetAnnot(list(molType = "cmp", idType = "name", ids = "pemigatinib"), dbPath)
     expect_true(all(df$QueryIDs == "pemigatinib"))
@@ -111,7 +122,6 @@ test_that("gtoPdbTargetAnnot resolves pemigatinib's known FGFR targets (drug -> 
 })
 
 test_that("gtoPdbTargetAnnot supports exact-match native IDs (gtp_target_id, gtp_ligand_id)", {
-    skip_if_offline_dti()
     dbPath <- .getGtoPdbTestDbPath()
     byTid <- gtoPdbTargetAnnot(list(molType = "protein", idType = "gtp_target_id",
                                     ids = "1808"), dbPath)
@@ -123,7 +133,6 @@ test_that("gtoPdbTargetAnnot supports exact-match native IDs (gtp_target_id, gtp
 })
 
 test_that("gtoPdbTargetAnnot surfaces unmatched query IDs as NA rows, incl. all-unmatched", {
-    skip_if_offline_dti()
     dbPath <- .getGtoPdbTestDbPath()
     allUnmatched <- gtoPdbTargetAnnot(list(molType = "protein", idType = "symbol",
                                            ids = "NOTAREALGENEXYZ"), dbPath)
@@ -139,7 +148,6 @@ test_that("gtoPdbTargetAnnot surfaces unmatched query IDs as NA rows, incl. all-
 })
 
 test_that("gtoPdbTargetAnnot rejects unsupported idType / malformed queryBy", {
-    skip_if_offline_dti()
     dbPath <- .getGtoPdbTestDbPath()
     expect_error(
         gtoPdbTargetAnnot(list(molType = "protein", idType = "uniprot", ids = "x"), dbPath),
@@ -147,4 +155,80 @@ test_that("gtoPdbTargetAnnot rejects unsupported idType / malformed queryBy", {
     expect_error(
         gtoPdbTargetAnnot(list(molType = "cmp", idType = "name", ids = character(0)), dbPath),
         "need to be populated")
+})
+
+test_that("buildGtoPdbDb(paths=) builds from local files without touching the cache", {
+    tmpCache <- tempfile("dtiCache")
+    dir.create(tmpCache)
+    old <- Sys.getenv("R_USER_CACHE_DIR", unset = NA_character_)
+    on.exit({
+        if (is.na(old)) Sys.unsetenv("R_USER_CACHE_DIR")
+        else Sys.setenv(R_USER_CACHE_DIR = old)
+        unlink(tmpCache, recursive = TRUE)
+    })
+    Sys.setenv(R_USER_CACHE_DIR = tmpCache)
+
+    dbPath <- buildGtoPdbDb(paths = .getGtoPdbExamplePaths())
+    expect_true(file.exists(dbPath))
+    ## Nothing was written into the cache, so a supplied-paths build can
+    ## never shadow the real gtopdb_<version>.db.
+    expect_false(any(grepl("gtopdb", list.files(tmpCache, recursive = TRUE))))
+})
+
+test_that("buildGtoPdbDb rejects a malformed or non-existent 'paths'", {
+    expect_error(buildGtoPdbDb(paths = list(interactions = "a")),
+                 "must be a named list")
+    expect_error(
+        buildGtoPdbDb(paths = list(interactions = tempfile(), hgncMapping = tempfile())),
+        "do not exist")
+})
+
+test_that("the build drops non-human rows and rows carrying no target identity", {
+    ex <- .getGtoPdbExamplePaths()
+    lines <- readLines(ex$interactions, warn = FALSE, encoding = "UTF-8")
+    ## One mouse row and one row with no "Target ID" at all, both of which
+    ## must be gone from the built table.
+    body <- strsplit(lines[3], "\t", fixed = TRUE)[[1]]
+    mouse <- body; mouse[3] <- "\"Mouse\""
+    noTarget <- body; noTarget[2] <- "\"\""
+    f <- tempfile(fileext = ".tsv")
+    writeLines(c(lines, paste(mouse, collapse = "\t"),
+                 paste(noTarget, collapse = "\t")), f)
+
+    dbPath <- buildGtoPdbDb(paths = list(interactions = f,
+                                         hgncMapping = ex$hgncMapping))
+    con <- dbConnect(SQLite(), dbPath)
+    on.exit(dbDisconnect(con))
+    expect_identical(
+        dbGetQuery(con, "SELECT DISTINCT species FROM gtp_interactions")$species,
+        "Human")
+    expect_equal(
+        dbGetQuery(con, "SELECT COUNT(*) n FROM gtp_interactions WHERE targetId = ''")$n,
+        0L)
+})
+
+test_that(".gtoPdbAffinity rebuilds a range or a single value, matching the REST payload", {
+    ## Bounds that differ become a range; equal or absent bounds collapse
+    ## to the single value. Single-precision noise is reported to one
+    ## decimal, as GtoPdb's own API did.
+    expect_identical(.gtoPdbAffinity("5.0", "5.25", "5.5"), "5.0 - 5.5")
+    expect_identical(.gtoPdbAffinity("9.3", "9.3", "9.3"), "9.3")
+    expect_identical(.gtoPdbAffinity("", "9.399999618530273", ""), "9.4")
+    expect_true(is.na(.gtoPdbAffinity("", "", "")))
+})
+
+test_that("downloadGtoPdb reports a missing or rejected API key for its REST route", {
+    expect_error(downloadGtoPdb(useServices = TRUE, apiKey = ""),
+                 "require a registered API key")
+    expect_error(downloadGtoPdb(useServices = TRUE, apiKey = NA_character_),
+                 "require a registered API key")
+})
+
+test_that("downloadGtoPdb's REST route reports GtoPdb's 401 as an authentication failure", {
+    skip_if_offline_dti()
+    ## GtoPdb gates every /services/ endpoint behind a key, so an
+    ## obviously invalid one is a stable way to exercise the 401 branch.
+    expect_error(
+        downloadGtoPdb(useServices = TRUE, apiKey = "not-a-real-api-key"),
+        "authentication")
 })

@@ -49,6 +49,11 @@ resolves against HGNC and UniChem, using ambiguity rules a column
 mapping cannot express.
 }
 \examples{
+## Which per-source column each shared concept resolves to:
+cmap <- drugTargetColumnMap()
+head(cmap)
+cmap[cmap$canonical == "drug_name", ]
+
 \donttest{
   drugTargetColumnMap()
 

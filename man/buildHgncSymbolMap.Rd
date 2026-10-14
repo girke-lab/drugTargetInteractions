@@ -37,6 +37,17 @@ This builds a lookup from every historical \code{prev_symbol}/
 through it before joining back to an HGNC-anchored table.
 }
 \examples{
+## prev_symbol and alias_symbol are list-columns, as in
+## getHgncGeneTable()'s output. The result maps every retired or
+## alias symbol to the gene's current symbol.
+hgnc <- data.frame(
+    hgnc_id = c("HGNC:3688", "HGNC:16400"),
+    symbol = c("FGFR1", "NLRP3"),
+    stringsAsFactors = FALSE)
+hgnc$prev_symbol <- list("FLT2", "CIAS1")
+hgnc$alias_symbol <- list("CD331", "NALP3")
+buildHgncSymbolMap(hgnc)
+
 \donttest{
   hgncTable <- getHgncGeneTable()
   symbolMap <- buildHgncSymbolMap(hgncTable)

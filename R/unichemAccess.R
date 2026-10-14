@@ -141,6 +141,9 @@
 #' @return A named list of local file paths: \code{reference},
 #'   \code{source}.
 #' @examples
+#' ## Downloaded files are cached here and reused by later calls:
+#' rappdirs::user_cache_dir("drugTargetInteractions")
+#'
 #' \donttest{
 #'   paths <- downloadUnichemTables()
 #'   paths
@@ -343,6 +346,9 @@ downloadUnichemTables <- function(rerun = TRUE, config = genConfig()) {
 #' @param verbose logical(1); if TRUE, message progress throughout.
 #' @return character(1) local file path to the SQLite database.
 #' @examples
+#' ## Downloaded files are cached here and reused by later calls:
+#' rappdirs::user_cache_dir("drugTargetInteractions")
+#'
 #' \donttest{
 #'   dbPath <- buildUnichemDb(verbose = TRUE)
 #'   dbPath

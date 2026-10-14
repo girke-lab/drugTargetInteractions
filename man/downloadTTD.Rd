@@ -30,6 +30,9 @@ no TTD data is bundled with or downloaded by the package itself until
 this is called explicitly.
 }
 \examples{
+## Downloaded files are cached here and reused by later calls:
+rappdirs::user_cache_dir("drugTargetInteractions")
+
 \donttest{
   paths <- downloadTTD()
   paths

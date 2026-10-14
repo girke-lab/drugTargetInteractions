@@ -47,6 +47,10 @@ arises; the tradeoff is one extra batched ID-resolution call inside the
 wrapper (see the file header note).
 }
 \examples{
+## Columns this source can return; any subset of them can be
+## requested through 'fields'.
+listDrugTargetFields("opentargets")
+
 \donttest{
   ## target -> drug: FGFR1, KLB
   getOpenTargetsDrugTarget(list(molType = "gene", idType = "symbol",

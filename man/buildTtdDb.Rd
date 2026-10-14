@@ -45,6 +45,9 @@ redistributes this file - it is built into the caller's own local
 cache the first time this is run.
 }
 \examples{
+## Downloaded files are cached here and reused by later calls:
+rappdirs::user_cache_dir("drugTargetInteractions")
+
 \donttest{
   dbPath <- buildTtdDb()
   dbPath

@@ -48,6 +48,13 @@ thresholding - already a more principled "relatedness" signal than
 ranking within a \code{type} tier.
 }
 \examples{
+## The shape of the result, from a small snapshot shipped with the
+## package (the live query below needs Ensembl):
+fx <- readRDS(system.file("extdata", "fixtures",
+                          "ensembl_paralogs_fgfr1.rds",
+                          package = "drugTargetInteractions"))
+head(fx$result, 3)
+
 \donttest{
   getEnsemblParalogs("FGFR1")
 }

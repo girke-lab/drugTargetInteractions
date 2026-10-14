@@ -35,21 +35,42 @@ skip_if_no_unichem_db <- function() {
         testthat::skip("No cached UniChem SQLite - build one with buildUnichemDb() to run this test")
 }
 
+## build*Db() default to rerun = FALSE, which errors rather than
+## downloading when nothing is cached yet - so on a cold cache (a fresh
+## machine, or a CI run that starts with an empty BiocFileCache) these
+## helpers have to ask for the download explicitly.
+.buildCachedOrFetch <- function(build) {
+    tryCatch(build(rerun = FALSE), error = function(e) build(rerun = TRUE))
+}
+
 .ttdTestDb <- new.env(parent = emptyenv())
 .getTtdTestDbPath <- function() {
-    if (is.null(.ttdTestDb$path)) .ttdTestDb$path <- buildTtdDb()
+    if (is.null(.ttdTestDb$path))
+        .ttdTestDb$path <- .buildCachedOrFetch(buildTtdDb)
     .ttdTestDb$path
 }
 
 .brhTestDb <- new.env(parent = emptyenv())
 .getBrhTestDbPath <- function() {
-    if (is.null(.brhTestDb$path)) .brhTestDb$path <- buildBroadRepurposingHubDb()
+    if (is.null(.brhTestDb$path))
+        .brhTestDb$path <- .buildCachedOrFetch(buildBroadRepurposingHubDb)
     .brhTestDb$path
 }
 
+## These tests only compare queryDrugTargets()'s GtoPdb result against
+## gtoPdbTargetAnnot() called directly, so which rows the database holds
+## is irrelevant - the extract shipped in inst/extdata does the job with
+## no download at all.
 .gtoPdbTestDb <- new.env(parent = emptyenv())
 .getGtoPdbTestDbPath <- function() {
-    if (is.null(.gtoPdbTestDb$path)) .gtoPdbTestDb$path <- buildGtoPdbDb()
+    if (is.null(.gtoPdbTestDb$path))
+        .gtoPdbTestDb$path <- buildGtoPdbDb(paths = list(
+            interactions = system.file("extdata",
+                                       "gtopdb_interactions_example.tsv",
+                                       package = "drugTargetInteractions"),
+            hgncMapping = system.file("extdata",
+                                      "gtopdb_hgnc_mapping_example.tsv",
+                                      package = "drugTargetInteractions")))
     .gtoPdbTestDb$path
 }
 
@@ -310,11 +331,11 @@ test_that("queryDrugTargets returns an empty list when nothing resolves for the 
             indication = NA, smiles = "x", InChIKey = "x", pubchem_cid = "1",
             structure_ambiguous = FALSE, stringsAsFactors = FALSE),
         gtopdb = data.frame(
-            QueryIDs = "FGFR1", target_gene = "FGFR1", targetId = 1808L,
+            QueryIDs = "FGFR1", target_gene = "FGFR1", targetId = "1808",
             targetName = "fibroblast growth factor receptor 1", species = "Human",
-            primaryTarget = TRUE, ligandId = 9767L, ligandName = "pemigatinib",
+            primaryTarget = TRUE, ligandId = "9767", ligandName = "pemigatinib",
             type = "Inhibitor", action = "Inhibition", affinity = "7.0",
-            affinityParameter = "pIC50", selectivity = NA, refIds = "34085",
+            affinityParameter = "pIC50", selectivity = NA, pubmedId = "34085",
             stringsAsFactors = FALSE)
     )
     attr(res, "resolved") <- list(

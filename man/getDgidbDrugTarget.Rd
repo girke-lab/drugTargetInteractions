@@ -41,6 +41,10 @@ to its own canonical casing (see the file header note), the returned
 token \emph{case-insensitively} rather than by verbatim string equality.
 }
 \examples{
+## Columns this source can return; any subset of them can be
+## requested through 'fields'.
+listDrugTargetFields("dgidb")
+
 \donttest{
   ## target -> drug: FGFR1, KLB
   getDgidbDrugTarget(list(molType = "gene", idType = "symbol",

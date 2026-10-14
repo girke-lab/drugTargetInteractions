@@ -29,7 +29,6 @@ getUniprotIDs(taxId = 9606, kt = "ENSEMBL", keys, seq_cluster = "UNIREF90", chun
 	  Query IDs.
 }
   \item{seq_cluster}{
-%%     ~~Describe \code{seq_cluster} here~~
 	Which cluster to use. Should be one of  'UNIREF100', 'UNIREF90', 'UNIREF50'.
 }
   \item{chunksize}{
@@ -49,7 +48,6 @@ getUniprotIDs(taxId = 9606, kt = "ENSEMBL", keys, seq_cluster = "UNIREF90", chun
  \code{\link[UniProt.ws]{UniProt.ws}}
 }
 \examples{
-%%  requires network 
 	\donttest{ 
 		 keys <- c("ENSG00000145700", "ENSG00000135441", "ENSG00000120071", "ENSG00000120088", "ENSG00000185829", "ENSG00000185829", "ENSG00000185829", "ENSG00000238083", "ENSG00000012061", "ENSG00000104856", "ENSG00000104936", "ENSG00000117877", "ENSG00000130202", "ENSG00000130202", "ENSG00000142252", "ENSG00000189114", "ENSG00000234906") 
 		 res_list100 <- getUniprotIDs(taxId=9606, kt="ENSEMBL", keys=keys, seq_cluster="UNIREF100") 

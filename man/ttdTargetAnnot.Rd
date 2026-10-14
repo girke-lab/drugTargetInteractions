@@ -70,6 +70,10 @@ needs the mnemonic, but downstream joins to other sources can use
 \code{Uniprot_acc} directly.
 }
 \examples{
+## Columns this source can return; any subset of them can be
+## requested through 'fields'.
+listDrugTargetFields("ttd")
+
 \donttest{
   dbPath <- buildTtdDb()
   ttdTargetAnnot(list(molType = "protein", idType = "symbol",

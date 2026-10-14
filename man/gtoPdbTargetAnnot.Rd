@@ -28,7 +28,7 @@ A \code{data.frame} with columns \code{QueryIDs},
   \code{target_gene}, \code{targetId}, \code{targetName}, \code{species},
   \code{primaryTarget}, \code{ligandId}, \code{ligandName}, \code{type},
   \code{action}, \code{affinity}, \code{affinityParameter},
-  \code{selectivity}, \code{refIds} (with the default
+  \code{selectivity}, \code{pubmedId} (with the default
   \code{fields = "core"}), or a subset when \code{fields} requests
   specific columns.
 }
@@ -54,6 +54,23 @@ returned no rows still appear as a single row with all other fields
 exact-match.
 }
 \examples{
+## A small extract of GtoPdb's two bulk files ships with the package,
+## so the whole build-then-query path runs without downloading.
+ex <- list(
+    interactions = system.file("extdata", "gtopdb_interactions_example.tsv",
+                               package = "drugTargetInteractions"),
+    hgncMapping = system.file("extdata", "gtopdb_hgnc_mapping_example.tsv",
+                              package = "drugTargetInteractions"))
+dbPath <- buildGtoPdbDb(paths = ex)
+
+## Target -> drug
+head(gtoPdbTargetAnnot(list(molType = "protein", idType = "symbol",
+                            ids = "FGFR1"), dbPath)[, c("ligandName", "action")], 3)
+
+## Drug -> target
+gtoPdbTargetAnnot(list(molType = "cmp", idType = "name",
+                       ids = "pemigatinib"), dbPath)[, c("target_gene", "affinity")]
+
 \donttest{
   dbPath <- buildGtoPdbDb()
   gtoPdbTargetAnnot(list(molType = "protein", idType = "symbol",

@@ -381,6 +381,10 @@
 #'   \code{.resolveCompoundIds}) for tracing which input ID led to
 #'   which rows.
 #' @examples
+#' ## The sources this can query, and the columns each of them returns:
+#' vapply(c("chembl", "dgidb", "opentargets", "ttd", "broad", "gtopdb"),
+#'        function(s) length(listDrugTargetFields(s)), integer(1))
+#'
 #' \donttest{
 #'   ## target -> drug, starting from an Ensembl gene ID, all live sources
 #'   res <- queryDrugTargets(
@@ -610,6 +614,19 @@ queryDrugTargets <- function(queryBy = list(molType = NULL, idType = NULL, ids =
 #' @return A single \code{data.frame} with columns \code{columns}, one
 #'   row per row of every source in \code{results}.
 #' @examples
+#' ## One source's results, built from the GtoPdb extract that ships with
+#' ## the package so nothing is downloaded.
+#' dbPath <- buildGtoPdbDb(paths = list(
+#'     interactions = system.file("extdata", "gtopdb_interactions_example.tsv",
+#'                                package = "drugTargetInteractions"),
+#'     hgncMapping = system.file("extdata", "gtopdb_hgnc_mapping_example.tsv",
+#'                               package = "drugTargetInteractions")))
+#' res <- list(gtopdb = gtoPdbTargetAnnot(
+#'     list(molType = "cmp", idType = "name", ids = "pemigatinib"), dbPath))
+#'
+#' ## Row-bound onto the shared column names:
+#' combineDrugTargets(res)
+#'
 #' \donttest{
 #'   res <- queryDrugTargets(list(molType = "gene", idType = "symbol", ids = "FGFR1"),
 #'                           sources = c("chembl", "dgidb", "opentargets"))

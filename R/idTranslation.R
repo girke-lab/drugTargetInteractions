@@ -344,6 +344,13 @@ getUniprotMapping <- function(ids, from, to, taxId = 9606L, pollInterval = 1,
 #'   two \code{NA} when \code{condensed = TRUE}). Genes with no paralogs
 #'   simply contribute no rows.
 #' @examples
+#' ## The shape of the result, from a small snapshot shipped with the
+#' ## package (the live query below needs Ensembl):
+#' fx <- readRDS(system.file("extdata", "fixtures",
+#'                           "ensembl_paralogs_fgfr1.rds",
+#'                           package = "drugTargetInteractions"))
+#' head(fx$result, 3)
+#'
 #' \donttest{
 #'   getEnsemblParalogs("FGFR1")
 #' }
@@ -380,6 +387,13 @@ getEnsemblParalogs <- function(genes, species = "human", condensed = FALSE,
 #'   columns (\code{homolog_species} varies here). Genes with no
 #'   orthologs simply contribute no rows.
 #' @examples
+#' ## The shape of the result, from a small snapshot shipped with the
+#' ## package (the live query below needs Ensembl):
+#' fx <- readRDS(system.file("extdata", "fixtures",
+#'                           "ensembl_orthologs_nlrp3_mouse.rds",
+#'                           package = "drugTargetInteractions"))
+#' fx$result
+#'
 #' \donttest{
 #'   getEnsemblOrthologs("NLRP3", targetSpecies = "mouse")
 #' }

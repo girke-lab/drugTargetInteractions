@@ -66,6 +66,9 @@ of temporary disk space for the unfiltered staging table before
 filtering shrinks it down.
 }
 \examples{
+## Downloaded files are cached here and reused by later calls:
+rappdirs::user_cache_dir("drugTargetInteractions")
+
 \donttest{
   dbPath <- buildUnichemDb(verbose = TRUE)
   dbPath

@@ -5,7 +5,13 @@
 \title{Build (or fetch a cached) local SQLite database of GtoPdb drug-target
 interactions}
 \usage{
-buildGtoPdbDb(rerun = FALSE, config = genConfig())
+buildGtoPdbDb(
+  rerun = FALSE,
+  config = genConfig(),
+  useServices = FALSE,
+  apiKey = Sys.getenv("GTOPDB_API_KEY"),
+  paths = NULL
+)
 }
 \arguments{
 \item{rerun}{logical(1); passed to \code{\link{downloadGtoPdb}}, and
@@ -18,6 +24,18 @@ infrequently enough that defaulting to \code{TRUE} would just
 accumulate redundant cached copies.}
 
 \item{config}{list as returned by \code{genConfig()}.}
+
+\item{useServices}{logical(1); passed to
+\code{\link{downloadGtoPdb}}.}
+
+\item{apiKey}{character(1); passed to \code{\link{downloadGtoPdb}}.}
+
+\item{paths}{named list of local file paths with components
+\code{interactions} and \code{hgncMapping}, in the shape
+\code{\link{downloadGtoPdb}} returns. When supplied, nothing is
+downloaded and the database is built from these files into a
+temporary file whose path is returned, leaving the BiocFileCache
+copy of the full table untouched.}
 }
 \value{
 character(1) local file path to the SQLite database.
@@ -32,15 +50,38 @@ writes a single denormalized, indexed \code{gtp_interactions} table
 to a local SQLite file - the same one-table shape as
 \code{\link{buildTtdDb}}/\code{\link{buildBroadRepurposingHubDb}}. The
 file is cached via BiocFileCache under a name that includes GtoPdb's
-own release version (e.g. \code{gtopdb_2026.2.db}), so rebuilding is a
-no-op until GtoPdb actually republishes. As with the other local-SQLite
-sources, the package itself never ships or redistributes this file -
-it is built into the caller's own local cache the first time this is
-run (see the file header for why that is a conservative default here,
-not a licensing requirement).
+own release version (e.g. \code{gtopdb_2026.3.1.db}), so rebuilding is
+a no-op until GtoPdb actually republishes. The package itself never
+ships the full table - it is built into the caller's own local cache
+the first time this is run.
+}
+\details{
+GtoPdb's bulk download files need no API key. To build from its
+authenticated REST endpoint instead, pass \code{useServices = TRUE}
+and an \code{apiKey}; see \code{\link{downloadGtoPdb}}.
+
+To build from files already on disk rather than downloading - the
+small extract this package ships for its examples and vignette, or a
+previously archived copy - pass \code{paths}.
 }
 \examples{
+## A small extract of the real GtoPdb interactions and HGNC mapping
+## files is shipped with the package, so the whole build-then-query
+## workflow runs here without downloading anything:
+ex <- list(
+    interactions = system.file("extdata",
+        "gtopdb_interactions_example.tsv",
+        package = "drugTargetInteractions"),
+    hgncMapping = system.file("extdata",
+        "gtopdb_hgnc_mapping_example.tsv",
+        package = "drugTargetInteractions"))
+dbPath <- buildGtoPdbDb(paths = ex)
+gtoPdbTargetAnnot(
+    list(molType = "protein", idType = "symbol", ids = "FGFR1"),
+    dbPath)[1:3, c("ligandName", "type", "action", "affinity")]
+
 \donttest{
+  ## The full table, downloaded and cached on first use:
   dbPath <- buildGtoPdbDb()
   dbPath
 }

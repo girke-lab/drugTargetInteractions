@@ -5,7 +5,6 @@
 processDrugage
 }
 \description{
-%%  ~~ A concise (1-5 lines) description of what the function does. ~~
 Download Drug Age data from genomics.senescence.info/drugs. Process the data
 and write it out as a TSV spreadsheet.
 }

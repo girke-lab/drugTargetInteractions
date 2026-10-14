@@ -32,11 +32,14 @@ incomplete TLS certificate chain (see this file's header comment) -
 if the first download attempt fails for any reason, this function
 retries once with a CA bundle extended to include the one
 legitimate, publicly-issued intermediate certificate the server
-itself omits (\code{.brhWithSupplementalCa()}); a genuine failure
+itself omits (\code{.brhDownloadWithSupplementalCa()}); a genuine failure
 (network down, file moved, etc.) still surfaces as an error after
 that retry.
 }
 \examples{
+## Downloaded files are cached here and reused by later calls:
+rappdirs::user_cache_dir("drugTargetInteractions")
+
 \donttest{
   paths <- downloadBroadRepurposingHub()
   paths

@@ -51,6 +51,10 @@ inhibitor" mechanism lists both PTGS1 and PTGS2); the cartesian
 expansion is controlled by \code{expand}.
 }
 \examples{
+## Columns this source can return; any subset of them can be
+## requested through 'fields'.
+listDrugTargetFields("opentargets")
+
 \donttest{
   tgts <- getOpenTargetsTargets("aspirin")
   tgts[, c("approved_symbol", "mechanism_of_action")]

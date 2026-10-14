@@ -69,6 +69,10 @@ this function targets the v4 schema in which rows are of type
 names, update \code{.dtiDrugSelection}.
 }
 \examples{
+## Columns this source can return; any subset of them can be
+## requested through 'fields'.
+listDrugTargetFields("opentargets")
+
 \donttest{
   drugs <- getOpenTargetsDrugs(c("FGFR1", "KLB"))
   head(drugs[, c("drug_name", "mechanism_of_action", "max_clinical_stage")])

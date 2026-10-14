@@ -48,6 +48,10 @@ and unmatched-ID NA-row padding on top of the two underlying functions -
 it does not change their query logic.
 }
 \examples{
+## Columns this source can return; any subset of them can be
+## requested through 'fields'.
+listDrugTargetFields("pubchem")
+
 \donttest{
   ## target -> drug: FGFR1, KLB
   getPubchemDrugTarget(list(molType = "gene", idType = "symbol",

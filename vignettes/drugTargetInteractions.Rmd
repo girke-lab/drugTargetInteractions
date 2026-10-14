@@ -551,22 +551,44 @@ certificate, so a plain call should succeed regardless.
 
 ## GtoPdb (IUPHAR/BPS Guide to PHARMACOLOGY)
 
-GtoPdb offers a documented REST API, but its per-target endpoints are
-one-resource-per-call with no bulk target-to-gene-symbol mapping endpoint -
-impractical for a genome-wide build. Instead, `buildGtoPdbDb()` uses
-GtoPdb's *bulk* `/services/interactions` endpoint (one call returns the
-whole ~24,000-row interaction table as JSON) joined locally against a
-small bulk flat file GtoPdb separately publishes for target-ID-to-HGNC
-mapping, assembled into a small local SQLite - the same build-once,
-query-many pattern as TTD and the Repurposing Hub, just sourced from
-REST plus one small file instead of pure flat files.
+`buildGtoPdbDb()` builds from the two bulk files GtoPdb publishes for
+download: its whole interaction table (about 25,000 rows) and a small
+table mapping GtoPdb target IDs to HGNC gene symbols. The two are joined
+and assembled into a local SQLite - the same build-once, query-many
+pattern as TTD and the Repurposing Hub. Neither file requires
+registration.
+
+GtoPdb also has a REST API, which since 2026 requires a registered API
+key for every endpoint. You do not need one for anything shown here, but
+if you have a key and would rather take the interaction data from the
+API, pass it as `buildGtoPdbDb(useServices = TRUE, apiKey = "...")` or
+set the `GTOPDB_API_KEY` environment variable. The one difference is that
+the API reports GtoPdb's internal reference IDs rather than the PubMed ID
+of each interaction's reference, so the `pubmedId` column is empty on
+that route.
+
+A small extract of both bulk files ships with the package. The build
+below uses the real files and falls back to the extract only if GtoPdb
+cannot be reached, so the rest of this section runs either way.
 
 ```{r gtopdb_build, eval=TRUE}
-## Prefer the cache (fast, no network); only re-fetch live if nothing
-## usable is cached yet (rerun = FALSE errors instead of fetching when
-## the raw bulk files were never downloaded - see buildGtoPdbDb()).
-gtoPdbDbPath <- tryCatch(buildGtoPdbDb(rerun = FALSE),
-                        error = function(e) buildGtoPdbDb(rerun = TRUE))
+gtoPdbExample <- list(
+    interactions = system.file("extdata", "gtopdb_interactions_example.tsv",
+                               package = "drugTargetInteractions"),
+    hgncMapping = system.file("extdata", "gtopdb_hgnc_mapping_example.tsv",
+                              package = "drugTargetInteractions"))
+
+gtoPdbDbPath <- tryCatch(
+    ## Reuse an already-built local copy if there is one.
+    buildGtoPdbDb(rerun = FALSE),
+    error = function(e) tryCatch(
+        ## Otherwise download the bulk files and build it now.
+        buildGtoPdbDb(rerun = TRUE),
+        error = function(e2) {
+            message("GtoPdb could not be reached; using the extract ",
+                    "shipped with the package")
+            buildGtoPdbDb(paths = gtoPdbExample)
+        }))
 ```
 
 Native identifiers for `gtoPdbTargetAnnot()`: for target &rarr; drug, a
@@ -594,9 +616,10 @@ FGFR1 and NLRP3 are covered.
 **Distribution note:** unlike TTD and the Repurposing Hub, GtoPdb's data
 is licensed under the Open Data Commons Open Database License (ODbL)
 with contents under CC-BY-SA 4.0 - clear terms that explicitly permit
-redistribution (with attribution/share-alike). `buildGtoPdbDb()` still
-downloads into your local cache and builds the SQLite there, as the other
-local-SQLite sources do.
+redistribution (with attribution/share-alike), which is what allows the
+small extract above to be shipped with the package. The full table is
+still downloaded into your local cache and built there, as for the other
+local-SQLite sources.
 
 # Bioassay Queries
 

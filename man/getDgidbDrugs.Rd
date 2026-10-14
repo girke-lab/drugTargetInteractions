@@ -55,6 +55,10 @@ This is the target -> drug direction; see \code{\link{getDgidbTargets}}
 for the reverse.
 }
 \examples{
+## Columns this source can return; any subset of them can be
+## requested through 'fields'.
+listDrugTargetFields("dgidb")
+
 \donttest{
   df <- getDgidbDrugs(c("FGFR1", "KLB"))
   table(df$gene_name)

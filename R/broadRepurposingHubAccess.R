@@ -63,7 +63,7 @@
 ##  paper over by disabling verification - so downloadBroadRepurposingHub()
 ##  instead retries once, on any download failure, with a CA bundle
 ##  extended to include *only* that one legitimate, publicly-issued
-##  intermediate (see .brhWithSupplementalCa() below) - full chain
+##  intermediate (see .brhDownloadWithSupplementalCa() below) - full chain
 ##  verification still happens, it just has the one certificate Broad's
 ##  own server should have sent but doesn't.
 ## =====================================================================
@@ -130,9 +130,10 @@ loK8Ee0Y9wee43mVaHEdRD11fUQZYXsnXIFFtVXsIFH43LTiYfgN
 ## as a replacement for the OS's own trust decisions. The first one
 ## that exists is used; if none exist (unrecognized platform, or a
 ## macOS build that verifies via Keychain rather than a PEM file),
-## .brhWithSupplementalCa() runs its expression unmodified rather than
-## guessing further, so the plain code path's exact behavior is the
-## only possible fallback - never a weaker one.
+## .brhDownloadWithSupplementalCa() leaves the platform's own trust
+## settings untouched rather than guessing further, so the plain code
+## path's exact behavior is the only possible fallback - never a weaker
+## one.
 .brhSystemCaBundleCandidates <- function() {
     c(
         Sys.getenv("CURL_CA_BUNDLE", NA_character_),
@@ -145,32 +146,52 @@ loK8Ee0Y9wee43mVaHEdRD11fUQZYXsnXIFFtVXsIFH43LTiYfgN
     )
 }
 
-#' Retry an expression with a supplemental CA bundle
-#'
-#' Runs \code{expr} with \code{CURL_CA_BUNDLE} pointed at [system default
-#' bundle + the missing InCommon intermediate], restoring the prior
-#' value afterward. Falls back to running \code{expr} completely
-#' unmodified if no base bundle can be located - this only ever *adds*
-#' one legitimate, publicly-issued certificate on top of whatever the
-#' platform already trusts; it never disables or weakens verification.
+#' Write [system default CA bundle + the missing InCommon intermediate]
+#' to a temp file, or return NA if no system bundle can be located
 #' @keywords internal
 #' @noRd
-.brhWithSupplementalCa <- function(expr) {
+.brhSupplementalCaBundle <- function() {
     candidates <- .brhSystemCaBundleCandidates()
     hits <- candidates[!is.na(candidates) & nzchar(candidates) & file.exists(candidates)]
-    if (length(hits) == 0L) return(expr)
-    base <- hits[1]
+    if (length(hits) == 0L) return(NA_character_)
+    out <- tempfile(fileext = ".pem")
+    writeLines(c(readLines(hits[1], warn = FALSE), .brhIncommonIntermediatePem), out)
+    out
+}
 
-    tmp <- tempfile(fileext = ".pem")
-    writeLines(c(readLines(base, warn = FALSE), .brhIncommonIntermediatePem), tmp)
-
-    old <- Sys.getenv("CURL_CA_BUNDLE", unset = NA_character_)
-    Sys.setenv(CURL_CA_BUNDLE = tmp)
+#' Download one Repurposing Hub file with a supplemental CA bundle
+#'
+#' Fetches \code{url} with verification against [the system's default CA
+#' bundle + the one InCommon intermediate Broad's server fails to send],
+#' then caches the result under \code{name}. The bundle is passed as a
+#' per-request curl option rather than through \code{CURL_CA_BUNDLE}, so
+#' nothing outside this one request is affected. Full chain verification
+#' still happens; this only *adds* one legitimate, publicly-issued
+#' certificate on top of whatever the platform already trusts, and never
+#' disables or weakens verification. If no system bundle can be located
+#' the request is made with the platform's own trust settings untouched,
+#' which is the same behaviour as not retrying at all.
+#' @keywords internal
+#' @noRd
+.brhDownloadWithSupplementalCa <- function(url, name) {
+    bundle <- .brhSupplementalCaBundle()
+    tmp <- tempfile()
     on.exit({
-        if (is.na(old)) Sys.unsetenv("CURL_CA_BUNDLE") else Sys.setenv(CURL_CA_BUNDLE = old)
+        if (!is.na(bundle)) unlink(bundle)
         unlink(tmp)
     })
-    expr
+
+    req <- httr2::request(url)
+    req <- httr2::req_user_agent(
+        req, "drugTargetInteractions R package (Bioconductor)")
+    req <- httr2::req_timeout(req, 600L)
+    if (!is.na(bundle)) req <- httr2::req_options(req, cainfo = bundle)
+    resp <- httr2::req_perform(req, path = tmp)
+    if (httr2::resp_status(resp) >= 400L)
+        stop("download of '", url, "' failed with HTTP ",
+             httr2::resp_status(resp), ".", call. = FALSE)
+
+    .dtiCacheLocalFile(name, tmp)
 }
 
 #' Parse a Repurposing Hub flat file: skip the "!Key\\tValue" metadata
@@ -236,7 +257,7 @@ loK8Ee0Y9wee43mVaHEdRD11fUQZYXsnXIFFtVXsIFH43LTiYfgN
 #' if the first download attempt fails for any reason, this function
 #' retries once with a CA bundle extended to include the one
 #' legitimate, publicly-issued intermediate certificate the server
-#' itself omits (\code{.brhWithSupplementalCa()}); a genuine failure
+#' itself omits (\code{.brhDownloadWithSupplementalCa()}); a genuine failure
 #' (network down, file moved, etc.) still surfaces as an error after
 #' that retry.
 #'
@@ -247,6 +268,9 @@ loK8Ee0Y9wee43mVaHEdRD11fUQZYXsnXIFFtVXsIFH43LTiYfgN
 #'   accepted for consistency with the rest of the package's API.
 #' @return A named list of local file paths: \code{drug}, \code{sample}.
 #' @examples
+#' ## Downloaded files are cached here and reused by later calls:
+#' rappdirs::user_cache_dir("drugTargetInteractions")
+#'
 #' \donttest{
 #'   paths <- downloadBroadRepurposingHub()
 #'   paths
@@ -262,7 +286,7 @@ downloadBroadRepurposingHub <- function(rerun = TRUE, config = genConfig()) {
         if (rerun) {
             paths[[nm]] <- tryCatch(
                 suppressWarnings(.downloadFile(ep[[nm]], fname)),
-                error = function(e) .brhWithSupplementalCa(.downloadFile(ep[[nm]], fname))
+                error = function(e) .brhDownloadWithSupplementalCa(ep[[nm]], fname)
             )
         } else {
             paths[[nm]] <- .getCacheFile(fname)
@@ -445,6 +469,9 @@ downloadBroadRepurposingHub <- function(rerun = TRUE, config = genConfig()) {
 #' @param config list as returned by \code{genConfig()}.
 #' @return character(1) local file path to the SQLite database.
 #' @examples
+#' ## Downloaded files are cached here and reused by later calls:
+#' rappdirs::user_cache_dir("drugTargetInteractions")
+#'
 #' \donttest{
 #'   dbPath <- buildBroadRepurposingHubDb()
 #'   dbPath
@@ -587,6 +614,10 @@ buildBroadRepurposingHubDb <- function(rerun = FALSE, config = genConfig()) {
 #'   same SQLite file - query it directly (keyed on \code{broad_id})
 #'   for that data; it is not returned here.
 #' @examples
+#' ## Columns this source can return; any subset of them can be
+#' ## requested through 'fields'.
+#' listDrugTargetFields("broad")
+#'
 #' \donttest{
 #'   dbPath <- buildBroadRepurposingHubDb()
 #'   broadRepurposingHubAnnot(list(molType = "protein", idType = "symbol",

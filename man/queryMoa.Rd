@@ -40,6 +40,9 @@ Querying compounds by \code{idType = "name"} routes through
   is assembled from whatever remains.
 }
 \examples{
+## The sources a mechanism-of-action table can be assembled from:
+listMoaSources()
+
 \donttest{
   queryMoa(list(molType = "cmp", idType = "chembl_id", ids = "CHEMBL941"),
            sources = c("chembl", "opentargets"))

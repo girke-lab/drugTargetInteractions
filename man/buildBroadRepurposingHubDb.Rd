@@ -81,6 +81,9 @@ side effect of the split.
 }
 
 \examples{
+## Downloaded files are cached here and reused by later calls:
+rappdirs::user_cache_dir("drugTargetInteractions")
+
 \donttest{
   dbPath <- buildBroadRepurposingHubDb()
   dbPath

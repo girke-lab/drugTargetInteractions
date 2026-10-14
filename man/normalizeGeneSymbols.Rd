@@ -36,6 +36,18 @@ symbols reported via \code{attr(., "unmapped")} rather than silently
 dropped.
 }
 \examples{
+## Retired and alias symbols are rewritten to the current symbol. A
+## symbol that is already current passes through unchanged; one HGNC
+## does not know at all comes back NA.
+hgnc <- data.frame(
+    hgnc_id = c("HGNC:3688", "HGNC:16400"),
+    symbol = c("FGFR1", "NLRP3"),
+    stringsAsFactors = FALSE)
+hgnc$prev_symbol <- list("FLT2", "CIAS1")
+hgnc$alias_symbol <- list("CD331", "NALP3")
+normalizeGeneSymbols(c("FLT2", "NALP3", "FGFR1", "NOTASYMBOL"),
+                     hgncTable = hgnc)
+
 \donttest{
   hgncTable <- getHgncGeneTable()
   normalizeGeneSymbols(c("FGFR1", "ABL"), hgncTable = hgncTable)

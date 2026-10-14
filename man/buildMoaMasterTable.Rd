@@ -76,6 +76,9 @@ one source at a time; comparing terms across the two needs them
 matched deliberately, not just lower-cased.
 }
 \examples{
+## The sources a mechanism-of-action table can be assembled from:
+listMoaSources()
+
 \donttest{
   ## ChEMBL alone needs no local database
   moa <- buildMoaMasterTable(sources = "chembl")

@@ -2,10 +2,14 @@
 % Please edit documentation in R/gtoPdbAccess.R
 \name{downloadGtoPdb}
 \alias{downloadGtoPdb}
-\title{Download GtoPdb's bulk interactions (REST) and HGNC mapping (flat
-file) data}
+\title{Download GtoPdb's bulk interactions and HGNC mapping data}
 \usage{
-downloadGtoPdb(rerun = TRUE, config = genConfig())
+downloadGtoPdb(
+  rerun = TRUE,
+  config = genConfig(),
+  useServices = FALSE,
+  apiKey = Sys.getenv("GTOPDB_API_KEY")
+)
 }
 \arguments{
 \item{rerun}{logical(1); if \code{TRUE} (default), check for updates
@@ -14,23 +18,48 @@ already in the local cache without checking upstream.}
 
 \item{config}{list as returned by \code{genConfig()}; unused here but
 accepted for consistency with the rest of the package's API.}
+
+\item{useServices}{logical(1); if \code{TRUE}, take the interactions
+data from GtoPdb's authenticated \code{/services/interactions} REST
+endpoint rather than the public bulk file. Requires \code{apiKey}.}
+
+\item{apiKey}{character(1) GtoPdb API key, used only when
+\code{useServices = TRUE}. Defaults to the \code{GTOPDB_API_KEY}
+environment variable.}
 }
 \value{
 A named list of local file paths: \code{interactions},
   \code{hgncMapping}.
 }
 \description{
-Downloads (or reuses previously cached copies of) GtoPdb's bulk
-\code{/services/interactions} REST response and its
-\code{GtP_to_HGNC_mapping.tsv} flat file via the package's existing
-\code{.downloadFile()}/BiocFileCache infrastructure - the same
+Downloads (or reuses previously cached copies of) the two GtoPdb bulk
+files this package builds from - the whole interactions table and the
+target-ID-to-HGNC-symbol mapping - via the package's existing
+\code{.downloadFile()}/BiocFileCache infrastructure, the same
 mechanism \code{downloadTTD()}/\code{downloadBroadRepurposingHub()}
 use. Files land in the local BiocFileCache (see \code{.getCache()},
 \code{rappdirs::user_cache_dir(appname = "drugTargetInteractions")}) -
-no GtoPdb data is bundled with or downloaded by the package itself
-until this is called explicitly.
+no GtoPdb data is downloaded until this is called.
+}
+\details{
+Neither file needs an API key. GtoPdb's REST web services do, as of
+2026, for every \code{/services/} endpoint; set
+\code{useServices = TRUE} to take the interactions data from
+\code{/services/interactions} instead and supply \code{apiKey}. A
+missing or rejected key is reported as such.
 }
 \examples{
+## Downloaded files are cached here and reused by later calls:
+rappdirs::user_cache_dir("drugTargetInteractions")
+
+## A small extract of both files ships with the package, for the
+## examples and the vignette (see buildGtoPdbDb()'s 'paths'):
+basename(c(
+    system.file("extdata", "gtopdb_interactions_example.tsv",
+                package = "drugTargetInteractions"),
+    system.file("extdata", "gtopdb_hgnc_mapping_example.tsv",
+                package = "drugTargetInteractions")))
+
 \donttest{
   paths <- downloadGtoPdb()
   paths

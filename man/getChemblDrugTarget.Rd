@@ -114,6 +114,10 @@ side) so that this function's interface stays uniform across sources.
 }
 
 \examples{
+## Columns this source can return; any subset of them can be
+## requested through 'fields'.
+listDrugTargetFields("chembl")
+
 \donttest{
   ## target -> drug: FGFR1
   getChemblDrugTarget(list(molType = "protein", idType = "Uniprot",

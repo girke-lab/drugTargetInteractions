@@ -467,6 +467,9 @@ assembleMoaTargets <- function(results, resolveGeneSymbol = FALSE,
 #'   query starts from a name. Without it they are skipped and the table
 #'   is assembled from whatever remains.
 #' @examples
+#' ## The sources a mechanism-of-action table can be assembled from:
+#' listMoaSources()
+#'
 #' \donttest{
 #'   queryMoa(list(molType = "cmp", idType = "chembl_id", ids = "CHEMBL941"),
 #'            sources = c("chembl", "opentargets"))
@@ -618,6 +621,9 @@ moaWide <- function(x) {
 #'   names a target for the mechanism. Use
 #'   \code{\link{assembleMoaTargets}} to get the targets themselves.
 #' @examples
+#' ## The sources a mechanism-of-action table can be assembled from:
+#' listMoaSources()
+#'
 #' \donttest{
 #'   ## ChEMBL alone needs no local database
 #'   moa <- buildMoaMasterTable(sources = "chembl")

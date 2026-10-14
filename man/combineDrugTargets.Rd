@@ -68,6 +68,19 @@ bioactivity data has no mechanism-of-action concept to align to in
 the first place.
 }
 \examples{
+## One source's results, built from the GtoPdb extract that ships with
+## the package so nothing is downloaded.
+dbPath <- buildGtoPdbDb(paths = list(
+    interactions = system.file("extdata", "gtopdb_interactions_example.tsv",
+                               package = "drugTargetInteractions"),
+    hgncMapping = system.file("extdata", "gtopdb_hgnc_mapping_example.tsv",
+                              package = "drugTargetInteractions")))
+res <- list(gtopdb = gtoPdbTargetAnnot(
+    list(molType = "cmp", idType = "name", ids = "pemigatinib"), dbPath))
+
+## Row-bound onto the shared column names:
+combineDrugTargets(res)
+
 \donttest{
   res <- queryDrugTargets(list(molType = "gene", idType = "symbol", ids = "FGFR1"),
                           sources = c("chembl", "dgidb", "opentargets"))

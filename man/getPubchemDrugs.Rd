@@ -56,6 +56,10 @@ collapses to the most potent row per CID (capped at \code{maxCids}),
 and looks up each surviving CID's name and SMILES.
 }
 \examples{
+## Columns this source can return; any subset of them can be
+## requested through 'fields'.
+listDrugTargetFields("pubchem")
+
 \donttest{
   df <- getPubchemDrugs(c("FGFR1", "KLB"))
   table(df$gene_symbol)

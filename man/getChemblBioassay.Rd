@@ -65,6 +65,10 @@ supports both query directions, matching
 \code{\link{getChemblDrugTarget}}'s interface.
 }
 \examples{
+## Columns this can return; any subset of them can be requested
+## through 'fields'.
+listBioassayFields("chembl")
+
 \donttest{
   ## target -> drug bioassay: FGFR1
   getChemblBioassay(list(molType = "protein", idType = "Uniprot",
