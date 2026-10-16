@@ -10,17 +10,54 @@
 ##    small hand-built fixture database - no skip_if_offline_dti() needed
 ##    anywhere in this file.
 
+## A cached database is only reused when its tables and columns are the
+## ones buildUnichemDb() writes (see .dtiCachedDbIfCurrent()), so these
+## fixtures need the real layout - a file with the right name is not
+## enough.
+.unichemMinimalDb <- function(layout = .dtiUnichemTableCols) {
+    path <- tempfile(fileext = ".db")
+    con <- dbConnect(SQLite(), path)
+    on.exit(dbDisconnect(con))
+    for (tbl in names(layout)) {
+        row <- as.data.frame(
+            stats::setNames(rep(list("x"), length(layout[[tbl]])),
+                            layout[[tbl]]),
+            stringsAsFactors = FALSE)
+        dbWriteTable(con, tbl, row, overwrite = TRUE)
+    }
+    path
+}
+
 test_that(".unichemLatestCachedDb finds the most recently added unichem_*.db regardless of its date suffix", {
     bfc <- .getCache()
-    f1 <- tempfile(fileext = ".db"); file.create(f1)
-    f2 <- tempfile(fileext = ".db"); file.create(f2)
-    rid1 <- names(bfcadd(bfc, "unichem_TEST_OLD.db", f1, action = "copy"))
+    rid1 <- names(bfcadd(bfc, "unichem_TEST_OLD.db", .unichemMinimalDb(),
+                         action = "copy"))
     Sys.sleep(1.1)  ## ensure a distinct create_time from rid1
-    rid2 <- names(bfcadd(bfc, "unichem_TEST_NEW.db", f2, action = "copy"))
+    rid2 <- names(bfcadd(bfc, "unichem_TEST_NEW.db", .unichemMinimalDb(),
+                         action = "copy"))
     on.exit(bfcremove(bfc, c(rid1, rid2)), add = TRUE)
 
     latest <- .unichemLatestCachedDb()
     expect_identical(basename(latest), basename(bfcrpath(bfc, rids = rid2)))
+})
+
+test_that(".unichemLatestCachedDb skips a cached database written by an older layout", {
+    ## BiocFileCache survives a package upgrade on the Bioconductor
+    ## builders, so a database from a version that wrote different
+    ## columns can still be the newest unichem_* entry. Returning it
+    ## would surface as a failure inside getUnichemMapping() instead.
+    bfc <- .getCache()
+    stale <- .unichemMinimalDb(
+        list(unichem_xref = c("uci", "src_id", "compound_id"),
+             unichem_sources = c("src_id", "name")))   ## two columns short
+    rid <- names(bfcadd(bfc, "unichem_TEST_STALE.db", stale, action = "copy"))
+    on.exit(bfcremove(bfc, rid), add = TRUE)
+
+    ## NA when nothing else usable is cached, otherwise some other
+    ## database - either way, never the stale one.
+    latest <- .unichemLatestCachedDb()
+    stalePath <- basename(bfcrpath(bfc, rids = rid))
+    expect_true(is.na(latest) || !identical(basename(latest), stalePath))
 })
 
 .buildFixtureDb <- function() {
