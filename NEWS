@@ -16,6 +16,17 @@ Changes in version 1.21.15 (2026-10-13)
   of the two bulk files. A small extract of both now ships in
   inst/extdata, so the GtoPdb examples and vignette section run without
   network access.
++ A cached SQLite is reused only when its tables and columns are the
+  ones the installed version of the package writes. The upstream release
+  in the cache name is not a sufficient key on its own: BiocFileCache
+  persists between runs on the Bioconductor builders, so a database
+  built by an earlier package version survives an upgrade there and was
+  returned under the same name, after which the query functions failed
+  on columns they expect and cannot find. Renaming refIds to pubmedId is
+  exactly that case. A database with any other layout is now rebuilt.
+  Applies to the TTD, Repurposing Hub, GtoPdb and UniChem builds.
++ buildGtoPdbDb() always returns an unnamed character(1), as documented;
+  the cached-reuse and fresh-build paths disagreed before.
 + A field named through 'fields' that a source documents but a given
   response does not carry is now returned as an NA column instead of
   raising an error. Previously a transient outage at ChEMBL, PubChem,

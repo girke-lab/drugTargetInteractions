@@ -536,6 +536,24 @@ downloadTTD <- function(rerun = TRUE, config = genConfig()) {
 ## of caching one ready-to-query SQLite file via BiocFileCache.
 ## ---------------------------------------------------------------------
 
+#' Tables and columns a current TTD database has
+#'
+#' Compared against a cached database before an earlier build is reused
+#' (see \code{.dtiCachedDbIfCurrent()}), so a database left in the cache
+#' by a package version that wrote different columns is rebuilt instead
+#' of being handed to the query functions. Update this whenever the
+#' table layout below changes; the cost of forgetting is an unnecessary
+#' rebuild, never a wrong answer.
+#' @keywords internal
+#' @noRd
+.dtiTtdTableCols <- list(
+    ttd_interactions = c("TargetID", "GeneName", "Uniprot", "TargetType",
+                         "DrugID", "DrugName", "Smiles", "Highest_status",
+                         "MOA", "Uniprot_acc", "uniprot_source",
+                         "molecule_type", "PubChem_CID", "PubChem_SID",
+                         "CAS", "ChEBI_ID", "Indication"),
+    ttd_release = c("file", "version", "date"))
+
 #' Build (or fetch a cached) local SQLite database of TTD interactions
 #'
 #' Downloads the TTD flat files (see \code{\link{downloadTTD}}), parses
@@ -587,8 +605,8 @@ buildTtdDb <- function(rerun = FALSE, config = genConfig()) {
     dbName  <- paste0("ttd_", version, ".db")
 
     if (!rerun) {
-        existing <- tryCatch(.getCacheFile(dbName), error = function(e) NA_character_)
-        if (length(existing) > 0 && !is.na(existing)) return(existing)
+        existing <- .dtiCachedDbIfCurrent(dbName, .dtiTtdTableCols)
+        if (!is.na(existing)) return(existing)
     }
 
     targets     <- .ttdParseTargets(paths$targets)

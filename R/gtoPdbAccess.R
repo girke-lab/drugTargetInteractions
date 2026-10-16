@@ -479,9 +479,12 @@ buildGtoPdbDb <- function(rerun = FALSE, config = genConfig(),
         if (is.na(version)) version <- format(Sys.Date(), "%Y%m%d")
         dbName <- paste0("gtopdb_", version, ".db")
         if (!rerun) {
-            existing <- tryCatch(.getCacheFile(dbName),
-                                 error = function(e) NA_character_)
-            if (length(existing) > 0 && !is.na(existing)) return(existing)
+            ## Only an earlier build with this version's column layout -
+            ## see .dtiCachedDbIfCurrent() for why the upstream release
+            ## in dbName is not a sufficient cache key on its own.
+            existing <- .dtiCachedDbIfCurrent(
+                dbName, list(gtp_interactions = .dtiGtoPdbTableCols))
+            if (!is.na(existing)) return(existing)
         }
     }
 
@@ -496,12 +499,13 @@ buildGtoPdbDb <- function(rerun = FALSE, config = genConfig(),
 
     hgncMap <- .gtoPdbReadHgncMapping(paths$hgncMapping)
     interactions <- merge(ix, hgncMap, by = "targetId", all.x = TRUE)
-    interactions <- interactions[, c("target_gene", "targetId", "targetName",
-                                     "targetSpecies", "primaryTarget", "ligandId",
-                                     "ligandName", "type", "action", "affinity",
-                                     "affinityParameter", "selectivity",
-                                     "pubmedId")]
-    colnames(interactions)[colnames(interactions) == "targetSpecies"] <- "species"
+    ## Selected by the stored column names, with the one column whose
+    ## name differs upstream mapped back, so .dtiGtoPdbTableCols stays
+    ## the single description of the table's layout.
+    selectCols <- .dtiGtoPdbTableCols
+    selectCols[selectCols == "species"] <- "targetSpecies"
+    interactions <- interactions[, selectCols]
+    colnames(interactions) <- .dtiGtoPdbTableCols
 
     tmpDb <- tempfile(fileext = ".db")
     con <- dbConnect(SQLite(), tmpDb)
@@ -516,7 +520,10 @@ buildGtoPdbDb <- function(rerun = FALSE, config = genConfig(),
     bfc <- .getCache()
     rid <- names(bfcadd(bfc, dbName, tmpDb, action = "copy"))
     file.remove(tmpDb)
-    bfcrpath(bfc, rids = rid)
+    ## unname: bfcrpath() labels its result with the resource id, where
+    ## the cached-reuse path above returns a plain string. Both are
+    ## documented as character(1), so make them actually interchangeable.
+    unname(bfcrpath(bfc, rids = rid))
 }
 
 ## ---------------------------------------------------------------------
@@ -655,6 +662,21 @@ gtoPdbTargetAnnot <- function(queryBy = list(molType = NULL, idType = NULL, ids 
     rownames(out) <- NULL
     .dtiSelectFields(out, fields, .dtiGtoPdbAllCols)
 }
+
+#' Columns of the \code{gtp_interactions} table, in stored order
+#'
+#' One constant shared by \code{\link{buildGtoPdbDb}}, which writes the
+#' table, and by the cached-database check it does before reusing an
+#' earlier build (\code{.dtiCachedDbIfCurrent()}), so the two cannot
+#' disagree about what a current database looks like. Differs from
+#' \code{.dtiGtoPdbAllCols} only in \code{QueryIDs}, which
+#' \code{\link{gtoPdbTargetAnnot}} adds per query rather than storing.
+#' @keywords internal
+#' @noRd
+.dtiGtoPdbTableCols <- c("target_gene", "targetId", "targetName", "species",
+                         "primaryTarget", "ligandId", "ligandName", "type",
+                         "action", "affinity", "affinityParameter",
+                         "selectivity", "pubmedId")
 
 #' Documented column list for \code{listDrugTargetFields("gtopdb")}
 #'

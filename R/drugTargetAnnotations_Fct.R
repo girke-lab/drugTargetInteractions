@@ -116,6 +116,59 @@ genConfig <- function(
     bfcrpath(bfc, rids = rid)
 }
 
+#' Reuse a cached SQLite only if its layout is the one this version builds
+#'
+#' The local-SQLite sources cache a ready-to-query database under a name
+#' carrying the upstream release (\code{gtopdb_2026.3.1.db},
+#' \code{ttd_<ver>.db}, ...) and, on \code{rerun = FALSE}, hand back
+#' whatever is cached under that name instead of rebuilding.
+#'
+#' The upstream release alone is not a safe cache key. When this package
+#' changes a table's columns, a database built by an *older version of
+#' the package* - same upstream release, old column layout - is still
+#' sitting in the cache under exactly the name the new code looks up. It
+#' was then returned and passed straight to the query functions, which
+#' failed on the columns they expect and cannot find ("undefined columns
+#' selected"). Renaming gtp_interactions' refIds to pubmedId in 1.21.15
+#' is exactly that case, and it only escaped notice because GtoPdb
+#' happened to publish a new release at the same time, so the stale
+#' \code{gtopdb_2026.2.db} was never consulted.
+#'
+#' This is not hypothetical on a build machine: BiocFileCache persists
+#' between runs on the Bioconductor builders by design, so a database
+#' built by the previously-installed version of the package survives an
+#' upgrade there and is found first.
+#'
+#' So a cached database is reused only when every expected table is
+#' present with exactly the expected columns. A layout from an older
+#' package version, or a truncated or half-written file, counts as a
+#' cache miss and the caller rebuilds - which is also why the expected
+#' columns are kept in one constant per source, shared by the builder and
+#' by this check, so the two cannot drift apart and force a rebuild on
+#' every call.
+#'
+#' @param dbName character(1) cache resource name.
+#' @param layout named list of table name -> expected column names.
+#' @return character(1) path to the cached database, or
+#'   \code{NA_character_} if there is nothing usable cached.
+#' @keywords internal
+#' @noRd
+.dtiCachedDbIfCurrent <- function(dbName, layout) {
+    path <- tryCatch(.getCacheFile(dbName), error = function(e) NA_character_)
+    if (length(path) == 0L || is.na(path) || !file.exists(path))
+        return(NA_character_)
+    ok <- tryCatch({
+        con <- dbConnect(SQLite(), path)
+        on.exit(dbDisconnect(con))
+        present <- dbListTables(con)
+        all(vapply(names(layout), function(tbl) {
+            tbl %in% present &&
+                identical(dbListFields(con, tbl), layout[[tbl]])
+        }, logical(1)))
+    }, error = function(e) FALSE)
+    if (isTRUE(ok)) path else NA_character_
+}
+
 #' Add (or refresh) an already-downloaded local file in the package cache
 #'
 #' \code{.downloadFile()} hands a URL straight to \code{bfcadd()}, which

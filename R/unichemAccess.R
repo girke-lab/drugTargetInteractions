@@ -108,12 +108,34 @@
 #' @return character(1) local file path, or \code{NA_character_} if none cached.
 #' @keywords internal
 #' @noRd
+#' Tables and columns a current UniChem database has
+#'
+#' Compared against a cached database before an earlier build is reused
+#' (see \code{.dtiCachedDbIfCurrent()}), so a database left in the cache
+#' by a package version that wrote different columns is rebuilt instead
+#' of being handed to the query functions. Update this whenever the
+#' table layout below changes; the cost of forgetting is an unnecessary
+#' rebuild, never a wrong answer.
+#' @keywords internal
+#' @noRd
+.dtiUnichemTableCols <- list(
+    unichem_sources = c("src_id", "name", "name_long", "description"),
+    unichem_xref = c("uci", "src_id", "compound_id"))
+
 .unichemLatestCachedDb <- function() {
     bfc <- .getCache()
     hits <- bfcquery(bfc, "unichem_", field = "rname")
     if (nrow(hits) == 0L) return(NA_character_)
     hits <- hits[order(hits$create_time, decreasing = TRUE), ]
-    tryCatch(.getCacheFile(hits$rname[1]), error = function(e) NA_character_)
+    ## Newest first, but skipping any build whose table layout is not the
+    ## one this version writes - see .dtiCachedDbIfCurrent(). Reusing an
+    ## incompatible database here would surface as a failure inside
+    ## getUnichemMapping() instead.
+    for (nm in unique(hits$rname)) {
+        path <- .dtiCachedDbIfCurrent(nm, .dtiUnichemTableCols)
+        if (!is.na(path)) return(path)
+    }
+    NA_character_
 }
 
 

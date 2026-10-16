@@ -400,6 +400,24 @@ downloadBroadRepurposingHub <- function(rerun = TRUE, config = genConfig()) {
 ## ready-to-query SQLite file via BiocFileCache.
 ## ---------------------------------------------------------------------
 
+#' Tables and columns a current Repurposing Hub database has
+#'
+#' Compared against a cached database before an earlier build is reused
+#' (see \code{.dtiCachedDbIfCurrent()}), so a database left in the cache
+#' by a package version that wrote different columns is rebuilt instead
+#' of being handed to the query functions. Update this whenever the
+#' table layout below changes; the cost of forgetting is an unnecessary
+#' rebuild, never a wrong answer.
+#' @keywords internal
+#' @noRd
+.dtiBroadTableCols <- list(
+    broad_interactions = c("target_gene", "pert_iname", "clinical_phase",
+                           "moa", "disease_area", "indication", "smiles",
+                           "InChIKey", "pubchem_cid", "structure_ambiguous"),
+    broad_samples = c("broad_id", "pert_iname", "qc_incompatible", "purity",
+                      "vendor", "catalog_no", "vendor_name",
+                      "expected_mass", "deprecated_broad_id"))
+
 #' Build (or fetch a cached) local SQLite database of Repurposing Hub
 #' drug-target annotations
 #'
@@ -492,8 +510,8 @@ buildBroadRepurposingHubDb <- function(rerun = FALSE, config = genConfig()) {
     dbName <- paste0("broad_repurposing_", version, ".db")
 
     if (!rerun) {
-        existing <- tryCatch(.getCacheFile(dbName), error = function(e) NA_character_)
-        if (length(existing) > 0 && !is.na(existing)) return(existing)
+        existing <- .dtiCachedDbIfCurrent(dbName, .dtiBroadTableCols)
+        if (!is.na(existing)) return(existing)
     }
 
     sample <- .brhReadTable(paths$sample)

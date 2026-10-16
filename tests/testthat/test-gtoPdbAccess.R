@@ -232,3 +232,60 @@ test_that("downloadGtoPdb's REST route reports GtoPdb's 401 as an authentication
         downloadGtoPdb(useServices = TRUE, apiKey = "not-a-real-api-key"),
         "authentication")
 })
+
+test_that("a cached database from an older column layout is rebuilt, not reused", {
+    ## BiocFileCache persists between runs on the Bioconductor builders,
+    ## so a gtp_interactions built by a previous version of this package -
+    ## same upstream release, so the same cache name - outlives an
+    ## upgrade. Returning it would hand the query functions columns they
+    ## do not expect ("undefined columns selected"), which is what
+    ## renaming refIds to pubmedId would otherwise have caused.
+    tmpCache <- tempfile("dtiCache")
+    dir.create(tmpCache)
+    old <- Sys.getenv("R_USER_CACHE_DIR", unset = NA_character_)
+    on.exit({
+        if (is.na(old)) Sys.unsetenv("R_USER_CACHE_DIR")
+        else Sys.setenv(R_USER_CACHE_DIR = old)
+        unlink(tmpCache, recursive = TRUE)
+    })
+    Sys.setenv(R_USER_CACHE_DIR = tmpCache)
+
+    ## A database carrying the pre-1.21.15 layout, under the name the
+    ## current code looks up.
+    ex <- .getGtoPdbExamplePaths()
+    version <- .gtoPdbVersion(ex$hgncMapping)
+    stale <- tempfile(fileext = ".db")
+    con <- dbConnect(SQLite(), stale)
+    legacy <- data.frame(target_gene = "FGFR1", targetId = "1808",
+                         targetName = "x", species = "Human",
+                         primaryTarget = FALSE, ligandId = "9767",
+                         ligandName = "pemigatinib", type = "Inhibitor",
+                         action = "Inhibition", affinity = "7.0",
+                         affinityParameter = "pIC50", selectivity = NA,
+                         refIds = "34085", stringsAsFactors = FALSE)
+    dbWriteTable(con, "gtp_interactions", legacy, overwrite = TRUE)
+    dbDisconnect(con)
+    bfc <- .getCache()
+    dbName <- paste0("gtopdb_", version, ".db")
+    invisible(bfcadd(bfc, dbName, stale, action = "copy"))
+
+    ## The stale layout is not accepted...
+    expect_true(is.na(.dtiCachedDbIfCurrent(
+        dbName, list(gtp_interactions = .dtiGtoPdbTableCols))))
+
+    ## ...and a build from the shipped extract carries the current one,
+    ## so the query that would have failed works.
+    dbPath <- buildGtoPdbDb(paths = ex)
+    con <- dbConnect(SQLite(), dbPath)
+    expect_identical(dbListFields(con, "gtp_interactions"), .dtiGtoPdbTableCols)
+    dbDisconnect(con)
+    expect_silent(
+        gtoPdbTargetAnnot(list(molType = "protein", idType = "symbol",
+                               ids = "FGFR1"), dbPath))
+
+    ## A database with the current layout is reused as-is.
+    expect_identical(
+        .dtiCachedDbIfCurrent("nosuchdb_0.db",
+                              list(gtp_interactions = .dtiGtoPdbTableCols)),
+        NA_character_)
+})
