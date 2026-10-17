@@ -33,8 +33,19 @@ Kevin Horan
 
 
 \examples{
-%% this will download a 30GB file
-	\donttest{
-		downloadChemblDb(27)
-	}
+## The ChEMBL release is large (tens of GB compressed), so it is
+## downloaded into the local cache once and reused from there:
+rappdirs::user_cache_dir("drugTargetInteractions")
+
+## A small sample of the same database ships with the package, and is
+## what the examples of the functions that query it use, so trying those
+## out needs no download at all:
+basename(system.file("extdata", "chembl_sample.db",
+                     package = "drugTargetInteractions"))
+
+\donttest{
+	## The full release. Pass a version to pin one, or leave it to
+	## resolve the latest live.
+	downloadChemblDb(27)
+}
 }

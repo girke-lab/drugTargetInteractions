@@ -48,9 +48,23 @@ getUniprotIDs(taxId = 9606, kt = "ENSEMBL", keys, seq_cluster = "UNIREF90", chun
  \code{\link[UniProt.ws]{UniProt.ws}}
 }
 \examples{
-	\donttest{ 
-		 keys <- c("ENSG00000145700", "ENSG00000135441", "ENSG00000120071", "ENSG00000120088", "ENSG00000185829", "ENSG00000185829", "ENSG00000185829", "ENSG00000238083", "ENSG00000012061", "ENSG00000104856", "ENSG00000104936", "ENSG00000117877", "ENSG00000130202", "ENSG00000130202", "ENSG00000142252", "ENSG00000189114", "ENSG00000234906") 
-		 res_list100 <- getUniprotIDs(taxId=9606, kt="ENSEMBL", keys=keys, seq_cluster="UNIREF100") 
-	}
+## The two tables this returns, from a snapshot shipped with the package
+## (the live query below needs UniProt). 'IDM' holds the ID mappings and
+## 'SSNN' the sequence-similarity nearest neighbours; both carry the
+## query ID alongside the UniProt accession it resolved to.
+res_list <- readRDS(system.file("extdata", "res_list90.rds",
+                                package = "drugTargetInteractions"))
+names(res_list)
+head(res_list$IDM[, c("ENSEMBL", "ID", "GENES")], 3)
+head(res_list$SSNN[, c("ENSEMBL", "ID", "UNIREF90")], 3)
 
+\donttest{
+	keys <- c("ENSG00000145700", "ENSG00000135441", "ENSG00000120071",
+		  "ENSG00000120088", "ENSG00000185829", "ENSG00000238083",
+		  "ENSG00000012061", "ENSG00000104856", "ENSG00000104936",
+		  "ENSG00000117877", "ENSG00000130202", "ENSG00000142252",
+		  "ENSG00000189114", "ENSG00000234906")
+	res_list100 <- getUniprotIDs(taxId = 9606, kt = "ENSEMBL",
+				     keys = keys, seq_cluster = "UNIREF100")
+}
 }
